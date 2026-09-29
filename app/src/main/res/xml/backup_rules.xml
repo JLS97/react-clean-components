@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Auto Backup rules for Android 11 (API 30) and lower. Everything is backed up by default;
+    add <include>/<exclude> entries to change that.
+    https://developer.android.com/identity/data/autobackup
+-->
+<full-backup-content />
