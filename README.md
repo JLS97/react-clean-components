@@ -6,7 +6,7 @@ depende de ningún servidor ni API externa.
 
 > «Bóveda» y el paquete `io.github.jls97.boveda` son nombres de trabajo; se pueden cambiar.
 
-## Estado: fase 1
+## Estado: fases 1 y 2
 
 - Bóveda cifrada protegida por una contraseña maestra, con indicador de fortaleza.
 - Entradas con nombre, usuario o email, contraseña, web o app y notas. Búsqueda.
@@ -16,6 +16,34 @@ depende de ningún servidor ni API externa.
 - Bloqueo automático por inactividad, al salir de la app y siempre al apagar la pantalla.
 - Copias de seguridad cifradas (exportar e importar un archivo `.bvd`).
 - Cambio de contraseña maestra.
+- **Autorrelleno** en otras apps y en Chrome desde la barra de sugerencias del teclado, y oferta de
+  guardar las credenciales nuevas al iniciar sesión o registrarte.
+
+## Autorrelleno
+
+1. En Bóveda: **Ajustes y copias → Autorrelleno** y elige Bóveda en el diálogo del sistema.
+2. En Chrome: **Ajustes → Servicios de autocompletar → Autocompletar con otro servicio**, y
+   reinicia Chrome.
+3. Toca un campo de usuario o contraseña en cualquier app o web. En la barra del teclado aparece
+   **Bóveda · Toca para elegir cuenta**. Si el teclado no admite sugerencias, sale debajo del campo.
+4. Al tocarla se abre Bóveda (con huella o contraseña si está bloqueada). Elige la cuenta y se
+   rellenan el usuario y la contraseña.
+
+Cómo protege tus datos:
+
+- **El teclado no ve nada.** La sugerencia solo dice «Bóveda». Nombres de cuentas, usuarios y
+  contraseñas nunca pasan por el teclado, que es otra app.
+- **Nada sale sin que elijas.** Android solo recibe los datos de la entrada que tocas dentro de
+  Bóveda, y los pone directamente en los campos de la app que los pidió.
+- **Antiphishing.** Arriba solo aparecen las entradas vinculadas a esa web (por su dominio) o a
+  esa app (por su nombre de paquete, que Android garantiza). Si una app no está vinculada, Bóveda
+  te avisa antes de elegir. Al elegir, puedes recordar la vinculación para la próxima vez.
+- **Se vuelve a bloquear.** Si la bóveda estaba bloqueada, se bloquea en cuanto termina el
+  relleno.
+- **Guardar.** Al enviar un formulario con credenciales nuevas, Android pregunta si guardarlas en
+  Bóveda. Los datos pasan del servicio a la pantalla de guardado dentro de la memoria de la app,
+  sin viajar en ningún mensaje del sistema, y caducan a los 5 minutos.
+- **Sin red.** Todo ocurre dentro del teléfono, entre apps, a través de Android.
 
 ## Diseño de seguridad
 
@@ -49,6 +77,7 @@ Android Keystore (StrongBox o TEE) ──► envuelve la clave de capa
 ### Cero nube, cero Internet
 
 - La app no declara el permiso `INTERNET` y el manifiesto lo elimina aunque una librería lo pida.
+  El autorrelleno tampoco lo necesita: es comunicación entre apps dentro del teléfono.
   Sin ese permiso, Android no deja que la app abra ninguna conexión: no es una promesa del
   código, lo impone el sistema.
 - No hay servidores, cuentas, APIs externas, analíticas ni informes de errores. Las dependencias
@@ -64,7 +93,7 @@ Fuera del control de la app, conviene revisar en el teléfono:
 
 - **Portapapeles:** si tu teclado o HyperOS sincronizan el portapapeles con otros dispositivos o
   con la nube, desactívalo. La app marca lo copiado como sensible y lo borra, pero no puede
-  impedir que otra app lo lea mientras está copiado. El autorrelleno de la fase 2 evitará copiar.
+  impedir que otra app lo lea mientras está copiado. Con el autorrelleno no hace falta copiar.
 - **Teclado:** la contraseña maestra pasa por el teclado. Usa uno de confianza; los teclados sin
   permiso de Internet son la opción más estricta.
 
@@ -112,11 +141,14 @@ copia después de cambios importantes o de cambiar la contraseña maestra.
 
 - Kotlin 2.4 (compilado por el propio Android Gradle Plugin 9.4), Compose con Material 3, Gradle 9.7.
 - `minSdk` 33 (Android 13) · `compileSdk` y `targetSdk` 37 (Android 17).
-- Dependencias mínimas: AndroidX (Compose, Activity, Lifecycle) y Bouncy Castle, solo para Argon2id.
+- Dependencias mínimas: AndroidX (Compose, Activity, Lifecycle, Autofill) y Bouncy Castle, solo
+  para Argon2id.
 
 ```text
 app/src/main/java/io/github/jls97/boveda/
-├── core/        # Kotlin puro, con tests: crypto (Argon2id, AES-GCM), formato de la bóveda, generador
+├── core/        # Kotlin puro, con tests: crypto (Argon2id, AES-GCM), formato de la bóveda,
+│                #   generador y lógica del autorrelleno (detección de campos, emparejamiento)
+├── autofill/    # servicio de autorrelleno, sugerencia del teclado y pantalla de elegir/guardar
 ├── security/    # Android Keystore, huella, portapapeles sensible, freno de intentos
 ├── data/        # archivos en almacenamiento sin copia de seguridad, escritura atómica
 ├── session/     # estado bloqueado/desbloqueado, bloqueo automático
@@ -127,10 +159,7 @@ app/src/main/java/io/github/jls97/boveda/
 
 Todo seguirá funcionando sin Internet.
 
-- **Fase 2 – autorrelleno.** Un servicio de autorrelleno de Android detectaría los campos de
-  usuario, email y contraseña de las apps y de Chrome, y mostraría tus credenciales como
-  sugerencias en la barra del teclado. Pediría la huella antes de rellenar y ofrecería guardar las
-  credenciales nuevas. Todo ocurre dentro del teléfono, entre apps, sin red.
+- ~~Fase 2 – autorrelleno~~ (hecha).
 - **Fase 3 (opcional) – teclado propio.** Solo para apps donde el autorrelleno no funcione.
 - Otras ideas: códigos 2FA (TOTP, que se calculan sin conexión), auditoría local de contraseñas
   repetidas o débiles (sin consultar servicios de filtraciones), generador de frases, favoritos y

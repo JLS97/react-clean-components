@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.ui.components.BackButton
 import io.github.jls97.boveda.ui.components.ConfirmDialog
+import io.github.jls97.boveda.ui.components.autofillTargetLabel
 import io.github.jls97.boveda.ui.components.formatDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,6 +99,12 @@ fun EntryDetailScreen(
             }
             if (entry.notes.isNotEmpty()) {
                 DetailCard(label = "Notas", value = entry.notes)
+            }
+            if (entry.autofillTargets.isNotEmpty()) {
+                DetailCard(
+                    label = "Autorrelleno vinculado a",
+                    value = entry.autofillTargets.joinToString("\n") { autofillTargetLabel(it) },
+                )
             }
             Text(
                 "Creada: ${formatDate(entry.createdAt)}\nModificada: ${formatDate(entry.updatedAt)}",

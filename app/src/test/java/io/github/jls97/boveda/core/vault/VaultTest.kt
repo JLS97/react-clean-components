@@ -63,6 +63,23 @@ class VaultTest {
         }
     }
 
+    @Test
+    fun codecKeepsAutofillTargets() {
+        val entry = sampleData.entries[0].copy(autofillTargets = listOf("android:com.bank.app", "web:banco.es"))
+        val data = VaultData(entries = listOf(entry))
+        assertEquals(data, VaultCodec.decode(VaultCodec.encode(data)))
+    }
+
+    @Test
+    fun codecReadsPhaseOneEntriesWithoutAutofillTargets() {
+        // Phase 1 wrote 8 fields per entry. Rebuild that layout by dropping the (empty) 9th field:
+        // version(2) + settings(2 + 2 * 10) + entry count(4) puts the entry's field count at byte 28.
+        val entry = sampleData.entries[1]
+        val current = VaultCodec.encode(VaultData(entries = listOf(entry)))
+        val phaseOne = current.copyOf(current.size - 6).also { it[29] = 8 }
+        assertEquals(VaultData(entries = listOf(entry)), VaultCodec.decode(phaseOne))
+    }
+
     @Test(expected = CorruptedVaultException::class)
     fun codecRejectsTrailingData() {
         VaultCodec.decode(VaultCodec.encode(sampleData) + byteArrayOf(0))

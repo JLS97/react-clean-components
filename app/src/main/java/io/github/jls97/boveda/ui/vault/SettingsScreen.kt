@@ -1,6 +1,10 @@
 package io.github.jls97.boveda.ui.vault
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
+import android.view.autofill.AutofillManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jls97.boveda.core.vault.VaultSettings
 import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.ui.components.BackButton
@@ -64,6 +69,28 @@ fun SettingsScreen(
     var confirmRestore by remember { mutableStateOf(false) }
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
     val biometricAvailable = remember { BiometricPrompts.isStrongBiometricAvailable(context) }
+    val resumeTick by viewModel.resumeTicks.collectAsStateWithLifecycle()
+    val autofillEnabled = remember(resumeTick) {
+        context.getSystemService(AutofillManager::class.java)?.hasEnabledAutofillServices() == true
+    }
+
+    fun openAutofillSettings() {
+        if (autofillEnabled) {
+            viewModel.message(
+                "Bóveda ya es tu servicio de autorrelleno. Para cambiarlo, busca «Servicio de autocompletar» " +
+                    "en los ajustes del teléfono.",
+            )
+            return
+        }
+        viewModel.expectExternalActivity()
+        val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+            .setData(Uri.parse("package:${context.packageName}"))
+        try {
+            context.startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            viewModel.message("Actívalo en los ajustes del teléfono: busca «Servicio de autocompletar».")
+        }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(CreateLocalDocument("application/octet-stream")) { uri ->
         if (uri != null) viewModel.exportBackup(uri)
@@ -140,6 +167,30 @@ fun SettingsScreen(
                 modifier = Modifier.clickable(enabled = !viewModel.busy) { changingPassword = true },
             )
             HorizontalDivider()
+
+            SectionTitle("Autorrelleno")
+            ListItem(
+                headlineContent = { Text("Rellenar en otras apps y en Chrome") },
+                supportingContent = {
+                    Text(
+                        if (autofillEnabled) {
+                            "Activado. Al tocar un campo de usuario o contraseña aparecerá «Bóveda» en el teclado."
+                        } else {
+                            "Desactivado. Toca aquí para elegir Bóveda como servicio de autorrelleno."
+                        },
+                    )
+                },
+                trailingContent = { Switch(checked = autofillEnabled, onCheckedChange = { openAutofillSettings() }) },
+                modifier = Modifier.clickable { openAutofillSettings() },
+            )
+            Text(
+                "En Chrome, además: Ajustes → Servicios de autocompletar → «Autocompletar con otro servicio». " +
+                    "El teclado solo ve la palabra «Bóveda»: la cuenta la eliges dentro de la app, con la huella.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            HorizontalDivider(modifier = Modifier.padding(top = 16.dp))
 
             SectionTitle("Copias de seguridad")
             Text(

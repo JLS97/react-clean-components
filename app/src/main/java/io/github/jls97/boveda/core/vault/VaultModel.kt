@@ -10,6 +10,8 @@ data class VaultEntry(
     val notes: String = "",
     val createdAt: Long,
     val updatedAt: Long,
+    /** Apps (`android:<package>`) and sites (`web:<domain>`) this entry was chosen for when autofilling. */
+    val autofillTargets: List<String> = emptyList(),
 ) {
     override fun toString() = "VaultEntry(id=$id)"
 }

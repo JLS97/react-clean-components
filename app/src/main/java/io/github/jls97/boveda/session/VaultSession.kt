@@ -88,6 +88,11 @@ class VaultSession private constructor(
     private val _state = MutableStateFlow(if (storage.vaultExists()) VaultState.Locked else VaultState.NoVault)
     val state: StateFlow<VaultState> = _state.asStateFlow()
 
+    private val _resumeTicks = MutableStateFlow(0)
+
+    /** Changes every time one of Bóveda's screens comes back to the front. */
+    val resumeTicks: StateFlow<Int> = _resumeTicks.asStateFlow()
+
     private val writeMutex = Mutex()
     private var open: OpenVault? = null
     private var lockCount = 0
@@ -116,6 +121,10 @@ class VaultSession private constructor(
         val current = open ?: return
         val timeout = current.data.settings.autoLockSeconds
         if (timeout > 0 && SystemClock.elapsedRealtime() - lastInteraction >= timeout * 1_000L) lock()
+    }
+
+    fun onAppResumed() {
+        _resumeTicks.value++
     }
 
     fun onAppBackground() {

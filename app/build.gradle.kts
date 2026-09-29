@@ -51,6 +51,8 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.core)
+    // Keyboard suggestion chips (inline autofill UI template).
+    implementation(libs.androidx.autofill)
     // Argon2id (RFC 9106). Only its lightweight API is used; no JCA provider is registered.
     implementation(libs.bouncycastle.prov)
 

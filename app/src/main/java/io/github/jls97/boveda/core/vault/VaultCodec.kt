@@ -23,6 +23,7 @@ object VaultCodec {
     private const val ENTRY_NOTES = 6
     private const val ENTRY_CREATED_AT = 7
     private const val ENTRY_UPDATED_AT = 8
+    private const val ENTRY_AUTOFILL_TARGETS = 9
 
     fun encode(data: VaultData): ByteArray {
         val writer = ByteWriter(4_096)
@@ -35,7 +36,7 @@ object VaultCodec {
 
             writer.putI32(data.entries.size)
             for (entry in data.entries) {
-                writer.putU16(8)
+                writer.putU16(9)
                 writer.putStringField(ENTRY_ID, entry.id)
                 writer.putStringField(ENTRY_TITLE, entry.title)
                 writer.putStringField(ENTRY_USERNAME, entry.username)
@@ -44,6 +45,8 @@ object VaultCodec {
                 writer.putStringField(ENTRY_NOTES, entry.notes)
                 writer.putLongField(ENTRY_CREATED_AT, entry.createdAt)
                 writer.putLongField(ENTRY_UPDATED_AT, entry.updatedAt)
+                // Package names and domains never contain line breaks.
+                writer.putStringField(ENTRY_AUTOFILL_TARGETS, entry.autofillTargets.joinToString("\n"))
             }
             return writer.toByteArray()
         } finally {
@@ -76,6 +79,7 @@ object VaultCodec {
             var notes = ""
             var createdAt = 0L
             var updatedAt = 0L
+            var autofillTargets = emptyList<String>()
             reader.readFields { tag, value ->
                 when (tag) {
                     ENTRY_ID -> id = value.asString()
@@ -86,6 +90,7 @@ object VaultCodec {
                     ENTRY_NOTES -> notes = value.asString()
                     ENTRY_CREATED_AT -> createdAt = value.asLong()
                     ENTRY_UPDATED_AT -> updatedAt = value.asLong()
+                    ENTRY_AUTOFILL_TARGETS -> autofillTargets = value.asString().split('\n').filter { it.isNotEmpty() }
                 }
             }
             entries += VaultEntry(
@@ -97,6 +102,7 @@ object VaultCodec {
                 notes = notes,
                 createdAt = createdAt,
                 updatedAt = updatedAt,
+                autofillTargets = autofillTargets,
             )
         }
         if (reader.remaining != 0) throw CorruptedVaultException("Trailing data after entries")

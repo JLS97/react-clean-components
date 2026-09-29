@@ -21,6 +21,7 @@ import io.github.jls97.boveda.ui.lock.LockViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -46,6 +47,7 @@ data class EntryDraft(
     val password: String = "",
     val url: String = "",
     val notes: String = "",
+    val autofillTargets: List<String> = emptyList(),
 ) {
     override fun toString() = "EntryDraft(id=$id)"
 }
@@ -67,6 +69,8 @@ class VaultViewModel(
         private set
     var busy by mutableStateOf(false)
         private set
+
+    val resumeTicks: StateFlow<Int> = session.resumeTicks
 
     private val _messages = Channel<String>(Channel.BUFFERED)
     val messages: Flow<String> = _messages.receiveAsFlow()
@@ -118,7 +122,7 @@ class VaultViewModel(
     }
 
     fun editEntry(entry: VaultEntry) {
-        draft = EntryDraft(entry.id, entry.title, entry.username, entry.password, entry.url, entry.notes)
+        draft = EntryDraft(entry.id, entry.title, entry.username, entry.password, entry.url, entry.notes, entry.autofillTargets)
         navigate(Route.Edit(entry.id))
     }
 
@@ -139,6 +143,7 @@ class VaultViewModel(
             notes = current.notes,
             createdAt = existing?.createdAt ?: now,
             updatedAt = now,
+            autofillTargets = current.autofillTargets,
         )
         launchBusy {
             when (val result = session.saveEntry(entry)) {

@@ -38,6 +38,11 @@ class MainActivity : ComponentActivity() {
         session.onAppForeground()
     }
 
+    override fun onResume() {
+        super.onResume()
+        session.onAppResumed()
+    }
+
     override fun onStop() {
         super.onStop()
         if (!isChangingConfigurations) session.onAppBackground()

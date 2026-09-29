@@ -1,0 +1,338 @@
+package io.github.jls97.boveda.autofill
+
+import android.service.autofill.Dataset
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.jls97.boveda.core.autofill.CredentialMatcher
+import io.github.jls97.boveda.core.vault.VaultEntry
+import io.github.jls97.boveda.session.VaultSession
+import io.github.jls97.boveda.session.VaultState
+import io.github.jls97.boveda.ui.lock.LockViewModel
+import io.github.jls97.boveda.ui.lock.UnlockScreen
+
+@Composable
+internal fun AutofillApp(
+    session: VaultSession,
+    request: AutofillRequest,
+    onFilled: (Dataset) -> Unit,
+    onClose: () -> Unit,
+) {
+    val state by session.state.collectAsStateWithLifecycle()
+    when (val current = state) {
+        VaultState.NoVault -> MessageScreen(
+            title = "Todavía no hay bóveda",
+            text = "Abre Bóveda y crea tu bóveda antes de usar el autorrelleno.",
+            onClose = onClose,
+        )
+        VaultState.Locked -> UnlockScreen(viewModel { LockViewModel(session) }, allowRestore = false)
+        is VaultState.Unlocked -> {
+            val viewModel = viewModel { AutofillViewModel(session) }
+            BackHandler { onClose() }
+            when (request) {
+                is AutofillRequest.Fill -> PickEntryScreen(current.data.entries, request, viewModel, onFilled, onClose)
+                is AutofillRequest.Save -> {
+                    val pending = request.pending
+                    if (pending == null) {
+                        MessageScreen(
+                            title = "Nada que guardar",
+                            text = "Los datos que se iban a guardar ya no están disponibles. Vuelve a iniciar sesión en la app.",
+                            onClose = onClose,
+                        )
+                    } else {
+                        SaveEntryScreen(current.data.entries, pending, viewModel, onDone = onClose, onCancel = onClose)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PickEntryScreen(
+    entries: List<VaultEntry>,
+    request: AutofillRequest.Fill,
+    viewModel: AutofillViewModel,
+    onFilled: (Dataset) -> Unit,
+    onCancel: () -> Unit,
+) {
+    val context = LocalContext.current
+    val target = request.target
+    var query by remember { mutableStateOf("") }
+    var rememberChoice by remember { mutableStateOf(true) }
+    var problem by remember { mutableStateOf<String?>(null) }
+    val exact = remember(entries, target) { CredentialMatcher.exactMatches(entries, target) }
+    val suggested = remember(entries, target) { CredentialMatcher.suggestions(entries, target) }
+    val searchResults = remember(entries, query) {
+        val needle = query.trim().lowercase()
+        entries
+            .filter {
+                needle.isNotEmpty() &&
+                    (it.title.lowercase().contains(needle) || it.username.lowercase().contains(needle) || it.url.lowercase().contains(needle))
+            }
+            .sortedBy { it.title.lowercase() }
+    }
+    val others = remember(entries, exact, suggested) {
+        (entries - exact.toSet() - suggested.toSet()).sortedBy { it.title.lowercase() }
+    }
+
+    fun fill(entry: VaultEntry) {
+        viewModel.pick(entry, request, rememberChoice) { chosen ->
+            val dataset = AutofillResponses.filledDataset(
+                context,
+                request.usernameId,
+                request.passwordId,
+                chosen.username,
+                chosen.password,
+            )
+            if (dataset == null) problem = "Esa entrada no tiene usuario ni contraseña para estos campos." else onFilled(dataset)
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Rellenar con Bóveda") },
+                navigationIcon = {
+                    IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, contentDescription = "Cancelar") }
+                },
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .padding(padding)
+                .imePadding()
+                .fillMaxSize(),
+        ) {
+            item {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        if (target.host != null) "Web: ${target.label}" else "App: ${target.label}",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    if (exact.isEmpty()) {
+                        Text(
+                            "No hay ninguna entrada vinculada. Comprueba que es la app o la web que esperas " +
+                                "antes de elegir: una app falsa podría imitar a la de tu banco.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Buscar en la bóveda") },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = rememberChoice, onCheckedChange = { rememberChoice = it })
+                        Text("Recordar mi elección para ${target.label}")
+                    }
+                    (problem ?: viewModel.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            }
+            if (query.isNotBlank()) {
+                section("Resultados", searchResults, viewModel.busy, ::fill)
+                if (searchResults.isEmpty()) {
+                    item { Text("Nada coincide con «$query».", modifier = Modifier.padding(16.dp)) }
+                }
+            } else {
+                section("Vinculadas a ${target.label}", exact, viewModel.busy, ::fill)
+                section("Quizá sea una de estas", suggested, viewModel.busy, ::fill)
+                section("Todas", others, viewModel.busy, ::fill)
+                if (entries.isEmpty()) {
+                    item { Text("La bóveda está vacía.", modifier = Modifier.padding(16.dp)) }
+                }
+            }
+        }
+    }
+}
+
+private fun LazyListScope.section(
+    title: String,
+    entries: List<VaultEntry>,
+    busy: Boolean,
+    onPick: (VaultEntry) -> Unit,
+) {
+    if (entries.isEmpty()) return
+    item {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
+        )
+    }
+    items(entries, key = { "$title/${it.id}" }) { entry ->
+        ListItem(
+            headlineContent = { Text(entry.title.ifBlank { "(sin nombre)" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            supportingContent = if (entry.username.isNotEmpty()) {
+                { Text(entry.username, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            } else {
+                null
+            },
+            modifier = Modifier.clickable(enabled = !busy) { onPick(entry) },
+        )
+        HorizontalDivider()
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SaveEntryScreen(
+    entries: List<VaultEntry>,
+    pending: PendingSave,
+    viewModel: AutofillViewModel,
+    onDone: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val matches = remember(entries, pending) { CredentialMatcher.exactMatches(entries, pending.target) }
+    var title by remember { mutableStateOf(CredentialMatcher.suggestedTitle(pending.target)) }
+    var username by remember { mutableStateOf(pending.username) }
+    var replaceId by remember {
+        mutableStateOf(matches.firstOrNull { it.username.equals(pending.username, ignoreCase = true) }?.id)
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Guardar en Bóveda") },
+                navigationIcon = {
+                    IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, contentDescription = "Cancelar") }
+                },
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .imePadding()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                "Credenciales de ${pending.target.label}. La contraseña (${pending.password.length} caracteres) " +
+                    "se guardará cifrada.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (matches.isNotEmpty()) {
+                Text("¿Dónde la guardo?", style = MaterialTheme.typography.titleSmall)
+                ChoiceRow(label = "En una entrada nueva", selected = replaceId == null) { replaceId = null }
+                matches.forEach { entry ->
+                    ChoiceRow(
+                        label = "Actualizar «${entry.title}» (${entry.username.ifEmpty { "sin usuario" }})",
+                        selected = replaceId == entry.id,
+                    ) { replaceId = entry.id }
+                }
+            }
+            if (replaceId == null) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Nombre") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            OutlinedTextField(
+                value = username,
+                onValueChange = { username = it },
+                label = { Text("Usuario o email") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            viewModel.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Button(
+                onClick = { viewModel.save(pending, title, username, replaceId, onDone) },
+                enabled = !viewModel.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Guardar")
+            }
+            OutlinedButton(onClick = onCancel, enabled = !viewModel.busy, modifier = Modifier.fillMaxWidth()) {
+                Text("No guardar")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChoiceRow(label: String, selected: Boolean, onSelect: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, onClick = onSelect, role = Role.RadioButton)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Text(label, modifier = Modifier.padding(start = 12.dp))
+    }
+}
+
+@Composable
+private fun MessageScreen(title: String, text: String, onClose: () -> Unit) {
+    Scaffold { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+            Text(text)
+            Button(onClick = onClose) { Text("Cerrar") }
+        }
+    }
+}

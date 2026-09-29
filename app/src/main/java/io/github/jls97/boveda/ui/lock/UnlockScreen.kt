@@ -44,7 +44,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun UnlockScreen(viewModel: LockViewModel) {
+fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -144,9 +144,11 @@ fun UnlockScreen(viewModel: LockViewModel) {
                     }
                 }
             }
-            HorizontalDivider()
-            TextButton(onClick = { confirmRestore = true }, enabled = !ui.busy) {
-                Text("Restaurar una copia de seguridad")
+            if (allowRestore) {
+                HorizontalDivider()
+                TextButton(onClick = { confirmRestore = true }, enabled = !ui.busy) {
+                    Text("Restaurar una copia de seguridad")
+                }
             }
         }
     }

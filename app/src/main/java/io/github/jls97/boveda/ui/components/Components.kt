@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import io.github.jls97.boveda.core.autofill.CredentialMatcher
 import io.github.jls97.boveda.core.generator.PasswordStrength
 import io.github.jls97.boveda.core.generator.StrengthLevel
 import kotlinx.coroutines.Dispatchers
@@ -205,6 +206,13 @@ fun <T> ChoiceDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
     )
+}
+
+/** "Web: banco.es" or "App: com.bank.app" for a remembered autofill target. */
+fun autofillTargetLabel(key: String): String = when {
+    key.startsWith(CredentialMatcher.WEB_PREFIX) -> "Web: " + key.removePrefix(CredentialMatcher.WEB_PREFIX)
+    key.startsWith(CredentialMatcher.APP_PREFIX) -> "App: " + key.removePrefix(CredentialMatcher.APP_PREFIX)
+    else -> key
 }
 
 fun autoLockLabel(seconds: Int): String = when {
