@@ -42,7 +42,9 @@ internal object AutofillResponses {
             val dataset = Dataset.Builder(presentations(context, inlineRequest, TITLE, SUBTITLE))
             // No values yet: they arrive after authentication, from AutofillActivity.
             login.fillIds.forEach { dataset.setField(it, null) }
-            dataset.setAuthentication(AutofillActivity.fillIntentSender(context, parsed.target, login.username, login.password))
+            dataset.setAuthentication(
+                AutofillActivity.fillIntentSender(context, parsed.packageName, parsed.reportedWebDomain, login.username, login.password),
+            )
             builder.addDataset(dataset.build())
             hasContent = true
         }

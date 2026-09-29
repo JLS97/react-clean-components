@@ -48,7 +48,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
+import io.github.jls97.boveda.core.autofill.TrustedBrowsers
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
@@ -104,7 +106,9 @@ private fun PickEntryScreen(
     val context = LocalContext.current
     val target = request.target
     var query by remember { mutableStateOf("") }
-    var rememberChoice by remember { mutableStateOf(true) }
+    // Off by default: linking is a deliberate decision, never a side effect of a hurried tap.
+    var rememberChoice by remember { mutableStateOf(false) }
+    val canRemember = target.key != null
     var problem by remember { mutableStateOf<String?>(null) }
     val exact = remember(entries, target) { CredentialMatcher.exactMatches(entries, target) }
     val suggested = remember(entries, target) { CredentialMatcher.suggestions(entries, target) }
@@ -158,10 +162,9 @@ private fun PickEntryScreen(
                     )
                     if (exact.isEmpty()) {
                         Text(
-                            "No hay ninguna entrada vinculada. Comprueba que es la app o la web que esperas " +
-                                "antes de elegir: una app falsa podría imitar a la de tu banco.",
+                            fillWarning(target),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (canRemember) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                         )
                     }
                     OutlinedTextField(
@@ -173,9 +176,11 @@ private fun PickEntryScreen(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = rememberChoice, onCheckedChange = { rememberChoice = it })
-                        Text("Recordar mi elección para ${target.label}")
+                    if (canRemember) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = rememberChoice, onCheckedChange = { rememberChoice = it })
+                            Text("Vincular la entrada que elija a ${target.label}")
+                        }
                     }
                     (problem ?: viewModel.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
@@ -265,6 +270,13 @@ private fun SaveEntryScreen(
                     "se guardará cifrada.",
                 style = MaterialTheme.typography.bodyMedium,
             )
+            unlinkableReason(pending.target)?.let { reason ->
+                Text(
+                    "$reason Se guardará sin vincular: tendrás que elegirla a mano al rellenar.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             if (matches.isNotEmpty()) {
                 Text("¿Dónde la guardo?", style = MaterialTheme.typography.titleSmall)
                 ChoiceRow(label = "En una entrada nueva", selected = replaceId == null) { replaceId = null }
@@ -336,3 +348,28 @@ private fun MessageScreen(title: String, text: String, onClose: () -> Unit) {
         }
     }
 }
+
+/** Why a target can't be linked to an entry, or null if it can. */
+private fun unlinkableReason(target: AutofillTarget): String? {
+    val claimed = target.claimedWebDomain
+    val certificates = target.certificates
+    return when {
+        claimed != null && certificates != null && TrustedBrowsers.isTrusted(target.packageName, certificates) ->
+            "La dirección de esta página («$claimed») no es un dominio web normal."
+        claimed != null ->
+            "Esta app muestra una página web («$claimed») pero no es un navegador reconocido, " +
+                "así que Bóveda no se fía de esa dirección."
+        certificates == null -> "No se ha podido verificar la firma de esta app."
+        else -> null
+    }
+}
+
+/** Shown when no entry is linked to the app or site asking to be filled. */
+private fun fillWarning(target: AutofillTarget): String =
+    unlinkableReason(target)?.let { "$it Elige solo si sabes qué app es; no se podrá vincular." }
+        ?: if (target.host != null) {
+            "No hay ninguna entrada vinculada a esta web. Comprueba bien la dirección antes de elegir."
+        } else {
+            "No hay ninguna entrada vinculada a esta app. Una app falsa podría imitar a la de tu banco: " +
+                "comprueba que es la que esperas antes de elegir."
+        }

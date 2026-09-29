@@ -20,7 +20,7 @@ class BovedaAutofillService : AutofillService() {
             val structure = request.fillContexts.lastOrNull()?.structure
             val parsed = structure?.let { StructureParser.parse(it) }
             val login = parsed?.login
-            if (parsed == null || login == null || parsed.target.packageName == packageName) {
+            if (parsed == null || login == null || parsed.packageName == packageName) {
                 null
             } else {
                 AutofillResponses.fillResponse(this, request.inlineSuggestionsRequest, parsed, login)
@@ -33,21 +33,23 @@ class BovedaAutofillService : AutofillService() {
     }
 
     override fun onSaveRequest(request: SaveRequest, callback: SaveCallback) {
-        val structure = request.fillContexts.lastOrNull()?.structure
-        if (structure == null) {
-            callback.onSuccess()
-            return
+        val saveIntent = try {
+            val structure = request.fillContexts.lastOrNull()?.structure
+            val parsed = structure?.let { StructureParser.parse(it) }
+            val login = parsed?.login
+            val password = login?.let { fields ->
+                parsed.textOf(fields.password) ?: fields.newPasswords.firstNotNullOfOrNull { parsed.textOf(it) }
+            }
+            if (parsed == null || login == null || password.isNullOrEmpty() || parsed.packageName == packageName) {
+                null
+            } else {
+                val target = AppSigners.resolveTarget(this, parsed.packageName, parsed.reportedWebDomain)
+                val token = PendingSaves.put(PendingSave(target, parsed.textOf(login.username).orEmpty(), password))
+                AutofillActivity.saveIntentSender(this, token)
+            }
+        } catch (e: Exception) {
+            null
         }
-        val parsed = StructureParser.parse(structure)
-        val login = parsed.login
-        val password = login?.let { fields ->
-            parsed.textOf(fields.password) ?: fields.newPasswords.firstNotNullOfOrNull { parsed.textOf(it) }
-        }
-        if (login == null || password.isNullOrEmpty() || parsed.target.packageName == packageName) {
-            callback.onSuccess()
-            return
-        }
-        val token = PendingSaves.put(PendingSave(parsed.target, parsed.textOf(login.username).orEmpty(), password))
-        callback.onSuccess(AutofillActivity.saveIntentSender(this, token))
+        if (saveIntent == null) callback.onSuccess() else callback.onSuccess(saveIntent)
     }
 }

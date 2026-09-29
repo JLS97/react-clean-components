@@ -24,25 +24,70 @@ object Domains {
         requestHost == savedHost || requestHost.endsWith(".$savedHost")
 }
 
-/** The app, or the web site inside a browser, that asked to be filled. */
-data class AutofillTarget(val packageName: String, val webDomain: String?) {
+/**
+ * Signing certificates of an app as SHA-256 fingerprints (lowercase hex), read from Android, which
+ * verifies them: an app can't fake another app's certificate without its private key. [current]
+ * identifies the app today; [accepted] adds older certificates from a key rotation. Apps signed by
+ * several keys at once use one token with all of them sorted and joined by commas.
+ */
+data class AppCertificates(val current: String, val accepted: Set<String>)
+
+/** The app, or the web site inside a trusted browser, that asked to be filled or saved. */
+data class AutofillTarget(
+    val packageName: String,
+    /** Null when Android couldn't give the app's certificates; the app is then never linked. */
+    val certificates: AppCertificates?,
+    /** Domain reported by a trusted browser: the only web domain ever used to match entries. */
+    val webDomain: String? = null,
+    /** Domain shown by an app that isn't a trusted browser. Only displayed as a warning. */
+    val claimedWebDomain: String? = null,
+) {
     val host: String? get() = webDomain?.let { Domains.host(it) }
 
-    /** How the target is remembered in [VaultEntry.autofillTargets]. */
-    val key: String get() = host?.let { CredentialMatcher.WEB_PREFIX + it } ?: CredentialMatcher.APP_PREFIX + packageName
+    /**
+     * How the target is remembered in [VaultEntry.autofillTargets], or null when it must not be:
+     * apps whose certificates are unknown, and apps that show web pages without being a trusted
+     * browser, because a link to them would reach every page they open.
+     */
+    val key: String?
+        get() = when {
+            host != null -> CredentialMatcher.WEB_PREFIX + host
+            claimedWebDomain != null || certificates == null -> null
+            else -> CredentialMatcher.APP_PREFIX + packageName + CredentialMatcher.CERTIFICATE_SEPARATOR + certificates.current
+        }
 
     /** Short text shown to the user. */
     val label: String get() = host ?: packageName
 }
 
+object TargetResolver {
+    /**
+     * Decides what a request is about. A web domain is trusted only when a known browser with a
+     * matching certificate reports it. Any other app is identified by its package name and
+     * certificate, and a domain it reports is kept only to warn about it.
+     */
+    fun resolve(packageName: String, certificates: AppCertificates?, reportedWebDomain: String?): AutofillTarget {
+        val reported = reportedWebDomain?.trim()?.takeIf { it.isNotEmpty() }
+        val trustedBrowser = certificates != null && TrustedBrowsers.isTrusted(packageName, certificates)
+        return if (reported != null && trustedBrowser && Domains.host(reported) != null) {
+            AutofillTarget(packageName, certificates, webDomain = reported)
+        } else {
+            AutofillTarget(packageName, certificates, claimedWebDomain = reported?.take(MAX_CLAIM_LENGTH))
+        }
+    }
+
+    private const val MAX_CLAIM_LENGTH = 100
+}
+
 /**
  * Finds the entries that belong to an app or web site. Exact matches come from the entry's web
- * address or from targets remembered earlier; they are the only ones offered first, so an app
- * that merely pretends to be your bank is never matched automatically.
+ * address (for web sites in trusted browsers) or from links remembered earlier, which for apps
+ * include the signing certificate. Only exact matches are offered without a warning.
  */
 object CredentialMatcher {
     const val WEB_PREFIX = "web:"
     const val APP_PREFIX = "android:"
+    const val CERTIFICATE_SEPARATOR = "@"
 
     private val GENERIC_WORDS = setOf(
         "com", "www", "net", "org", "app", "apps", "android", "mobile", "movil", "online", "login", "the",
@@ -55,8 +100,18 @@ object CredentialMatcher {
             Domains.host(entry.url)?.let { Domains.covers(it, host) } == true ||
                 entry.autofillTargets.any { it.startsWith(WEB_PREFIX) && Domains.covers(it.removePrefix(WEB_PREFIX), host) }
         } else {
-            APP_PREFIX + target.packageName in entry.autofillTargets
+            entry.autofillTargets.any { appLinkMatches(it, target) }
         }
+    }
+
+    /** `android:<package>@<certificate>` matches when both the package and the certificate do. */
+    private fun appLinkMatches(link: String, target: AutofillTarget): Boolean {
+        if (!link.startsWith(APP_PREFIX)) return false
+        val accepted = target.certificates?.accepted ?: return false
+        val body = link.removePrefix(APP_PREFIX)
+        val packageName = body.substringBefore(CERTIFICATE_SEPARATOR)
+        val certificate = body.substringAfter(CERTIFICATE_SEPARATOR, missingDelimiterValue = "")
+        return packageName == target.packageName && certificate.isNotEmpty() && certificate in accepted
     }
 
     fun exactMatches(entries: List<VaultEntry>, target: AutofillTarget): List<VaultEntry> =
@@ -87,9 +142,14 @@ object CredentialMatcher {
                 ?.replaceFirstChar { it.uppercase() }
             ?: target.packageName
 
-    /** The entry, remembering [target] so it is an exact match next time. */
-    fun remember(entry: VaultEntry, target: AutofillTarget): VaultEntry =
-        if (isExactMatch(entry, target)) entry else entry.copy(autofillTargets = entry.autofillTargets + target.key)
+    /**
+     * The entry, remembering [target] so it is an exact match next time. Targets that must not be
+     * remembered (see [AutofillTarget.key]) leave the entry unchanged.
+     */
+    fun remember(entry: VaultEntry, target: AutofillTarget): VaultEntry {
+        val key = target.key ?: return entry
+        return if (isExactMatch(entry, target)) entry else entry.copy(autofillTargets = entry.autofillTargets + key)
+    }
 
     private fun words(title: String): List<String> =
         title.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 4 && it !in GENERIC_WORDS }

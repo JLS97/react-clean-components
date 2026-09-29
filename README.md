@@ -23,7 +23,8 @@ depende de ningún servidor ni API externa.
 
 1. En Bóveda: **Ajustes y copias → Autorrelleno** y elige Bóveda en el diálogo del sistema.
 2. En Chrome: **Ajustes → Servicios de autocompletar → Autocompletar con otro servicio**, y
-   reinicia Chrome.
+   reinicia Chrome. Para webs, usa un navegador de la lista (Chrome, Firefox, Brave…): el
+   navegador de Xiaomi (Mi Browser) no está en ella.
 3. Toca un campo de usuario o contraseña en cualquier app o web. En la barra del teclado aparece
    **Bóveda · Toca para elegir cuenta**. Si el teclado no admite sugerencias, sale debajo del campo.
 4. Al tocarla se abre Bóveda (con huella o contraseña si está bloqueada). Elige la cuenta y se
@@ -35,9 +36,19 @@ Cómo protege tus datos:
   contraseñas nunca pasan por el teclado, que es otra app.
 - **Nada sale sin que elijas.** Android solo recibe los datos de la entrada que tocas dentro de
   Bóveda, y los pone directamente en los campos de la app que los pidió.
-- **Antiphishing.** Arriba solo aparecen las entradas vinculadas a esa web (por su dominio) o a
-  esa app (por su nombre de paquete, que Android garantiza). Si una app no está vinculada, Bóveda
-  te avisa antes de elegir. Al elegir, puedes recordar la vinculación para la próxima vez.
+- **Antiphishing: webs.** Cualquier app puede decirle a Android que está mostrando `banco.es`, así
+  que Bóveda solo se cree el dominio cuando lo informa un navegador reconocido con su firma digital
+  verificada: Chrome, Firefox, Edge, Brave, Samsung Internet, Vivaldi, DuckDuckGo, Opera y los
+  demás de la lista oficial de Google (63 navegadores). Una app que muestre una web sin ser uno de
+  ellos se trata como app, con aviso.
+- **Antiphishing: apps.** Las apps se reconocen por su nombre de paquete **y su firma digital**,
+  que Android verifica. Una app falsa con el mismo nombre de paquete que la de tu banco, instalada
+  fuera de Play Store, no pasaría por la buena.
+- **Vincular es decisión tuya.** Arriba solo aparecen las entradas vinculadas a esa web o app. Si
+  no hay ninguna, Bóveda avisa antes de elegir, y la opción de vincular viene desmarcada. Las apps
+  que muestran webs sin ser un navegador reconocido, o cuya firma no se puede leer, se pueden
+  rellenar eligiendo a mano, pero nunca se vinculan: un vínculo a ellas alcanzaría cualquier
+  página que abran.
 - **Se vuelve a bloquear.** Si la bóveda estaba bloqueada, se bloquea en cuanto termina el
   relleno.
 - **Guardar.** Al enviar un formulario con credenciales nuevas, Android pregunta si guardarlas en
@@ -78,6 +89,8 @@ Android Keystore (StrongBox o TEE) ──► envuelve la clave de capa
 
 - La app no declara el permiso `INTERNET` y el manifiesto lo elimina aunque una librería lo pida.
   El autorrelleno tampoco lo necesita: es comunicación entre apps dentro del teléfono.
+- Para comprobar la firma de la app que pide rellenar, Bóveda puede ver qué apps tienes
+  instaladas (permiso `QUERY_ALL_PACKAGES`). Sin Internet, esa información no sale del teléfono.
   Sin ese permiso, Android no deja que la app abra ninguna conexión: no es una promesa del
   código, lo impone el sistema.
 - No hay servidores, cuentas, APIs externas, analíticas ni informes de errores. Las dependencias

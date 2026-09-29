@@ -65,7 +65,7 @@ class VaultTest {
 
     @Test
     fun codecKeepsAutofillTargets() {
-        val entry = sampleData.entries[0].copy(autofillTargets = listOf("android:com.bank.app", "web:banco.es"))
+        val entry = sampleData.entries[0].copy(autofillTargets = listOf("android:com.bank.app@${"b".repeat(64)}", "web:banco.es"))
         val data = VaultData(entries = listOf(entry))
         assertEquals(data, VaultCodec.decode(VaultCodec.encode(data)))
     }

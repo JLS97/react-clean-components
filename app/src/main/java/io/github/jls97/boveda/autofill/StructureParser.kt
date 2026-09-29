@@ -4,7 +4,6 @@ import android.app.assist.AssistStructure
 import android.text.InputType
 import android.view.View
 import android.view.autofill.AutofillId
-import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.DetectedField
 import io.github.jls97.boveda.core.autofill.FieldClassifier
 import io.github.jls97.boveda.core.autofill.FieldKind
@@ -15,8 +14,16 @@ import io.github.jls97.boveda.core.autofill.LoginFields
 
 internal class ParsedField(val id: AutofillId, val kind: FieldKind, val text: String?)
 
-/** The screen of another app as Bóveda sees it: who it is and which fields matter. */
-internal class ParsedStructure(val target: AutofillTarget, private val fields: List<ParsedField>) {
+/**
+ * The screen of another app as Bóveda sees it. [packageName] comes from the system and can be
+ * trusted; [reportedWebDomain] is whatever the app put in its views, so it is only believed after
+ * [AppSigners.resolveTarget] checks that the app is a verified browser.
+ */
+internal class ParsedStructure(
+    val packageName: String,
+    val reportedWebDomain: String?,
+    private val fields: List<ParsedField>,
+) {
     val login: LoginFields<AutofillId>? = FieldSelection.select(fields.map { DetectedField(it.id, it.kind) })
 
     /** Current text of a field; only present in save requests. */
@@ -45,7 +52,7 @@ internal object StructureParser {
         }
 
         for (index in 0 until structure.windowNodeCount) visit(structure.getWindowNodeAt(index).rootViewNode)
-        return ParsedStructure(AutofillTarget(structure.activityComponent.packageName, webDomain), fields)
+        return ParsedStructure(structure.activityComponent.packageName, webDomain, fields)
     }
 
     private fun signalsOf(node: AssistStructure.ViewNode): FieldSignals {

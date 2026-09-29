@@ -19,10 +19,13 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
     var error by mutableStateOf<String?>(null)
         private set
 
-    /** Fills with [entry]; with [rememberChoice], links the app or site to it first. */
+    /**
+     * Fills with [entry]. With [rememberChoice], links the app or site to it first, unless the
+     * target can't be linked safely (see AutofillTarget.key).
+     */
     fun pick(entry: VaultEntry, request: AutofillRequest.Fill, rememberChoice: Boolean, onReady: (VaultEntry) -> Unit) {
         if (busy) return
-        if (!rememberChoice || CredentialMatcher.isExactMatch(entry, request.target)) {
+        if (!rememberChoice || request.target.key == null || CredentialMatcher.isExactMatch(entry, request.target)) {
             onReady(entry)
             return
         }
@@ -61,7 +64,8 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
                     url = host.orEmpty(),
                     createdAt = now,
                     updatedAt = now,
-                    autofillTargets = if (host == null) listOf(pending.target.key) else emptyList(),
+                    // Web sites match through the url; apps through a link, if they can be linked.
+                    autofillTargets = if (host == null) listOfNotNull(pending.target.key) else emptyList(),
                 )
             }
             val result = session.saveEntry(entry)

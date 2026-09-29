@@ -51,7 +51,7 @@ class AutofillActivity : ComponentActivity() {
         wasLockedAtStart = savedInstanceState?.getBoolean(STATE_WAS_LOCKED)
             ?: (session.state.value !is VaultState.Unlocked)
         saveToken = intent.getStringExtra(EXTRA_SAVE_TOKEN)
-        val request = readRequest(intent)
+        val request = readRequest(this, intent)
         if (request == null) {
             finish()
             return
@@ -114,7 +114,7 @@ class AutofillActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_MODE = "io.github.jls97.boveda.autofill.MODE"
         private const val EXTRA_PACKAGE = "io.github.jls97.boveda.autofill.PACKAGE"
-        private const val EXTRA_WEB_DOMAIN = "io.github.jls97.boveda.autofill.WEB_DOMAIN"
+        private const val EXTRA_REPORTED_WEB_DOMAIN = "io.github.jls97.boveda.autofill.REPORTED_WEB_DOMAIN"
         private const val EXTRA_USERNAME_ID = "io.github.jls97.boveda.autofill.USERNAME_ID"
         private const val EXTRA_PASSWORD_ID = "io.github.jls97.boveda.autofill.PASSWORD_ID"
         private const val EXTRA_SAVE_TOKEN = "io.github.jls97.boveda.autofill.SAVE_TOKEN"
@@ -122,17 +122,21 @@ class AutofillActivity : ComponentActivity() {
         private const val MODE_SAVE = "save"
         private const val STATE_WAS_LOCKED = "was_locked"
 
-        /** Carries only field ids and who is asking; never a secret. */
+        /**
+         * Carries only field ids and who is asking; never a secret. Trust in the web domain is
+         * decided when the activity opens, from the app's verified signature.
+         */
         internal fun fillIntentSender(
             context: Context,
-            target: AutofillTarget,
+            packageName: String,
+            reportedWebDomain: String?,
             usernameId: AutofillId?,
             passwordId: AutofillId?,
         ): IntentSender {
             val intent = Intent(context, AutofillActivity::class.java)
                 .putExtra(EXTRA_MODE, MODE_FILL)
-                .putExtra(EXTRA_PACKAGE, target.packageName)
-                .putExtra(EXTRA_WEB_DOMAIN, target.webDomain)
+                .putExtra(EXTRA_PACKAGE, packageName)
+                .putExtra(EXTRA_REPORTED_WEB_DOMAIN, reportedWebDomain)
                 .putExtra(EXTRA_USERNAME_ID, usernameId)
                 .putExtra(EXTRA_PASSWORD_ID, passwordId)
             // Mutable because the platform adds its authentication extras to this intent
@@ -157,10 +161,10 @@ class AutofillActivity : ComponentActivity() {
             ).intentSender
         }
 
-        private fun readRequest(intent: Intent): AutofillRequest? = when (intent.getStringExtra(EXTRA_MODE)) {
+        private fun readRequest(context: Context, intent: Intent): AutofillRequest? = when (intent.getStringExtra(EXTRA_MODE)) {
             MODE_FILL -> intent.getStringExtra(EXTRA_PACKAGE)?.let { packageName ->
                 AutofillRequest.Fill(
-                    target = AutofillTarget(packageName, intent.getStringExtra(EXTRA_WEB_DOMAIN)),
+                    target = AppSigners.resolveTarget(context, packageName, intent.getStringExtra(EXTRA_REPORTED_WEB_DOMAIN)),
                     usernameId = intent.getParcelableExtra(EXTRA_USERNAME_ID, AutofillId::class.java),
                     passwordId = intent.getParcelableExtra(EXTRA_PASSWORD_ID, AutofillId::class.java),
                 )

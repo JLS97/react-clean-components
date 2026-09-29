@@ -110,47 +110,127 @@ class AutofillLogicTest {
     private fun entry(title: String, url: String = "", targets: List<String> = emptyList()) =
         VaultEntry(id = title, title = title, url = url, createdAt = 0, updatedAt = 0, autofillTargets = targets)
 
+    private val chromeCertificate = TrustedBrowsers.certificatesOf("com.android.chrome").single()
+    private val chrome = AppCertificates(current = chromeCertificate, accepted = setOf(chromeCertificate))
+    private val bankCertificate = "b".repeat(64)
+    private val bankApp = AppCertificates(current = bankCertificate, accepted = setOf(bankCertificate))
+    private val attacker = AppCertificates(current = "e".repeat(64), accepted = setOf("e".repeat(64)))
+
+    private fun web(domain: String) = TargetResolver.resolve("com.android.chrome", chrome, domain)
+
+    @Test
+    fun trustsWebDomainsOnlyFromVerifiedBrowsers() {
+        assertEquals("online.banco.es", web("online.banco.es").host)
+
+        // Any app can claim a domain, and an app that took Chrome's package name can't have its key.
+        val spoofers = listOf(
+            TargetResolver.resolve("com.evil.app", attacker, "banco.es"),
+            TargetResolver.resolve("com.android.chrome", attacker, "banco.es"),
+            TargetResolver.resolve("com.android.chrome", null, "banco.es"),
+        )
+        for (target in spoofers) {
+            assertNull(target.host)
+            assertEquals("banco.es", target.claimedWebDomain)
+            assertNull(target.key)
+        }
+
+        // A trusted browser without a domain (its own screens) is just an app.
+        val chromeItself = TargetResolver.resolve("com.android.chrome", chrome, null)
+        assertNull(chromeItself.host)
+        assertEquals("android:com.android.chrome@$chromeCertificate", chromeItself.key)
+    }
+
+    @Test
+    fun spoofedDomainsNeverMatchWebEntries() {
+        val bank = entry("Banco", url = "https://www.banco.es", targets = listOf("web:banco.es"))
+        assertTrue(CredentialMatcher.isExactMatch(bank, web("banco.es")))
+        assertFalse(CredentialMatcher.isExactMatch(bank, TargetResolver.resolve("com.evil.app", attacker, "banco.es")))
+        assertFalse(CredentialMatcher.isExactMatch(bank, TargetResolver.resolve("com.android.chrome", attacker, "banco.es")))
+    }
+
     @Test
     fun matchesWebSitesByDomain() {
         val bank = entry("Banco", url = "https://www.banco.es")
         val remembered = entry("Tienda", targets = listOf("web:tienda.com"))
-        val web = AutofillTarget(packageName = "com.android.chrome", webDomain = "online.banco.es")
 
-        assertTrue(CredentialMatcher.isExactMatch(bank, web))
-        assertFalse(CredentialMatcher.isExactMatch(bank, AutofillTarget("com.android.chrome", "otrobanco.es")))
-        assertTrue(CredentialMatcher.isExactMatch(remembered, AutofillTarget("com.android.chrome", "www.tienda.com")))
-        assertEquals(listOf(bank), CredentialMatcher.exactMatches(listOf(remembered, bank), web))
+        assertTrue(CredentialMatcher.isExactMatch(bank, web("online.banco.es")))
+        assertFalse(CredentialMatcher.isExactMatch(bank, web("otrobanco.es")))
+        assertTrue(CredentialMatcher.isExactMatch(remembered, web("www.tienda.com")))
+        assertEquals(listOf(bank), CredentialMatcher.exactMatches(listOf(remembered, bank), web("online.banco.es")))
     }
 
     @Test
-    fun matchesAppsOnlyByRememberedPackage() {
-        val target = AutofillTarget(packageName = "com.bank.app", webDomain = null)
-        val linked = entry("Banco", targets = listOf("android:com.bank.app"))
+    fun matchesAppsByPackageAndCertificate() {
+        val target = TargetResolver.resolve("com.bank.app", bankApp, null)
+        val linked = entry("Banco", targets = listOf("android:com.bank.app@$bankCertificate"))
+
         assertTrue(CredentialMatcher.isExactMatch(linked, target))
-        assertFalse(CredentialMatcher.isExactMatch(linked, AutofillTarget("com.bank.app.fake", null)))
+        // Same package name, different signer: a fake app installed in place of the real one.
+        assertFalse(CredentialMatcher.isExactMatch(linked, TargetResolver.resolve("com.bank.app", attacker, null)))
+        assertFalse(CredentialMatcher.isExactMatch(linked, TargetResolver.resolve("com.bank.app", null, null)))
+        assertFalse(CredentialMatcher.isExactMatch(linked, TargetResolver.resolve("com.bank.app.fake", bankApp, null)))
+        // Links without a certificate are never trusted.
+        assertFalse(CredentialMatcher.isExactMatch(entry("Banco", targets = listOf("android:com.bank.app")), target))
         assertFalse(CredentialMatcher.isExactMatch(entry("Banco", url = "bank.com"), target))
     }
 
     @Test
-    fun suggestsRelatedEntriesAndRemembersChoices() {
-        val instagram = entry("Instagram")
-        val bank = entry("Banco Santander")
-        val app = AutofillTarget("com.instagram.android", null)
+    fun keepsMatchingAfterALegitimateKeyRotation() {
+        val linked = entry("Banco", targets = listOf("android:com.bank.app@$bankCertificate"))
+        val rotated = AppCertificates(current = "c".repeat(64), accepted = setOf(bankCertificate, "c".repeat(64)))
+        assertTrue(CredentialMatcher.isExactMatch(linked, TargetResolver.resolve("com.bank.app", rotated, null)))
+    }
 
-        assertEquals(listOf(instagram), CredentialMatcher.suggestions(listOf(bank, instagram), app))
-        assertEquals(listOf(bank), CredentialMatcher.suggestions(listOf(bank, instagram), AutofillTarget("org.mozilla.firefox", "www.bancosantander.es")))
+    @Test
+    fun genuineAppShowingAWebPageStillMatchesItsLink() {
+        // A verified bank app whose login screen is a WebView reporting a domain.
+        val linked = entry("Banco", targets = listOf("android:com.bank.app@$bankCertificate"))
+        val target = TargetResolver.resolve("com.bank.app", bankApp, "login.banco.es")
+        assertTrue(CredentialMatcher.isExactMatch(linked, target))
+        assertNull(target.key)
+    }
+
+    @Test
+    fun remembersOnlyTrustworthyTargets() {
+        val instagram = entry("Instagram")
+        val app = TargetResolver.resolve("com.instagram.android", bankApp, null)
 
         val remembered = CredentialMatcher.remember(instagram, app)
-        assertEquals(listOf("android:com.instagram.android"), remembered.autofillTargets)
+        assertEquals(listOf("android:com.instagram.android@$bankCertificate"), remembered.autofillTargets)
         assertTrue(CredentialMatcher.isExactMatch(remembered, app))
         assertEquals(remembered, CredentialMatcher.remember(remembered, app))
-        assertEquals("web:banco.es", AutofillTarget("com.android.chrome", "www.banco.es").key)
+        assertEquals("web:banco.es", web("www.banco.es").key)
+
+        assertEquals(instagram, CredentialMatcher.remember(instagram, TargetResolver.resolve("com.evil.app", attacker, "instagram.com")))
+        assertEquals(instagram, CredentialMatcher.remember(instagram, TargetResolver.resolve("com.instagram.android", null, null)))
+    }
+
+    @Test
+    fun suggestsRelatedEntries() {
+        val instagram = entry("Instagram")
+        val bank = entry("Banco Santander")
+        assertEquals(listOf(instagram), CredentialMatcher.suggestions(listOf(bank, instagram), TargetResolver.resolve("com.instagram.android", bankApp, null)))
+        assertEquals(listOf(bank), CredentialMatcher.suggestions(listOf(bank, instagram), web("www.bancosantander.es")))
     }
 
     @Test
     fun proposesTitlesForNewEntries() {
-        assertEquals("Instagram", CredentialMatcher.suggestedTitle(AutofillTarget("com.instagram.android", null)))
-        assertEquals("Bancosantander", CredentialMatcher.suggestedTitle(AutofillTarget("es.bancosantander.apps", null)))
-        assertEquals("banco.es", CredentialMatcher.suggestedTitle(AutofillTarget("com.android.chrome", "www.banco.es")))
+        assertEquals("Instagram", CredentialMatcher.suggestedTitle(TargetResolver.resolve("com.instagram.android", bankApp, null)))
+        assertEquals("Bancosantander", CredentialMatcher.suggestedTitle(TargetResolver.resolve("es.bancosantander.apps", bankApp, null)))
+        assertEquals("banco.es", CredentialMatcher.suggestedTitle(web("www.banco.es")))
+    }
+
+    @Test
+    fun trustedBrowserTableIsWellFormed() {
+        for (packageName in listOf("com.android.chrome", "org.mozilla.firefox", "com.brave.browser", "com.sec.android.app.sbrowser")) {
+            val certificates = TrustedBrowsers.certificatesOf(packageName)
+            assertTrue(packageName, certificates.isNotEmpty())
+            assertTrue(packageName, certificates.all { it.length == 64 && it.all { c -> c in "0123456789abcdef" } })
+        }
+        assertTrue(TrustedBrowsers.certificatesOf("com.evil.app").isEmpty())
+        // A multi-signer token counts when one of its signers is the browser's key.
+        val multi = AppCertificates("$chromeCertificate,${"e".repeat(64)}", setOf("$chromeCertificate,${"e".repeat(64)}"))
+        assertTrue(TrustedBrowsers.isTrusted("com.android.chrome", multi))
+        assertFalse(TrustedBrowsers.isTrusted("com.android.chrome", attacker))
     }
 }

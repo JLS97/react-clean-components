@@ -208,10 +208,15 @@ fun <T> ChoiceDialog(
     )
 }
 
-/** "Web: banco.es" or "App: com.bank.app" for a remembered autofill target. */
+/** "Web: banco.es" or "App: com.bank.app (firma 3a5f9c01…)" for a remembered autofill target. */
 fun autofillTargetLabel(key: String): String = when {
     key.startsWith(CredentialMatcher.WEB_PREFIX) -> "Web: " + key.removePrefix(CredentialMatcher.WEB_PREFIX)
-    key.startsWith(CredentialMatcher.APP_PREFIX) -> "App: " + key.removePrefix(CredentialMatcher.APP_PREFIX)
+    key.startsWith(CredentialMatcher.APP_PREFIX) -> {
+        val body = key.removePrefix(CredentialMatcher.APP_PREFIX)
+        val packageName = body.substringBefore(CredentialMatcher.CERTIFICATE_SEPARATOR)
+        val certificate = body.substringAfter(CredentialMatcher.CERTIFICATE_SEPARATOR, missingDelimiterValue = "")
+        if (certificate.isEmpty()) "App: $packageName (sin firma, no se usa)" else "App: $packageName (firma ${certificate.take(8)}…)"
+    }
     else -> key
 }
 
