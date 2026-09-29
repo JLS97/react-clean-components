@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MiApp"
+rootProject.name = "Boveda"
 include(":app")

@@ -19,3 +19,6 @@ local.properties
 
 # OS
 .DS_Store
+
+# Encrypted vault backups must never end up in the repository
+*.bvd

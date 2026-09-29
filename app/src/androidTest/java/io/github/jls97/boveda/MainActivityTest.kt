@@ -1,4 +1,4 @@
-package io.github.jls97.miapp
+package io.github.jls97.boveda
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -15,8 +15,8 @@ class MainActivityTest {
     val composeTestRule = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun showsWelcomeMessage() {
-        val welcome = composeTestRule.activity.getString(R.string.welcome)
-        composeTestRule.onNodeWithText(welcome).assertIsDisplayed()
+    fun startsClosed() {
+        // A fresh start always shows the setup or the unlock screen, never the vault contents.
+        composeTestRule.onNodeWithText("Bóveda").assertIsDisplayed()
     }
 }

@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Placeholder launcher icon: two sparkles kept inside the 66dp adaptive-icon safe zone. -->
+<!-- Padlock inside the 66dp adaptive-icon safe zone. The keyhole is a real hole (evenOdd), so the
+     themed (monochrome) icon renders correctly too. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,31C55.8,45.6 62.4,52.2 77,54C62.4,55.8 55.8,62.4 54,77C52.2,62.4 45.6,55.8 31,54C45.6,52.2 52.2,45.6 54,31Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M44,51V43A10,10 0,0 1,64 43V51" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M70,33C70.6,37.4 72.6,39.4 77,40C72.6,40.6 70.6,42.6 70,47C69.4,42.6 67.4,40.6 63,40C67.4,39.4 69.4,37.4 70,33Z" />
+        android:fillType="evenOdd"
+        android:pathData="M42,50H66A4,4 0,0 1,70 54V71A4,4 0,0 1,66 75H42A4,4 0,0 1,38 71V54A4,4 0,0 1,42 50Z M52.5,63.16A3.5,3.5 0,1 1,55.5 63.16L56.5,68H51.5Z" />
 </vector>
