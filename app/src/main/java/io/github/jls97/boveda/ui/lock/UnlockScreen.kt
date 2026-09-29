@@ -1,7 +1,6 @@
 package io.github.jls97.boveda.ui.lock
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.ui.components.ConfirmDialog
+import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
 import io.github.jls97.boveda.ui.components.findActivity
@@ -88,7 +88,7 @@ fun UnlockScreen(viewModel: LockViewModel) {
         }
     }
 
-    val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val openBackup = rememberLauncherForActivityResult(OpenLocalDocument()) { uri ->
         if (uri != null) {
             scope.launch {
                 val bytes = readBackup(context.contentResolver, uri)

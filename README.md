@@ -2,7 +2,7 @@
 
 Gestor de contraseñas nativo para Android (Kotlin + Jetpack Compose), pensado para uso personal:
 todo se cifra y se queda en el teléfono. No tiene permiso de Internet, no usa la nube y no
-depende de ningún servidor.
+depende de ningún servidor ni API externa.
 
 > «Bóveda» y el paquete `io.github.jls97.boveda` son nombres de trabajo; se pueden cambiar.
 
@@ -46,6 +46,28 @@ Android Keystore (StrongBox o TEE) ──► envuelve la clave de capa
 - **Memoria.** Las claves se borran al bloquear. Los textos descifrados se sueltan para que el
   recolector de basura los elimine, pero la JVM no permite borrarlos de forma garantizada.
 
+### Cero nube, cero Internet
+
+- La app no declara el permiso `INTERNET` y el manifiesto lo elimina aunque una librería lo pida.
+  Sin ese permiso, Android no deja que la app abra ninguna conexión: no es una promesa del
+  código, lo impone el sistema.
+- No hay servidores, cuentas, APIs externas, analíticas ni informes de errores. Las dependencias
+  son solo AndroidX (interfaz) y Bouncy Castle (Argon2id), que funcionan sin red.
+- Las copias de seguridad solo se pueden guardar en el almacenamiento del teléfono o en un USB
+  conectado: el selector de archivos oculta Google Drive y cualquier otra nube.
+- Las copias en la nube de Android y la transferencia a un móvil nuevo están desactivadas. Aunque
+  algún sistema de copia copiara el archivo, no se podría abrir sin el chip de este teléfono.
+- Solo Android Studio usa Internet, en tu ordenador, para descargar el SDK y las librerías al
+  compilar. La app instalada no puede conectarse.
+
+Fuera del control de la app, conviene revisar en el teléfono:
+
+- **Portapapeles:** si tu teclado o HyperOS sincronizan el portapapeles con otros dispositivos o
+  con la nube, desactívalo. La app marca lo copiado como sensible y lo borra, pero no puede
+  impedir que otra app lo lea mientras está copiado. El autorrelleno de la fase 2 evitará copiar.
+- **Teclado:** la contraseña maestra pasa por el teclado. Usa uno de confianza; los teclados sin
+  permiso de Internet son la opción más estricta.
+
 ### Lo que no puede proteger
 
 - Un teléfono con root o con malware mientras la bóveda está abierta.
@@ -75,10 +97,10 @@ bóveda.
 
 ## Copias de seguridad
 
-Haz una copia en **Ajustes y copias → Exportar copia cifrada** y guárdala fuera del teléfono,
-por ejemplo en un USB. Si pierdes el móvil, esa copia y tu contraseña maestra son la única forma
-de recuperar los datos. Repite la copia después de cambios importantes o de cambiar la
-contraseña maestra.
+Haz una copia en **Ajustes y copias → Exportar copia cifrada**. Se guarda en el teléfono o en un
+USB conectado (nunca en la nube). Después pásala a un USB o a un ordenador, por cable. Si pierdes
+el móvil, esa copia y tu contraseña maestra son la única forma de recuperar los datos. Repite la
+copia después de cambios importantes o de cambiar la contraseña maestra.
 
 ## Desarrollo
 
@@ -103,13 +125,16 @@ app/src/main/java/io/github/jls97/boveda/
 
 ## Hoja de ruta
 
+Todo seguirá funcionando sin Internet.
+
 - **Fase 2 – autorrelleno.** Un servicio de autorrelleno de Android detectaría los campos de
   usuario, email y contraseña de las apps y de Chrome, y mostraría tus credenciales como
-  sugerencias en la barra del teclado (Gboard). Pediría la huella antes de rellenar y ofrecería
-  guardar las credenciales nuevas.
+  sugerencias en la barra del teclado. Pediría la huella antes de rellenar y ofrecería guardar las
+  credenciales nuevas. Todo ocurre dentro del teléfono, entre apps, sin red.
 - **Fase 3 (opcional) – teclado propio.** Solo para apps donde el autorrelleno no funcione.
-- Otras ideas: códigos 2FA (TOTP), auditoría de contraseñas repetidas o débiles, generador de
-  frases, favoritos y categorías.
+- Otras ideas: códigos 2FA (TOTP, que se calculan sin conexión), auditoría local de contraseñas
+  repetidas o débiles (sin consultar servicios de filtraciones), generador de frases, favoritos y
+  categorías.
 
 ## Licencia
 

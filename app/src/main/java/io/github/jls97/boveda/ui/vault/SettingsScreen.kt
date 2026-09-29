@@ -2,7 +2,6 @@ package io.github.jls97.boveda.ui.vault
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,6 +36,8 @@ import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.ui.components.BackButton
 import io.github.jls97.boveda.ui.components.ChoiceDialog
 import io.github.jls97.boveda.ui.components.ConfirmDialog
+import io.github.jls97.boveda.ui.components.CreateLocalDocument
+import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
 import io.github.jls97.boveda.ui.components.StrengthMeter
@@ -64,10 +65,10 @@ fun SettingsScreen(
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
     val biometricAvailable = remember { BiometricPrompts.isStrongBiometricAvailable(context) }
 
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+    val exportLauncher = rememberLauncherForActivityResult(CreateLocalDocument("application/octet-stream")) { uri ->
         if (uri != null) viewModel.exportBackup(uri)
     }
-    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val restoreLauncher = rememberLauncherForActivityResult(OpenLocalDocument()) { uri ->
         restoreUri = uri
     }
 
@@ -142,9 +143,10 @@ fun SettingsScreen(
 
             SectionTitle("Copias de seguridad")
             Text(
-                "La copia es un archivo cifrado con tu contraseña maestra actual. Guárdala fuera del " +
-                    "teléfono (un USB o un ordenador): si pierdes el móvil, es la única forma de recuperar " +
-                    "tus $entryCount entradas.",
+                "La copia es un archivo cifrado con tu contraseña maestra actual. Solo se puede guardar en " +
+                    "el almacenamiento del teléfono o en un USB conectado, nunca en la nube. Pásala después " +
+                    "a un USB o a un ordenador: si pierdes el móvil, es la única forma de recuperar tus " +
+                    "$entryCount entradas.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -166,10 +168,11 @@ fun SettingsScreen(
 
             SectionTitle("Privacidad")
             Text(
-                "• Sin permiso de Internet: la app no puede enviar nada fuera del teléfono.\n" +
+                "• Sin permiso de Internet: Android no deja que la app abra ninguna conexión.\n" +
                     "• Cifrado AES-256-GCM con clave derivada por Argon2id (64 MiB, 3 pasadas).\n" +
                     "• Capa extra ligada al chip de seguridad del teléfono (Android Keystore).\n" +
-                    "• Sin capturas de pantalla, sin copias en la nube y sin autorrelleno de terceros.",
+                    "• Sin capturas de pantalla, sin copias en la nube y sin autorrelleno de terceros.\n" +
+                    "• Consejo: desactiva la sincronización del portapapeles del teclado y de HyperOS.",
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(16.dp),
             )
