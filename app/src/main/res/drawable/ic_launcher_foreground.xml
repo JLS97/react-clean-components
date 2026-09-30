@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Padlock inside the 66dp adaptive-icon safe zone. The keyhole is a real hole (evenOdd), so the
+     themed (monochrome) icon renders correctly too. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M44,51V43A10,10 0,0 1,64 43V51" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M42,50H66A4,4 0,0 1,70 54V71A4,4 0,0 1,66 75H42A4,4 0,0 1,38 71V54A4,4 0,0 1,42 50Z M52.5,63.16A3.5,3.5 0,1 1,55.5 63.16L56.5,68H51.5Z" />
+</vector>
