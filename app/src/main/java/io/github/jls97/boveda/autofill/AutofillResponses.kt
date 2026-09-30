@@ -1,5 +1,6 @@
 package io.github.jls97.boveda.autofill
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -112,7 +113,13 @@ internal object AutofillResponses {
             setTextViewText(R.id.autofill_subtitle, subtitle)
         }
 
-    /** Chip in the keyboard's suggestion strip (Gboard and other keyboards that support it). */
+    /**
+     * Chip in the keyboard's suggestion strip (Gboard and other keyboards that support it).
+     *
+     * `getSlice()` is marked as restricted to the androidx.autofill library, yet it is how the
+     * library's own documentation builds an InlinePresentation, and there is no public alternative.
+     */
+    @SuppressLint("RestrictedApi")
     private fun inlinePresentation(
         context: Context,
         inlineRequest: InlineSuggestionsRequest?,

@@ -40,6 +40,14 @@ android {
     buildFeatures {
         compose = true
     }
+
+    packaging {
+        dex {
+            // Compress the code inside the APK. The APK is shared through a chat with a 30 MB limit,
+            // and compressed DEX roughly halves its size at a small cost when installing.
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {

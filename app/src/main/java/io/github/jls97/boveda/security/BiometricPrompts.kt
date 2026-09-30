@@ -44,9 +44,9 @@ object BiometricPrompts {
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    // "Usar contraseña" goes to the negative button listener, not here.
                     val cancelled = errorCode == BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED ||
-                        errorCode == BiometricPrompt.BIOMETRIC_ERROR_CANCELED ||
-                        errorCode == BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON
+                        errorCode == BiometricPrompt.BIOMETRIC_ERROR_CANCELED
                     onResult(null, if (cancelled) null else errString.toString())
                 }
             },
