@@ -47,6 +47,7 @@ fun EntryDetailScreen(
     onDelete: () -> Unit,
     onCopy: (label: String, value: String) -> Unit,
     snackbar: SnackbarHostState,
+    otpSection: @Composable () -> Unit = {},
 ) {
     var revealPassword by remember(entry.id) { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -92,6 +93,7 @@ fun EntryDetailScreen(
                     TextButton(onClick = { onCopy("Contraseña", entry.password) }) { Text("Copiar") }
                 }
             }
+            otpSection()
             if (entry.url.isNotEmpty()) {
                 DetailCard(label = "Web o app", value = entry.url) {
                     TextButton(onClick = { onCopy("Dirección", entry.url) }) { Text("Copiar") }
@@ -117,7 +119,8 @@ fun EntryDetailScreen(
     if (confirmDelete) {
         ConfirmDialog(
             title = "¿Eliminar entrada?",
-            text = "Se borrará «${entry.title}» de la bóveda. No se puede deshacer.",
+            text = "Se borrará «${entry.title}» de la bóveda" +
+                (if (entry.otp != null) ", con su código 2FA" else "") + ". No se puede deshacer.",
             confirmLabel = "Eliminar",
             onConfirm = {
                 confirmDelete = false

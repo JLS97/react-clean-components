@@ -95,3 +95,61 @@ internal class ByteReader(private val data: ByteArray) {
         return data.copyOfRange(offset, offset + count).also { offset += count }
     }
 }
+
+/** Most fields a record may declare. Anything above is a corrupted or hostile file. */
+internal const val MAX_FIELDS = 1_024
+
+/** Writes one tagged field: `tag u16, length u32, value`. Every record of the vault is a list of them. */
+internal fun ByteWriter.putBytesField(tag: Int, value: ByteArray) {
+    putU16(tag)
+    putI32(value.size)
+    putBytes(value)
+}
+
+internal fun ByteWriter.putStringField(tag: Int, value: String) {
+    val encoded = value.toByteArray(Charsets.UTF_8)
+    try {
+        putBytesField(tag, encoded)
+    } finally {
+        encoded.wipe()
+    }
+}
+
+internal fun ByteWriter.putIntField(tag: Int, value: Int) {
+    putU16(tag)
+    putI32(4)
+    putI32(value)
+}
+
+internal fun ByteWriter.putLongField(tag: Int, value: Long) {
+    putU16(tag)
+    putI32(8)
+    putI64(value)
+}
+
+/** Reads one record and hands every field to [onField]. The value buffer is wiped afterwards. */
+internal inline fun ByteReader.readFields(onField: (tag: Int, value: ByteArray) -> Unit) {
+    val fieldCount = readU16()
+    if (fieldCount > MAX_FIELDS) throw CorruptedVaultException("Too many fields")
+    repeat(fieldCount) {
+        val tag = readU16()
+        val value = readBytes(readI32())
+        try {
+            onField(tag, value)
+        } finally {
+            value.wipe()
+        }
+    }
+}
+
+internal fun ByteArray.asString(): String = toString(Charsets.UTF_8)
+
+internal fun ByteArray.asInt(): Int {
+    if (size != 4) throw CorruptedVaultException("Invalid int field")
+    return ByteReader(this).readI32()
+}
+
+internal fun ByteArray.asLong(): Long {
+    if (size != 8) throw CorruptedVaultException("Invalid long field")
+    return ByteReader(this).readI64()
+}

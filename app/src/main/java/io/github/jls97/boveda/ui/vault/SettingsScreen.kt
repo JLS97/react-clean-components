@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jls97.boveda.core.vault.VaultSettings
 import io.github.jls97.boveda.security.BiometricPrompts
+import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.ui.components.BackButton
 import io.github.jls97.boveda.ui.components.ChoiceDialog
 import io.github.jls97.boveda.ui.components.ConfirmDialog
@@ -59,6 +60,10 @@ fun SettingsScreen(
     settings: VaultSettings,
     biometricEnabled: Boolean,
     entryCount: Int,
+    otpAccess: OtpAccess,
+    otpCount: Int,
+    onRecoverOtp: () -> Unit,
+    onNewRecoveryCode: () -> Unit,
     viewModel: VaultViewModel,
     snackbar: SnackbarHostState,
 ) {
@@ -192,12 +197,51 @@ fun SettingsScreen(
             )
             HorizontalDivider(modifier = Modifier.padding(top = 16.dp))
 
+            SectionTitle("Códigos 2FA")
+            ListItem(
+                headlineContent = {
+                    Text(
+                        when (otpAccess) {
+                            OtpAccess.NONE -> "Todavía no hay ninguno"
+                            OtpAccess.READY -> if (otpCount == 1) "1 código" else "$otpCount códigos"
+                            OtpAccess.LOCKED -> "Bloqueados en este móvil"
+                        },
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        when (otpAccess) {
+                            OtpAccess.NONE -> "Se añaden desde cada entrada. Cada código se abrirá solo con tu huella."
+                            OtpAccess.READY -> "Cada uno se abre solo con tu huella, aunque la bóveda esté desbloqueada."
+                            OtpAccess.LOCKED ->
+                                "Este móvil no tiene la llave de huella que los abre (copia restaurada o huellas " +
+                                    "cambiadas). Recupéralos con tu código de recuperación."
+                        },
+                    )
+                },
+            )
+            if (otpAccess == OtpAccess.LOCKED) {
+                ListItem(
+                    headlineContent = { Text("Recuperar con el código de recuperación") },
+                    modifier = Modifier.clickable(enabled = !viewModel.busy) { onRecoverOtp() },
+                )
+            }
+            if (otpAccess == OtpAccess.READY) {
+                ListItem(
+                    headlineContent = { Text("Nuevo código de recuperación") },
+                    supportingContent = { Text("Si has perdido el papel donde lo apuntaste o alguien lo ha visto.") },
+                    modifier = Modifier.clickable(enabled = !viewModel.busy) { onNewRecoveryCode() },
+                )
+            }
+            HorizontalDivider()
+
             SectionTitle("Copias de seguridad")
             Text(
                 "La copia es un archivo cifrado con tu contraseña maestra actual. Solo se puede guardar en " +
                     "el almacenamiento del teléfono o en un USB conectado, nunca en la nube. Pásala después " +
                     "a un USB o a un ordenador: si pierdes el móvil, es la única forma de recuperar tus " +
-                    "$entryCount entradas.",
+                    "$entryCount entradas. Los códigos 2FA van dentro, cifrados: para abrirlos en otro móvil " +
+                    "hará falta también tu código de recuperación.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp),

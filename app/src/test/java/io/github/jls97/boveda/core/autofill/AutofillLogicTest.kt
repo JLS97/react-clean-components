@@ -24,7 +24,7 @@ class AutofillLogicTest {
         assertEquals(FieldKind.NEW_PASSWORD, kind(hints = listOf("newPassword"), input = InputKind.PASSWORD))
         assertEquals(FieldKind.USERNAME, kind(hints = listOf("emailAddress")))
         assertEquals(FieldKind.USERNAME, kind(hints = listOf("username"), input = InputKind.TEXT))
-        assertEquals(FieldKind.IGNORED, kind(hints = listOf("smsOTPCode"), input = InputKind.TEXT))
+        assertEquals(FieldKind.OTP, kind(hints = listOf("smsOTPCode"), input = InputKind.TEXT))
         // "off" says nothing, so the keyboard type decides.
         assertEquals(FieldKind.PASSWORD, kind(hints = listOf("off"), input = InputKind.PASSWORD))
     }
@@ -63,6 +63,37 @@ class AutofillLogicTest {
         assertEquals(FieldKind.OTHER_TEXT, kind(input = InputKind.TEXT, texts = listOf("Nombre")))
         assertEquals(FieldKind.OTHER_TEXT, kind(input = InputKind.TEXT, texts = listOf("Shipping address")))
         assertEquals(FieldKind.IGNORED, kind(input = InputKind.OTHER))
+    }
+
+    @Test
+    fun recognizes2faCodeFields() {
+        assertEquals(FieldKind.OTP, kind(hints = listOf("2faAppOTPCode")))
+        assertEquals(FieldKind.OTP, kind(hints = listOf("one-time-code"), input = InputKind.TEXT))
+        assertEquals(FieldKind.OTP, kind(tag = "input", attributes = mapOf("type" to "text", "autocomplete" to "one-time-code")))
+        assertEquals(FieldKind.OTP, kind(tag = "input", attributes = mapOf("type" to "tel", "name" to "totpPin")))
+        assertEquals(FieldKind.OTP, kind(input = InputKind.OTHER, texts = listOf("Código de verificación")))
+        assertEquals(FieldKind.OTP, kind(input = InputKind.TEXT, texts = listOf("otp_input")))
+        assertEquals(FieldKind.OTP, kind(input = InputKind.TEXT, texts = listOf("Introduce el código de tu app de autenticador")))
+        assertEquals(FieldKind.OTP, kind(input = InputKind.PASSWORD, texts = listOf("One-time password")))
+        assertEquals(FieldKind.OTP, kind(input = InputKind.OTHER, texts = listOf("mfaCode")))
+        // Look-alikes that are not 2FA codes.
+        assertEquals(FieldKind.OTHER_TEXT, kind(input = InputKind.TEXT, texts = listOf("Código postal")))
+        assertEquals(FieldKind.PASSWORD, kind(input = InputKind.TEXT, texts = listOf("PIN")))
+        assertEquals(FieldKind.IGNORED, kind(input = InputKind.OTHER, texts = listOf("One-time donation")))
+    }
+
+    @Test
+    fun selects2faCodeFields() {
+        fun f(id: String, kind: FieldKind) = DetectedField(id, kind)
+
+        // A second-step screen with only the code.
+        assertEquals(LoginFields(null, null, emptyList(), otp = "code"), FieldSelection.select(listOf(f("code", FieldKind.OTP))))
+        // The code field is never mistaken for the username.
+        assertEquals(
+            LoginFields("user", "pass", emptyList(), otp = "code"),
+            FieldSelection.select(listOf(f("user", FieldKind.OTHER_TEXT), f("pass", FieldKind.PASSWORD), f("code", FieldKind.OTP))),
+        )
+        assertEquals(listOf("user", "pass"), LoginFields("user", "pass", emptyList(), otp = "code").fillIds)
     }
 
     @Test

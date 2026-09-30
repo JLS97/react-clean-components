@@ -24,6 +24,8 @@ import io.github.jls97.boveda.ui.theme.BovedaTheme
 internal sealed interface AutofillRequest {
     data class Fill(val target: AutofillTarget, val usernameId: AutofillId?, val passwordId: AutofillId?) : AutofillRequest
 
+    data class FillOtp(val target: AutofillTarget, val otpId: AutofillId) : AutofillRequest
+
     data class Save(val pending: PendingSave?) : AutofillRequest
 }
 
@@ -117,9 +119,11 @@ class AutofillActivity : ComponentActivity() {
         private const val EXTRA_REPORTED_WEB_DOMAIN = "io.github.jls97.boveda.autofill.REPORTED_WEB_DOMAIN"
         private const val EXTRA_USERNAME_ID = "io.github.jls97.boveda.autofill.USERNAME_ID"
         private const val EXTRA_PASSWORD_ID = "io.github.jls97.boveda.autofill.PASSWORD_ID"
+        private const val EXTRA_OTP_ID = "io.github.jls97.boveda.autofill.OTP_ID"
         private const val EXTRA_SAVE_TOKEN = "io.github.jls97.boveda.autofill.SAVE_TOKEN"
         private const val MODE_FILL = "fill"
         private const val MODE_SAVE = "save"
+        private const val MODE_OTP = "otp"
         private const val STATE_WAS_LOCKED = "was_locked"
 
         /**
@@ -149,6 +153,27 @@ class AutofillActivity : ComponentActivity() {
             ).intentSender
         }
 
+        /** Like [fillIntentSender], for the field of a 2FA code. */
+        internal fun otpIntentSender(
+            context: Context,
+            packageName: String,
+            reportedWebDomain: String?,
+            otpId: AutofillId,
+        ): IntentSender {
+            val intent = Intent(context, AutofillActivity::class.java)
+                .putExtra(EXTRA_MODE, MODE_OTP)
+                .putExtra(EXTRA_PACKAGE, packageName)
+                .putExtra(EXTRA_REPORTED_WEB_DOMAIN, reportedWebDomain)
+                .putExtra(EXTRA_OTP_ID, otpId)
+            // Mutable for the same reason as the fill intent.
+            return PendingIntent.getActivity(
+                context,
+                secureRandom.nextInt(),
+                intent,
+                PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            ).intentSender
+        }
+
         internal fun saveIntentSender(context: Context, token: String): IntentSender {
             val intent = Intent(context, AutofillActivity::class.java)
                 .putExtra(EXTRA_MODE, MODE_SAVE)
@@ -168,6 +193,18 @@ class AutofillActivity : ComponentActivity() {
                     usernameId = intent.getParcelableExtra(EXTRA_USERNAME_ID, AutofillId::class.java),
                     passwordId = intent.getParcelableExtra(EXTRA_PASSWORD_ID, AutofillId::class.java),
                 )
+            }
+            MODE_OTP -> {
+                val packageName = intent.getStringExtra(EXTRA_PACKAGE)
+                val otpId = intent.getParcelableExtra(EXTRA_OTP_ID, AutofillId::class.java)
+                if (packageName == null || otpId == null) {
+                    null
+                } else {
+                    AutofillRequest.FillOtp(
+                        target = AppSigners.resolveTarget(context, packageName, intent.getStringExtra(EXTRA_REPORTED_WEB_DOMAIN)),
+                        otpId = otpId,
+                    )
+                }
             }
             MODE_SAVE -> AutofillRequest.Save(intent.getStringExtra(EXTRA_SAVE_TOKEN)?.let { PendingSaves.get(it) })
             else -> null

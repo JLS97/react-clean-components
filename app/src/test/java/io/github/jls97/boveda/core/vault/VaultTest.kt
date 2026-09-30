@@ -2,6 +2,10 @@ package io.github.jls97.boveda.core.vault
 
 import io.github.jls97.boveda.core.crypto.KdfParams
 import io.github.jls97.boveda.core.crypto.randomBytes
+import io.github.jls97.boveda.core.otp.OtpCrypto
+import io.github.jls97.boveda.core.otp.OtpParams
+import io.github.jls97.boveda.core.otp.OtpSecret
+import io.github.jls97.boveda.core.otp.RecoveryCode
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -78,6 +82,34 @@ class VaultTest {
         val current = VaultCodec.encode(VaultData(entries = listOf(entry)))
         val phaseOne = current.copyOf(current.size - 6).also { it[29] = 8 }
         assertEquals(VaultData(entries = listOf(entry)), VaultCodec.decode(phaseOne))
+    }
+
+    @Test
+    fun codecKeepsTheOtpKeyringAndSealedSecrets() {
+        val otpKey = OtpCrypto.newKey()
+        val keyringId = OtpCrypto.newKeyringId()
+        val keyring = OtpCrypto.createKeyring(otpKey, keyringId, RecoveryCode.generate(), testParams)
+        val secret = OtpSecret(randomBytes(20), OtpParams(), "ACME", "yo@example.com")
+        val entry = sampleData.entries[0].let { it.copy(otp = OtpCrypto.seal(otpKey, keyringId, it.id, secret)) }
+        val data = sampleData.copy(entries = listOf(entry, sampleData.entries[1]), otpKeyring = keyring)
+
+        val decoded = VaultCodec.decode(VaultCodec.encode(data))
+        assertEquals(data, decoded)
+        assertEquals(secret, OtpCrypto.open(otpKey, keyringId, entry.id, decoded.entries[0].otp!!))
+    }
+
+    @Test
+    fun codecWritesTheSameBytesWhenNo2faIsUsed() {
+        // Vaults without 2FA keep the phase 1 and 2 layout: 2 settings fields and 9 per entry.
+        val encoded = VaultCodec.encode(VaultData(entries = listOf(sampleData.entries[1])))
+        assertEquals(2, encoded[3].toInt())
+        assertEquals(9, encoded[29].toInt())
+    }
+
+    @Test(expected = CorruptedVaultException::class)
+    fun codecRejectsADamagedOtpKeyring() {
+        val keyring = OtpKeyring(ByteArray(15), testParams, randomBytes(32), randomBytes(OtpKeyring.KEY_SIZE + 28))
+        VaultCodec.decode(VaultCodec.encode(VaultData(otpKeyring = keyring)))
     }
 
     @Test(expected = CorruptedVaultException::class)

@@ -165,6 +165,11 @@ fun EntryListScreen(
                                 null
                             },
                             leadingContent = { InitialAvatar(entry.title) },
+                            trailingContent = if (entry.otp != null) {
+                                { Text("2FA", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
+                            } else {
+                                null
+                            },
                             modifier = Modifier.clickable { onOpen(entry) },
                         )
                         HorizontalDivider()

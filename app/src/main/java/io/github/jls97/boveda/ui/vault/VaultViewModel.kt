@@ -18,6 +18,7 @@ import io.github.jls97.boveda.session.VaultState
 import io.github.jls97.boveda.ui.components.readBackup
 import io.github.jls97.boveda.ui.components.writeBackup
 import io.github.jls97.boveda.ui.lock.LockViewModel
+import io.github.jls97.boveda.ui.otp.RecoveryCodePurpose
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -37,6 +38,14 @@ sealed interface Route {
     data class Generator(val forEditor: Boolean) : Route
 
     data object Settings : Route
+
+    data class OtpAdd(val entryId: String) : Route
+
+    data object OtpScan : Route
+
+    data class OtpRecoveryCode(val purpose: RecoveryCodePurpose) : Route
+
+    data object OtpRecover : Route
 }
 
 /** What the edit form holds. `toString` hides the values. */
@@ -112,6 +121,11 @@ class VaultViewModel(
         backStack.add(Route.EntryList)
     }
 
+    /** Goes back until the current screen matches [predicate], or to the first screen. */
+    fun popTo(predicate: (Route) -> Boolean) {
+        while (backStack.size > 1 && !predicate(backStack.last())) backStack.removeAt(backStack.lastIndex)
+    }
+
     // endregion
 
     // region Entries
@@ -144,6 +158,8 @@ class VaultViewModel(
             createdAt = existing?.createdAt ?: now,
             updatedAt = now,
             autofillTargets = current.autofillTargets,
+            // The 2FA secret is edited from its own screens and never goes through the form.
+            otp = existing?.otp,
         )
         launchBusy {
             when (val result = session.saveEntry(entry)) {

@@ -22,13 +22,15 @@ import io.github.jls97.boveda.R
 import io.github.jls97.boveda.core.autofill.LoginFields
 
 /**
- * Builds what Bóveda answers to the system. The answer never contains secrets: it is a single
- * "Bóveda" suggestion that opens [AutofillActivity], where the user unlocks and picks an entry.
- * Only that choice travels back, straight into the fields of the other app.
+ * Builds what Bóveda answers to the system. The answer never contains secrets: it is a "Bóveda"
+ * suggestion that opens [AutofillActivity], where the user unlocks and picks an entry (and, for a
+ * 2FA code, confirms with a fingerprint). Only that choice travels back, straight into the fields
+ * of the other app.
  */
 internal object AutofillResponses {
     private const val TITLE = "Bóveda"
     private const val SUBTITLE = "Toca para elegir cuenta"
+    private const val OTP_SUBTITLE = "Toca para rellenar el código 2FA"
 
     fun fillResponse(
         context: Context,
@@ -45,6 +47,17 @@ internal object AutofillResponses {
             login.fillIds.forEach { dataset.setField(it, null) }
             dataset.setAuthentication(
                 AutofillActivity.fillIntentSender(context, parsed.packageName, parsed.reportedWebDomain, login.username, login.password),
+            )
+            builder.addDataset(dataset.build())
+            hasContent = true
+        }
+
+        login.otp?.let { otpId ->
+            // Shown only while the code field has the focus.
+            val dataset = Dataset.Builder(presentations(context, inlineRequest, TITLE, OTP_SUBTITLE))
+            dataset.setField(otpId, null)
+            dataset.setAuthentication(
+                AutofillActivity.otpIntentSender(context, parsed.packageName, parsed.reportedWebDomain, otpId),
             )
             builder.addDataset(dataset.build())
             hasContent = true
@@ -79,6 +92,14 @@ internal object AutofillResponses {
         }
         return if (fieldCount > 0) dataset.build() else null
     }
+
+    /** The dataset returned after the fingerprint: just the current 2FA code. */
+    fun filledOtpDataset(context: Context, otpId: AutofillId, code: String): Dataset =
+        Dataset.Builder(
+            Presentations.Builder().setMenuPresentation(menuPresentation(context, TITLE, "Código 2FA")).build(),
+        )
+            .setField(otpId, Field.Builder().setValue(AutofillValue.forText(code)).build())
+            .build()
 
     /** Asks Android to offer "Save to Bóveda" when a login or sign-up form is submitted. */
     private fun saveInfo(login: LoginFields<AutofillId>): SaveInfo? {

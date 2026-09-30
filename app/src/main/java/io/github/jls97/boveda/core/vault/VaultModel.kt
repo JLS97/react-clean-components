@@ -1,5 +1,7 @@
 package io.github.jls97.boveda.core.vault
 
+import io.github.jls97.boveda.core.crypto.KdfParams
+
 /** One saved login. `toString` never includes secrets, so an entry can't leak through logs. */
 data class VaultEntry(
     val id: String,
@@ -12,6 +14,8 @@ data class VaultEntry(
     val updatedAt: Long,
     /** Apps (`android:<package>`) and sites (`web:<domain>`) this entry was chosen for when autofilling. */
     val autofillTargets: List<String> = emptyList(),
+    /** 2FA secret, sealed under the 2FA key: only a fingerprint (or the recovery code) opens it. */
+    val otp: SealedOtp? = null,
 ) {
     override fun toString() = "VaultEntry(id=$id)"
 }
@@ -33,8 +37,57 @@ data class VaultSettings(
 data class VaultData(
     val settings: VaultSettings = VaultSettings(),
     val entries: List<VaultEntry> = emptyList(),
+    /** Present once the first 2FA code has been saved. */
+    val otpKeyring: OtpKeyring? = null,
 ) {
     override fun toString() = "VaultData(entries=${entries.size})"
+}
+
+/**
+ * The 2FA secret of one entry, encrypted with the 2FA key (see `core.otp.OtpCrypto`). Opening the
+ * vault is not enough to read it.
+ */
+class SealedOtp(bytes: ByteArray) {
+    private val data = bytes.copyOf()
+
+    val bytes: ByteArray get() = data.copyOf()
+
+    override fun equals(other: Any?) = other is SealedOtp && data.contentEquals(other.data)
+
+    override fun hashCode() = data.contentHashCode()
+
+    override fun toString() = "SealedOtp"
+}
+
+/**
+ * The 2FA key wrapped with a key derived from the recovery code. It travels inside the vault, and
+ * so inside every backup, which is how the codes are recovered on another phone. Day to day the
+ * phone uses its own copy of the 2FA key, wrapped by a Keystore key that needs a fingerprint.
+ */
+class OtpKeyring(id: ByteArray, val kdfParams: KdfParams, salt: ByteArray, wrappedKey: ByteArray) {
+    private val idBytes = id.copyOf()
+    private val saltBytes = salt.copyOf()
+    private val wrappedKeyBytes = wrappedKey.copyOf()
+
+    /** Random identifier that ties this phone's copy of the 2FA key to this keyring. */
+    val id: ByteArray get() = idBytes.copyOf()
+    val salt: ByteArray get() = saltBytes.copyOf()
+    val wrappedKey: ByteArray get() = wrappedKeyBytes.copyOf()
+
+    override fun equals(other: Any?) = other is OtpKeyring &&
+        idBytes.contentEquals(other.idBytes) &&
+        kdfParams == other.kdfParams &&
+        saltBytes.contentEquals(other.saltBytes) &&
+        wrappedKeyBytes.contentEquals(other.wrappedKeyBytes)
+
+    override fun hashCode() = idBytes.contentHashCode()
+
+    override fun toString() = "OtpKeyring"
+
+    companion object {
+        const val ID_SIZE = 16
+        const val KEY_SIZE = 32
+    }
 }
 
 open class VaultException(message: String, cause: Throwable? = null) : Exception(message, cause)
