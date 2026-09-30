@@ -23,6 +23,7 @@ object BiometricPrompts {
         title: String,
         subtitle: String,
         cipher: Cipher,
+        negativeLabel: String = "Usar contraseña",
         onResult: (cipher: Cipher?, error: String?) -> Unit,
     ): CancellationSignal {
         val executor = activity.mainExecutor
@@ -31,7 +32,7 @@ object BiometricPrompts {
             .setTitle(title)
             .setSubtitle(subtitle)
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-            .setNegativeButton("Usar contraseña", executor) { _, _ -> onResult(null, null) }
+            .setNegativeButton(negativeLabel, executor) { _, _ -> onResult(null, null) }
             .build()
         prompt.authenticate(
             BiometricPrompt.CryptoObject(cipher),
@@ -44,7 +45,7 @@ object BiometricPrompts {
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    // "Usar contraseña" goes to the negative button listener, not here.
+                    // The negative button ("Usar contraseña", "Cancelar") goes to its own listener, not here.
                     val cancelled = errorCode == BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED ||
                         errorCode == BiometricPrompt.BIOMETRIC_ERROR_CANCELED
                     onResult(null, if (cancelled) null else errString.toString())

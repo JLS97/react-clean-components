@@ -3,6 +3,9 @@ package io.github.jls97.boveda.session
 import android.content.Context
 import android.os.SystemClock
 import io.github.jls97.boveda.core.crypto.wipe
+import io.github.jls97.boveda.core.otp.OtpCrypto
+import io.github.jls97.boveda.core.otp.OtpSecret
+import io.github.jls97.boveda.core.otp.WrongRecoveryCodeException
 import io.github.jls97.boveda.core.vault.CorruptedVaultException
 import io.github.jls97.boveda.core.vault.DeviceBindingException
 import io.github.jls97.boveda.core.vault.DeviceLayer
@@ -17,6 +20,7 @@ import io.github.jls97.boveda.data.VaultStorage
 import io.github.jls97.boveda.security.BiometricKeyManager
 import io.github.jls97.boveda.security.DeviceKeyManager
 import io.github.jls97.boveda.security.KeystoreKeys
+import io.github.jls97.boveda.security.OtpKeyManager
 import io.github.jls97.boveda.security.SecureClipboard
 import io.github.jls97.boveda.security.UnlockThrottle
 import kotlinx.coroutines.CancellationException
@@ -43,7 +47,26 @@ sealed interface VaultState {
 
     data object Locked : VaultState
 
-    data class Unlocked(val data: VaultData, val biometricEnabled: Boolean) : VaultState
+    data class Unlocked(
+        val data: VaultData,
+        val biometricEnabled: Boolean,
+        val otpAccess: OtpAccess = OtpAccess.NONE,
+    ) : VaultState
+}
+
+/** Whether this phone can open the 2FA codes. */
+enum class OtpAccess {
+    /** No 2FA code has been saved yet. */
+    NONE,
+
+    /** Every code opens with a fingerprint. */
+    READY,
+
+    /**
+     * The vault has codes but this phone has no usable fingerprint key for them (a restored
+     * backup, a new fingerprint, another phone): they come back with the recovery code.
+     */
+    LOCKED,
 }
 
 sealed interface OperationResult {
@@ -68,6 +91,7 @@ class VaultSession private constructor(
     private val storage: VaultStorage,
     private val deviceKeys: DeviceKeyManager,
     private val biometricKeys: BiometricKeyManager,
+    private val otpKeys: OtpKeyManager,
     private val throttle: UnlockThrottle,
     val clipboard: SecureClipboard,
     private val scope: CoroutineScope,
@@ -78,6 +102,8 @@ class VaultSession private constructor(
         val layerKey: ByteArray,
         var data: VaultData,
         var biometricEnabled: Boolean,
+        /** This phone holds a fingerprint-protected copy of the 2FA key of [data]. */
+        var otpOnDevice: Boolean,
     ) {
         fun wipe() {
             dek.wipe()
@@ -161,7 +187,12 @@ class VaultSession private constructor(
     }
 
     private fun publish(current: OpenVault) {
-        _state.value = VaultState.Unlocked(current.data, current.biometricEnabled)
+        val otpAccess = when {
+            current.data.otpKeyring == null -> OtpAccess.NONE
+            current.otpOnDevice -> OtpAccess.READY
+            else -> OtpAccess.LOCKED
+        }
+        _state.value = VaultState.Unlocked(current.data, current.biometricEnabled, otpAccess)
     }
 
     private fun becomeUnlocked(newVault: OpenVault) {
@@ -192,8 +223,9 @@ class VaultSession private constructor(
                         throw e
                     }
                     biometricKeys.disable()
+                    otpKeys.disable()
                     throttle.reset()
-                    OpenVault(created.header, created.dek, layerKey, created.data, biometricEnabled = false)
+                    OpenVault(created.header, created.dek, layerKey, created.data, biometricEnabled = false, otpOnDevice = false)
                 } catch (e: Throwable) {
                     layerKey.wipe()
                     throw e
@@ -286,7 +318,15 @@ class VaultSession private constructor(
                         storage.writeVault(DeviceLayer.seal(layerKey, portable))
                         biometricKeys.disable()
                         throttle.reset()
-                        OpenVault(restored.header, restored.dek, layerKey, restored.data, biometricEnabled = false)
+                        OpenVault(
+                            restored.header,
+                            restored.dek,
+                            layerKey,
+                            restored.data,
+                            biometricEnabled = false,
+                            // An older backup of this same vault keeps working with the fingerprint.
+                            otpOnDevice = otpOnDevice(restored.data),
+                        )
                     } catch (e: Throwable) {
                         layerKey.wipe()
                         throw e
@@ -312,10 +352,26 @@ class VaultSession private constructor(
         try {
             val portable = DeviceLayer.open(layerKey, storage.readVault())
             val opened = openPortable(portable)
-            return OpenVault(opened.header, opened.dek, layerKey, opened.data, biometricKeys.isEnabled())
+            return OpenVault(
+                opened.header,
+                opened.dek,
+                layerKey,
+                opened.data,
+                biometricKeys.isEnabled(),
+                otpOnDevice(opened.data),
+            )
         } catch (e: Throwable) {
             layerKey.wipe()
             throw e
+        }
+    }
+
+    private fun otpOnDevice(data: VaultData): Boolean {
+        val keyring = data.otpKeyring ?: return false
+        return try {
+            otpKeys.isReadyFor(keyring.id)
+        } catch (e: Exception) {
+            false
         }
     }
 
@@ -406,6 +462,7 @@ class VaultSession private constructor(
                         current.layerKey.copyOf(),
                         current.data,
                         current.biometricEnabled,
+                        current.otpOnDevice,
                     )
                     current.wipe()
                     open = updated
@@ -468,6 +525,219 @@ class VaultSession private constructor(
 
     // endregion
 
+    // region 2FA codes
+
+    /**
+     * Cipher for the fingerprint prompt that opens the 2FA key, or null if it can't be prepared.
+     * When the system invalidated the key (a fingerprint was added, for example), the state
+     * switches to [OtpAccess.LOCKED].
+     */
+    fun otpUnlockCipher(): Cipher? {
+        val current = open ?: return null
+        val keyring = current.data.otpKeyring ?: return null
+        val cipher = try {
+            otpKeys.unlockCipher(keyring.id)
+        } catch (e: Exception) {
+            return null
+        }
+        if (cipher == null && current.otpOnDevice) {
+            current.otpOnDevice = false
+            if (open === current) publish(current)
+        }
+        return cipher
+    }
+
+    /** Cipher for the fingerprint prompt that creates this phone's 2FA key (first use or recovery). */
+    fun otpEnrollmentCipher(): Cipher? =
+        try {
+            otpKeys.enrollmentCipher()
+        } catch (e: Exception) {
+            null
+        }
+
+    /**
+     * First 2FA code: creates the 2FA key, protects it with the fingerprint key authorized in
+     * [authorizedCipher] and with [recoveryCode], and stores [secret] in the entry [entryId].
+     * The caller keeps (and later wipes) [recoveryCode] and [secret].
+     */
+    suspend fun setUpOtp(
+        authorizedCipher: Cipher,
+        recoveryCode: CharArray,
+        entryId: String,
+        secret: OtpSecret,
+    ): OperationResult = modify(otpOnDeviceAfter = true) { data ->
+        if (data.otpKeyring != null) throw IllegalStateException("2FA is already set up")
+        val entry = data.entries.find { it.id == entryId } ?: throw IllegalStateException("Entry not found")
+        val otpKey = OtpCrypto.newKey()
+        try {
+            val keyringId = OtpCrypto.newKeyringId()
+            val keyring = OtpCrypto.createKeyring(otpKey, keyringId, recoveryCode)
+            val sealed = OtpCrypto.seal(otpKey, keyringId, entryId, secret)
+            // The phone's copy goes first: a vault that has a keyring but no copy on the phone
+            // would ask for the recovery code right away.
+            otpKeys.finishEnrollment(authorizedCipher, keyringId, otpKey)
+            data.withEntry(entry.copy(otp = sealed, updatedAt = System.currentTimeMillis()))
+                .copy(otpKeyring = keyring)
+        } finally {
+            otpKey.wipe()
+        }
+    }
+
+    /** Stores [secret] in the entry [entryId]. The caller keeps (and later wipes) [secret]. */
+    suspend fun addOtp(authorizedCipher: Cipher, entryId: String, secret: OtpSecret): OperationResult = modify { data ->
+        val keyring = data.otpKeyring ?: throw IllegalStateException("2FA is not set up")
+        val entry = data.entries.find { it.id == entryId } ?: throw IllegalStateException("Entry not found")
+        val otpKey = otpKeys.unwrap(authorizedCipher, keyring.id)
+        try {
+            val sealed = OtpCrypto.seal(otpKey, keyring.id, entryId, secret)
+            data.withEntry(entry.copy(otp = sealed, updatedAt = System.currentTimeMillis()))
+        } finally {
+            otpKey.wipe()
+        }
+    }
+
+    /** Deletes the 2FA secret of an entry. Needs no fingerprint: it reveals nothing. */
+    suspend fun removeOtp(entryId: String): OperationResult = modify { data ->
+        val entry = data.entries.find { it.id == entryId } ?: throw IllegalStateException("Entry not found")
+        data.withEntry(entry.copy(otp = null, updatedAt = System.currentTimeMillis()))
+    }
+
+    /**
+     * Opens the 2FA secret of [entryId] with the fingerprint-authorized [authorizedCipher]. The
+     * caller wipes the result as soon as the code is no longer on screen. Null if it failed or the
+     * vault locked meanwhile.
+     */
+    suspend fun revealOtp(authorizedCipher: Cipher, entryId: String): OtpSecret? {
+        val current = open ?: return null
+        val keyring = current.data.otpKeyring ?: return null
+        val sealed = current.data.entries.find { it.id == entryId }?.otp ?: return null
+        val lockCountAtStart = lockCount
+        val secret = try {
+            withContext(Dispatchers.Default) {
+                val otpKey = otpKeys.unwrap(authorizedCipher, keyring.id)
+                try {
+                    OtpCrypto.open(otpKey, keyring.id, entryId, sealed)
+                } finally {
+                    otpKey.wipe()
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return null
+        }
+        if (lockCount != lockCountAtStart) {
+            secret.wipe()
+            return null
+        }
+        return secret
+    }
+
+    /** True if [recoveryCode] opens the 2FA keyring of the vault. Slow: Argon2id. */
+    suspend fun checkOtpRecoveryCode(recoveryCode: CharArray): Boolean {
+        val keyring = open?.data?.otpKeyring ?: return false
+        val code = recoveryCode.copyOf()
+        return try {
+            withContext(Dispatchers.Default) {
+                try {
+                    OtpCrypto.unwrapWithRecoveryCode(keyring, code).wipe()
+                    true
+                } catch (e: WrongRecoveryCodeException) {
+                    false
+                }
+            }
+        } finally {
+            code.wipe()
+        }
+    }
+
+    /**
+     * Gives this phone a new fingerprint-protected copy of the 2FA key, recovered with
+     * [recoveryCode]. [authorizedCipher] comes from [otpEnrollmentCipher]. The caller wipes the code.
+     */
+    suspend fun recoverOtp(authorizedCipher: Cipher, recoveryCode: CharArray): OperationResult = writeMutex.withLock {
+        val current = open ?: return@withLock OperationResult.Failure("La bóveda está bloqueada")
+        val keyring = current.data.otpKeyring
+            ?: return@withLock OperationResult.Failure("No hay códigos 2FA que recuperar.")
+        val code = recoveryCode.copyOf()
+        try {
+            withContext(Dispatchers.Default) {
+                val otpKey = OtpCrypto.unwrapWithRecoveryCode(keyring, code)
+                try {
+                    otpKeys.finishEnrollment(authorizedCipher, keyring.id, otpKey)
+                } finally {
+                    otpKey.wipe()
+                }
+            }
+            current.otpOnDevice = true
+            if (open === current) publish(current)
+            OperationResult.Success
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: WrongRecoveryCodeException) {
+            OperationResult.WrongPassword
+        } catch (e: Exception) {
+            OperationResult.Failure(describe(e))
+        } finally {
+            code.wipe()
+        }
+    }
+
+    /**
+     * Replaces the recovery code: the 2FA key, opened with the fingerprint, is wrapped again under
+     * [newCode]. Backups made before still open with the old code. The caller wipes [newCode].
+     */
+    suspend fun replaceOtpRecoveryCode(authorizedCipher: Cipher, newCode: CharArray): OperationResult = modify { data ->
+        val keyring = data.otpKeyring ?: throw IllegalStateException("2FA is not set up")
+        val otpKey = otpKeys.unwrap(authorizedCipher, keyring.id)
+        try {
+            data.copy(otpKeyring = OtpCrypto.createKeyring(otpKey, keyring.id, newCode))
+        } finally {
+            otpKey.wipe()
+        }
+    }
+
+    /**
+     * Applies a change that needs slow work (Argon2id, Keystore) and saves it. The keys are copied
+     * before any suspension, so a lock in the middle can't make it seal the vault with wiped keys.
+     */
+    private suspend fun modify(
+        otpOnDeviceAfter: Boolean? = null,
+        change: (VaultData) -> VaultData,
+    ): OperationResult = writeMutex.withLock {
+        val current = open ?: return@withLock OperationResult.Failure("La bóveda está bloqueada")
+        val header = current.header
+        val data = current.data
+        val dek = current.dek.copyOf()
+        val layerKey = current.layerKey.copyOf()
+        try {
+            val newData = withContext(Dispatchers.Default) {
+                val changed = change(data)
+                val portable = VaultContainer.seal(header, dek, changed)
+                storage.writeVault(DeviceLayer.seal(layerKey, portable))
+                changed
+            }
+            if (otpOnDeviceAfter != null) current.otpOnDevice = otpOnDeviceAfter
+            if (open === current) {
+                current.data = newData
+                publish(current)
+            }
+            OperationResult.Success
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            OperationResult.Failure(describe(e))
+        } finally {
+            dek.wipe()
+            layerKey.wipe()
+        }
+    }
+
+    private fun VaultData.withEntry(entry: VaultEntry): VaultData =
+        copy(entries = entries.map { if (it.id == entry.id) entry else it })
+
+    // endregion
+
     private fun describe(e: Exception): String = when (e) {
         is DeviceBindingException ->
             "La bóveda no se puede abrir en este teléfono: su clave de hardware no está disponible. " +
@@ -489,6 +759,7 @@ class VaultSession private constructor(
                 storage = storage,
                 deviceKeys = DeviceKeyManager(keys, storage.layerKeyFile),
                 biometricKeys = BiometricKeyManager(keys, storage.biometricKeyFile),
+                otpKeys = OtpKeyManager(keys, storage.otpKeyFile),
                 throttle = UnlockThrottle(appContext),
                 clipboard = SecureClipboard(appContext, scope),
                 scope = scope,

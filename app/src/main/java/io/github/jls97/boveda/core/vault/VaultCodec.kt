@@ -1,19 +1,21 @@
 package io.github.jls97.boveda.core.vault
 
-import io.github.jls97.boveda.core.crypto.wipe
+import io.github.jls97.boveda.core.crypto.AesGcm
+import io.github.jls97.boveda.core.crypto.KdfParams
 
 /**
  * Serializes [VaultData] to the plaintext that gets encrypted. Every record is a list of
  * tagged fields (`tag u16, length u32, value`), so newer versions can add fields and older
- * readers skip the tags they don't know.
+ * readers skip the tags they don't know. The first record holds what applies to the whole vault:
+ * the settings and, once 2FA is in use, its keyring.
  */
 object VaultCodec {
     private const val PAYLOAD_VERSION = 1
     private const val MAX_ENTRIES = 100_000
-    private const val MAX_FIELDS = 1_024
 
     private const val SETTING_AUTO_LOCK = 1
     private const val SETTING_CLIPBOARD_CLEAR = 2
+    private const val VAULT_OTP_KEYRING = 3
 
     private const val ENTRY_ID = 1
     private const val ENTRY_TITLE = 2
@@ -24,19 +26,32 @@ object VaultCodec {
     private const val ENTRY_CREATED_AT = 7
     private const val ENTRY_UPDATED_AT = 8
     private const val ENTRY_AUTOFILL_TARGETS = 9
+    private const val ENTRY_OTP = 10
+
+    private const val KEYRING_ID = 1
+    private const val KEYRING_MEMORY_KIB = 2
+    private const val KEYRING_ITERATIONS = 3
+    private const val KEYRING_PARALLELISM = 4
+    private const val KEYRING_SALT = 5
+    private const val KEYRING_WRAPPED_KEY = 6
+
+    private const val MAX_SEALED_OTP_SIZE = 4_096
 
     fun encode(data: VaultData): ByteArray {
         val writer = ByteWriter(4_096)
         try {
             writer.putU16(PAYLOAD_VERSION)
 
-            writer.putU16(2)
+            val keyring = data.otpKeyring
+            writer.putU16(if (keyring == null) 2 else 3)
             writer.putIntField(SETTING_AUTO_LOCK, data.settings.autoLockSeconds)
             writer.putIntField(SETTING_CLIPBOARD_CLEAR, data.settings.clipboardClearSeconds)
+            if (keyring != null) writer.putBytesField(VAULT_OTP_KEYRING, encodeKeyring(keyring))
 
             writer.putI32(data.entries.size)
             for (entry in data.entries) {
-                writer.putU16(9)
+                val otp = entry.otp
+                writer.putU16(if (otp == null) 9 else 10)
                 writer.putStringField(ENTRY_ID, entry.id)
                 writer.putStringField(ENTRY_TITLE, entry.title)
                 writer.putStringField(ENTRY_USERNAME, entry.username)
@@ -47,6 +62,7 @@ object VaultCodec {
                 writer.putLongField(ENTRY_UPDATED_AT, entry.updatedAt)
                 // Package names and domains never contain line breaks.
                 writer.putStringField(ENTRY_AUTOFILL_TARGETS, entry.autofillTargets.joinToString("\n"))
+                if (otp != null) writer.putBytesField(ENTRY_OTP, otp.bytes)
             }
             return writer.toByteArray()
         } finally {
@@ -60,10 +76,12 @@ object VaultCodec {
         if (version != PAYLOAD_VERSION) throw UnsupportedVaultException("Unsupported payload version $version")
 
         var settings = VaultSettings()
+        var keyring: OtpKeyring? = null
         reader.readFields { tag, value ->
             when (tag) {
                 SETTING_AUTO_LOCK -> settings = settings.copy(autoLockSeconds = value.asInt())
                 SETTING_CLIPBOARD_CLEAR -> settings = settings.copy(clipboardClearSeconds = value.asInt())
+                VAULT_OTP_KEYRING -> keyring = decodeKeyring(value)
             }
         }
 
@@ -80,6 +98,7 @@ object VaultCodec {
             var createdAt = 0L
             var updatedAt = 0L
             var autofillTargets = emptyList<String>()
+            var otp: SealedOtp? = null
             reader.readFields { tag, value ->
                 when (tag) {
                     ENTRY_ID -> id = value.asString()
@@ -91,6 +110,12 @@ object VaultCodec {
                     ENTRY_CREATED_AT -> createdAt = value.asLong()
                     ENTRY_UPDATED_AT -> updatedAt = value.asLong()
                     ENTRY_AUTOFILL_TARGETS -> autofillTargets = value.asString().split('\n').filter { it.isNotEmpty() }
+                    ENTRY_OTP -> {
+                        if (value.size !in AesGcm.OVERHEAD + 1..MAX_SEALED_OTP_SIZE) {
+                            throw CorruptedVaultException("Invalid 2FA field")
+                        }
+                        otp = SealedOtp(value)
+                    }
                 }
             }
             entries += VaultEntry(
@@ -103,56 +128,57 @@ object VaultCodec {
                 createdAt = createdAt,
                 updatedAt = updatedAt,
                 autofillTargets = autofillTargets,
+                otp = otp,
             )
         }
         if (reader.remaining != 0) throw CorruptedVaultException("Trailing data after entries")
-        return VaultData(settings, entries)
+        return VaultData(settings, entries, keyring)
     }
 
-    private fun ByteWriter.putStringField(tag: Int, value: String) {
-        val encoded = value.toByteArray(Charsets.UTF_8)
-        putU16(tag)
-        putI32(encoded.size)
-        putBytes(encoded)
-        encoded.wipe()
-    }
-
-    private fun ByteWriter.putIntField(tag: Int, value: Int) {
-        putU16(tag)
-        putI32(4)
-        putI32(value)
-    }
-
-    private fun ByteWriter.putLongField(tag: Int, value: Long) {
-        putU16(tag)
-        putI32(8)
-        putI64(value)
-    }
-
-    /** Reads one record and hands every field to [onField]. The value buffer is wiped afterwards. */
-    private inline fun ByteReader.readFields(onField: (tag: Int, value: ByteArray) -> Unit) {
-        val fieldCount = readU16()
-        if (fieldCount > MAX_FIELDS) throw CorruptedVaultException("Too many fields")
-        repeat(fieldCount) {
-            val tag = readU16()
-            val value = readBytes(readI32())
-            try {
-                onField(tag, value)
-            } finally {
-                value.wipe()
-            }
+    private fun encodeKeyring(keyring: OtpKeyring): ByteArray {
+        val writer = ByteWriter(256)
+        try {
+            writer.putU16(6)
+            writer.putBytesField(KEYRING_ID, keyring.id)
+            writer.putIntField(KEYRING_MEMORY_KIB, keyring.kdfParams.memoryKiB)
+            writer.putIntField(KEYRING_ITERATIONS, keyring.kdfParams.iterations)
+            writer.putIntField(KEYRING_PARALLELISM, keyring.kdfParams.parallelism)
+            writer.putBytesField(KEYRING_SALT, keyring.salt)
+            writer.putBytesField(KEYRING_WRAPPED_KEY, keyring.wrappedKey)
+            return writer.toByteArray()
+        } finally {
+            writer.wipe()
         }
     }
 
-    private fun ByteArray.asString(): String = toString(Charsets.UTF_8)
-
-    private fun ByteArray.asInt(): Int {
-        if (size != 4) throw CorruptedVaultException("Invalid int field")
-        return ByteReader(this).readI32()
-    }
-
-    private fun ByteArray.asLong(): Long {
-        if (size != 8) throw CorruptedVaultException("Invalid long field")
-        return ByteReader(this).readI64()
+    private fun decodeKeyring(encoded: ByteArray): OtpKeyring {
+        val reader = ByteReader(encoded)
+        var id: ByteArray? = null
+        var memoryKiB = 0
+        var iterations = 0
+        var parallelism = 0
+        var salt: ByteArray? = null
+        var wrappedKey: ByteArray? = null
+        reader.readFields { tag, value ->
+            when (tag) {
+                KEYRING_ID -> id = value.copyOf()
+                KEYRING_MEMORY_KIB -> memoryKiB = value.asInt()
+                KEYRING_ITERATIONS -> iterations = value.asInt()
+                KEYRING_PARALLELISM -> parallelism = value.asInt()
+                KEYRING_SALT -> salt = value.copyOf()
+                KEYRING_WRAPPED_KEY -> wrappedKey = value.copyOf()
+            }
+        }
+        if (reader.remaining != 0) throw CorruptedVaultException("Trailing data in the 2FA keyring")
+        val validId = id?.takeIf { it.size == OtpKeyring.ID_SIZE }
+        val validSalt = salt?.takeIf { it.size in 16..64 }
+        val validWrappedKey = wrappedKey?.takeIf { it.size == OtpKeyring.KEY_SIZE + AesGcm.OVERHEAD }
+        if (validId == null || validSalt == null || validWrappedKey == null) {
+            throw CorruptedVaultException("Invalid 2FA keyring")
+        }
+        if (!KdfParams.isValid(memoryKiB, iterations, parallelism)) {
+            throw UnsupportedVaultException("2FA key derivation parameters out of range")
+        }
+        return OtpKeyring(validId, KdfParams(memoryKiB, iterations, parallelism), validSalt, validWrappedKey)
     }
 }

@@ -52,8 +52,11 @@ import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
 import io.github.jls97.boveda.core.autofill.TrustedBrowsers
 import io.github.jls97.boveda.core.vault.VaultEntry
+import io.github.jls97.boveda.security.BiometricPrompts
+import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
+import io.github.jls97.boveda.ui.components.findActivity
 import io.github.jls97.boveda.ui.lock.LockViewModel
 import io.github.jls97.boveda.ui.lock.UnlockScreen
 
@@ -74,9 +77,72 @@ internal fun AutofillApp(
         VaultState.Locked -> UnlockScreen(viewModel { LockViewModel(session) }, allowRestore = false)
         is VaultState.Unlocked -> {
             val viewModel = viewModel { AutofillViewModel(session) }
+            val context = LocalContext.current
             BackHandler { onClose() }
             when (request) {
-                is AutofillRequest.Fill -> PickEntryScreen(current.data.entries, request, viewModel, onFilled, onClose)
+                is AutofillRequest.Fill -> PickEntryScreen(
+                    title = "Rellenar con Bóveda",
+                    entries = current.data.entries,
+                    target = request.target,
+                    emptyText = "La bóveda está vacía.",
+                    viewModel = viewModel,
+                    onPick = { entry, rememberChoice ->
+                        viewModel.pick(entry, request.target, rememberChoice) { chosen ->
+                            val dataset = AutofillResponses.filledDataset(
+                                context,
+                                request.usernameId,
+                                request.passwordId,
+                                chosen.username,
+                                chosen.password,
+                            )
+                            if (dataset == null) {
+                                viewModel.showError("Esa entrada no tiene usuario ni contraseña para estos campos.")
+                            } else {
+                                onFilled(dataset)
+                            }
+                        }
+                    },
+                    onCancel = onClose,
+                )
+                is AutofillRequest.FillOtp -> if (current.otpAccess == OtpAccess.LOCKED) {
+                    MessageScreen(
+                        title = "Códigos 2FA bloqueados",
+                        text = "Este móvil no tiene la llave de huella de tus códigos 2FA (copia restaurada o huellas " +
+                            "cambiadas). Abre Bóveda y recupéralos con tu código de recuperación.",
+                        onClose = onClose,
+                    )
+                } else {
+                    PickEntryScreen(
+                        title = "Rellenar código 2FA",
+                        entries = current.data.entries.filter { it.otp != null },
+                        target = request.target,
+                        emptyText = "No tienes ningún código 2FA guardado. Añádelo en Bóveda, desde la entrada de la cuenta.",
+                        viewModel = viewModel,
+                        onPick = { entry, rememberChoice ->
+                            viewModel.pick(entry, request.target, rememberChoice) { chosen ->
+                                val activity = context.findActivity()
+                                val cipher = viewModel.otpCipher()
+                                if (activity != null && cipher != null) {
+                                    BiometricPrompts.authenticate(
+                                        activity,
+                                        "Rellenar código 2FA",
+                                        chosen.title,
+                                        cipher,
+                                        negativeLabel = "Cancelar",
+                                    ) { authorized, error ->
+                                        when {
+                                            authorized != null -> viewModel.fillCode(authorized, chosen) { code ->
+                                                onFilled(AutofillResponses.filledOtpDataset(context, request.otpId, code))
+                                            }
+                                            error != null -> viewModel.showError(error)
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        onCancel = onClose,
+                    )
+                }
                 is AutofillRequest.Save -> {
                     val pending = request.pending
                     if (pending == null) {
@@ -94,22 +160,22 @@ internal fun AutofillApp(
     }
 }
 
+/** Lists [entries] with those linked to [target] first; [onPick] fills with the chosen one. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PickEntryScreen(
+    title: String,
     entries: List<VaultEntry>,
-    request: AutofillRequest.Fill,
+    target: AutofillTarget,
+    emptyText: String,
     viewModel: AutofillViewModel,
-    onFilled: (Dataset) -> Unit,
+    onPick: (entry: VaultEntry, rememberChoice: Boolean) -> Unit,
     onCancel: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val target = request.target
     var query by remember { mutableStateOf("") }
     // Off by default: linking is a deliberate decision, never a side effect of a hurried tap.
     var rememberChoice by remember { mutableStateOf(false) }
     val canRemember = target.key != null
-    var problem by remember { mutableStateOf<String?>(null) }
     val exact = remember(entries, target) { CredentialMatcher.exactMatches(entries, target) }
     val suggested = remember(entries, target) { CredentialMatcher.suggestions(entries, target) }
     val searchResults = remember(entries, query) {
@@ -125,23 +191,12 @@ private fun PickEntryScreen(
         (entries - exact.toSet() - suggested.toSet()).sortedBy { it.title.lowercase() }
     }
 
-    fun fill(entry: VaultEntry) {
-        viewModel.pick(entry, request, rememberChoice) { chosen ->
-            val dataset = AutofillResponses.filledDataset(
-                context,
-                request.usernameId,
-                request.passwordId,
-                chosen.username,
-                chosen.password,
-            )
-            if (dataset == null) problem = "Esa entrada no tiene usuario ni contraseña para estos campos." else onFilled(dataset)
-        }
-    }
+    fun fill(entry: VaultEntry) = onPick(entry, rememberChoice)
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Rellenar con Bóveda") },
+                title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, contentDescription = "Cancelar") }
                 },
@@ -182,7 +237,7 @@ private fun PickEntryScreen(
                             Text("Vincular la entrada que elija a ${target.label}")
                         }
                     }
-                    (problem ?: viewModel.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    viewModel.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             }
             if (query.isNotBlank()) {
@@ -195,7 +250,7 @@ private fun PickEntryScreen(
                 section("Quizá sea una de estas", suggested, viewModel.busy, ::fill)
                 section("Todas", others, viewModel.busy, ::fill)
                 if (entries.isEmpty()) {
-                    item { Text("La bóveda está vacía.", modifier = Modifier.padding(16.dp)) }
+                    item { Text(emptyText, modifier = Modifier.padding(16.dp)) }
                 }
             }
         }

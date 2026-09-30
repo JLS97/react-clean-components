@@ -15,6 +15,7 @@ internal class VaultStorage(context: Context) {
     val vaultFile = File(directory, "vault.bin")
     val layerKeyFile = File(directory, "layer.key")
     val biometricKeyFile = File(directory, "biometric.key")
+    val otpKeyFile = File(directory, "otp.key")
 
     fun vaultExists(): Boolean = vaultFile.exists()
 

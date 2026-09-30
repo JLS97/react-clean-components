@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.session.OperationResult
@@ -12,6 +13,7 @@ import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
 import kotlinx.coroutines.launch
 import java.util.UUID
+import javax.crypto.Cipher
 
 internal class AutofillViewModel(private val session: VaultSession) : ViewModel() {
     var busy by mutableStateOf(false)
@@ -19,23 +21,52 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
     var error by mutableStateOf<String?>(null)
         private set
 
+    fun showError(message: String) {
+        error = message
+    }
+
     /**
      * Fills with [entry]. With [rememberChoice], links the app or site to it first, unless the
      * target can't be linked safely (see AutofillTarget.key).
      */
-    fun pick(entry: VaultEntry, request: AutofillRequest.Fill, rememberChoice: Boolean, onReady: (VaultEntry) -> Unit) {
+    fun pick(entry: VaultEntry, target: AutofillTarget, rememberChoice: Boolean, onReady: (VaultEntry) -> Unit) {
         if (busy) return
-        if (!rememberChoice || request.target.key == null || CredentialMatcher.isExactMatch(entry, request.target)) {
+        if (!rememberChoice || target.key == null || CredentialMatcher.isExactMatch(entry, target)) {
             onReady(entry)
             return
         }
         busy = true
         viewModelScope.launch {
-            val linked = CredentialMatcher.remember(entry, request.target)
+            val linked = CredentialMatcher.remember(entry, target)
             // If saving the link fails, still fill: the user asked for this entry.
             session.saveEntry(linked)
             busy = false
             onReady(linked)
+        }
+    }
+
+    /** Cipher of the 2FA key for the fingerprint prompt, or null (with an error shown) if it can't open. */
+    fun otpCipher(): Cipher? = session.otpUnlockCipher().also {
+        if (it == null) error = "No se pudo preparar la huella. Abre Bóveda para revisar tus códigos 2FA."
+    }
+
+    /** Opens the 2FA secret of [entry] with the fingerprint and hands over only its current code. */
+    fun fillCode(authorized: Cipher, entry: VaultEntry, onCode: (String) -> Unit) {
+        if (busy) return
+        busy = true
+        viewModelScope.launch {
+            val secret = session.revealOtp(authorized, entry.id)
+            busy = false
+            if (secret == null) {
+                error = "No se pudo abrir el código 2FA."
+                return@launch
+            }
+            val code = try {
+                secret.code(System.currentTimeMillis())
+            } finally {
+                secret.wipe()
+            }
+            onCode(code)
         }
     }
 

@@ -6,7 +6,7 @@ depende de ningún servidor ni API externa.
 
 > «Bóveda» y el paquete `io.github.jls97.boveda` son nombres de trabajo; se pueden cambiar.
 
-## Estado: fases 1 y 2
+## Estado
 
 - Bóveda cifrada protegida por una contraseña maestra, con indicador de fortaleza.
 - Entradas con nombre, usuario o email, contraseña, web o app y notas. Búsqueda.
@@ -18,6 +18,9 @@ depende de ningún servidor ni API externa.
 - Cambio de contraseña maestra.
 - **Autorrelleno** en otras apps y en Chrome desde la barra de sugerencias del teclado, y oferta de
   guardar las credenciales nuevas al iniciar sesión o registrarte.
+- **Códigos 2FA (TOTP)**, como los de Google Authenticator o Authy pero sin nube: se añaden
+  escaneando el QR o con la clave de texto, y **cada código se abre solo con tu huella**, también
+  al rellenarlo en otra app.
 
 ## Autorrelleno
 
@@ -56,6 +59,43 @@ Cómo protege tus datos:
   sin viajar en ningún mensaje del sistema, y caducan a los 5 minutos.
 - **Sin red.** Todo ocurre dentro del teléfono, entre apps, a través de Android.
 
+## Códigos 2FA
+
+Son los códigos de 6 cifras que cambian cada 30 segundos (estándar TOTP, RFC 6238). Sirven para
+cualquier web que ofrezca «usar una app de autenticación».
+
+1. Al activar la verificación en dos pasos en la web, abre en Bóveda la entrada de esa cuenta y
+   toca **Añadir código 2FA**.
+2. **Escanea el código QR** con la cámara o pega la clave de texto que suele salir debajo.
+   Bóveda muestra el código actual, por si la web lo pide para confirmar.
+3. **Guardar con mi huella.** La primera vez, Bóveda te da un **código de recuperación**
+   (`XXXXX-XXXXX-XXXXX-XXXXX`): apúntalo en papel y escríbelo para confirmar.
+
+Después, en la entrada, **Mostrar** o **Copiar** piden la huella. El código se ve durante un minuto
+como mucho y se oculta al salir de la entrada. Al iniciar sesión en otra app o en Chrome, toca el
+campo del código: en el teclado aparece **Bóveda · Toca para rellenar el código 2FA**, eliges la
+cuenta, pones la huella y se rellena. Como con las contraseñas, primero aparecen las cuentas
+vinculadas a esa web o app, y Bóveda avisa si no hay ninguna.
+
+Cómo se protegen:
+
+- **Huella en cada código.** Los secretos se cifran con una clave 2FA propia. En el teléfono, esa
+  clave está envuelta por una clave de Android Keystore que exige una huella fuerte (clase 3) en
+  cada uso. Desbloquear la bóveda con la contraseña maestra no basta para ver un código.
+- **Nuevas huellas.** Si añades o borras una huella, o quitas el bloqueo de pantalla, el sistema
+  destruye esa clave: nadie puede registrar su dedo para leer tus códigos. Los recuperas con el
+  código de recuperación.
+- **Código de recuperación.** Es aleatorio (100 bits) y protege, con Argon2id, la copia de la
+  clave 2FA que va dentro de la bóveda y de las copias de seguridad. Sirve para recuperar los
+  códigos en otro móvil o tras cambiar tus huellas. Guárdalo lejos del móvil y fuera de Bóveda: con
+  él y tu contraseña maestra se pueden leer los códigos sin tu huella. Si lo pierdes, en
+  **Ajustes → Códigos 2FA** puedes crear otro (las copias antiguas siguen usando el anterior).
+- **Cámara.** Solo se usa en la pantalla de escanear, con permiso que se pide en ese momento. El
+  QR se lee en el teléfono con ZXing (código abierto, sin servicios de Google); la imagen no se
+  guarda y, sin Internet, no puede salir del teléfono.
+- **Cada secreto va ligado a su entrada.** No se puede mover a otra entrada ni a otra bóveda sin
+  que se detecte.
+
 ## Diseño de seguridad
 
 ```text
@@ -64,6 +104,10 @@ clave KEK ──AES-256-GCM──► clave de datos aleatoria (DEK)
 DEK ──AES-256-GCM──► contenido de la bóveda                 ← este es el archivo portable (.bvd)
 clave de capa ──AES-256-GCM──► archivo portable             ← lo que se guarda en el teléfono
 Android Keystore (StrongBox o TEE) ──► envuelve la clave de capa
+
+clave 2FA aleatoria ──AES-256-GCM──► secreto 2FA de cada entrada (dentro de la bóveda)
+Keystore con huella en cada uso ──► envuelve la clave 2FA en el teléfono
+código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de la bóveda y las copias
 ```
 
 - **Doble capa.** El archivo del teléfono lleva una capa extra cuya clave vive en el hardware
@@ -94,7 +138,8 @@ Android Keystore (StrongBox o TEE) ──► envuelve la clave de capa
   Sin ese permiso, Android no deja que la app abra ninguna conexión: no es una promesa del
   código, lo impone el sistema.
 - No hay servidores, cuentas, APIs externas, analíticas ni informes de errores. Las dependencias
-  son solo AndroidX (interfaz) y Bouncy Castle (Argon2id), que funcionan sin red.
+  son solo AndroidX (interfaz y cámara), Bouncy Castle (Argon2id) y ZXing (lectura de QR), que
+  funcionan sin red.
 - Las copias de seguridad solo se pueden guardar en el almacenamiento del teléfono o en un USB
   conectado: el selector de archivos oculta Google Drive y cualquier otra nube.
 - Las copias en la nube de Android y la transferencia a un móvil nuevo están desactivadas. Aunque
@@ -117,6 +162,9 @@ Fuera del control de la app, conviene revisar en el teléfono:
 - Un servicio de accesibilidad malicioso, que puede leer lo que se muestra en pantalla.
   Revisa qué apps tienen ese permiso.
 - Olvidar la contraseña maestra: no hay forma de recuperarla.
+- Perder a la vez el móvil (o tus huellas) y el código de recuperación: los códigos 2FA no se
+  podrían recuperar, y habría que volver a activar la verificación en cada web con sus códigos de
+  respaldo.
 
 ## Instalación en el móvil (POCO X8 Pro)
 
@@ -144,6 +192,9 @@ USB conectado (nunca en la nube). Después pásala a un USB o a un ordenador, po
 el móvil, esa copia y tu contraseña maestra son la única forma de recuperar los datos. Repite la
 copia después de cambios importantes o de cambiar la contraseña maestra.
 
+La copia incluye los códigos 2FA, cifrados. Al restaurarla en otro móvil, o en este tras cambiar
+tus huellas, Bóveda te pedirá también el código de recuperación para volver a abrirlos.
+
 ## Desarrollo
 
 ```sh
@@ -154,13 +205,14 @@ copia después de cambios importantes o de cambiar la contraseña maestra.
 
 - Kotlin 2.4 (compilado por el propio Android Gradle Plugin 9.4), Compose con Material 3, Gradle 9.7.
 - `minSdk` 33 (Android 13) · `compileSdk` y `targetSdk` 37 (Android 17).
-- Dependencias mínimas: AndroidX (Compose, Activity, Lifecycle, Autofill) y Bouncy Castle, solo
-  para Argon2id.
+- Dependencias mínimas: AndroidX (Compose, Activity, Lifecycle, Autofill, CameraX), Bouncy Castle
+  solo para Argon2id y ZXing solo para leer códigos QR.
 
 ```text
 app/src/main/java/io/github/jls97/boveda/
 ├── core/        # Kotlin puro, con tests: crypto (Argon2id, AES-GCM), formato de la bóveda,
-│                #   generador y lógica del autorrelleno (detección de campos, emparejamiento)
+│                #   códigos 2FA (TOTP, enlaces otpauth, código de recuperación), generador y
+│                #   lógica del autorrelleno (detección de campos, emparejamiento)
 ├── autofill/    # servicio de autorrelleno, sugerencia del teclado y pantalla de elegir/guardar
 ├── security/    # Android Keystore, huella, portapapeles sensible, freno de intentos
 ├── data/        # archivos en almacenamiento sin copia de seguridad, escritura atómica
@@ -173,10 +225,11 @@ app/src/main/java/io/github/jls97/boveda/
 Todo seguirá funcionando sin Internet.
 
 - ~~Fase 2 – autorrelleno~~ (hecha).
+- ~~Códigos 2FA con huella por código~~ (hechos).
 - **Fase 3 (opcional) – teclado propio.** Solo para apps donde el autorrelleno no funcione.
-- Otras ideas: códigos 2FA (TOTP, que se calculan sin conexión), auditoría local de contraseñas
-  repetidas o débiles (sin consultar servicios de filtraciones), generador de frases, favoritos y
-  categorías.
+- Otras ideas: auditoría local de contraseñas repetidas o débiles (sin consultar servicios de
+  filtraciones), importar la exportación de Google Authenticator, generador de frases, favoritos
+  y categorías.
 
 ## Licencia
 

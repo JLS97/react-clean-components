@@ -4,6 +4,12 @@
 
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.HIDE_OVERLAY_WINDOWS" />
+    <!-- Only to read the QR code of a 2FA key, when the user asks to scan one. With no INTERNET
+         permission, the image can't leave the phone; it is not stored either. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
     <!-- Lets the autofill service read the signing certificate of the app asking to be filled, so
          a fake app can't pass for the real one or for a browser. The app being filled isn't
          visible otherwise. Without INTERNET this information never leaves the phone, and the app
