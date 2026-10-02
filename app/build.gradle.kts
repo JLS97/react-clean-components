@@ -19,6 +19,20 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        // The release key stays out of the repository. Android only installs a new version over
+        // the old one, keeping the vault, if both are signed with this same key.
+        val keystore = System.getenv("BOVEDA_KEYSTORE_FILE")
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = System.getenv("BOVEDA_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("BOVEDA_KEY_ALIAS") ?: "boveda"
+                keyPassword = System.getenv("BOVEDA_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             // Separate app (own data, own keys) so testing never touches the real vault, and
@@ -29,6 +43,8 @@ android {
             // No shrinking: the code is public anyway, and it keeps the build free of R8 rules
             // for Bouncy Castle.
             isMinifyEnabled = false
+            // Without the key, the release APK comes out unsigned and has to be signed by hand.
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

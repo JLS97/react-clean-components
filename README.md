@@ -173,7 +173,7 @@ debug es otra app distinta (`Bóveda Debug`, con sus propios datos) y se puede d
 
 1. Abre esta carpeta con la última versión estable de Android Studio.
 2. **Build → Generate Signed App Bundle or APK → APK**. Crea un almacén de claves nuevo y
-   guárdalo fuera del repositorio. El `.gitignore` ya excluye `*.jks` y `*.keystore`.
+   guárdalo fuera del repositorio. El `.gitignore` ya excluye `*.jks`, `*.keystore` y `*.p12`.
 3. Elige la variante `release` y compila.
 4. En el móvil, activa las opciones de desarrollador: en **Ajustes → Sobre el teléfono**, pulsa
    7 veces **Versión de Xiaomi HyperOS**. Luego, en **Ajustes adicionales → Opciones de
@@ -184,6 +184,29 @@ debug es otra app distinta (`Bóveda Debug`, con sus propios datos) y se puede d
 
 Las futuras versiones deben firmarse con la misma clave para instalarse encima sin perder la
 bóveda.
+
+### Clave de firma
+
+Android solo instala una versión encima de otra, conservando la bóveda, si las dos llevan la misma
+firma y la nueva tiene un `versionCode` igual o mayor. Si la firma no coincide, la instalación
+falla y no se toca nada. **No desinstales Bóveda para instalar otra versión, porque se borra la
+bóveda.** Pasa antes los datos con una copia de seguridad.
+
+Las versiones Debug 0.1.0 y 0.2.0 que se compartieron por el chat iban firmadas con una clave
+temporal que ya no existe. No se pueden actualizar. Sus datos se pasan a la release con una copia.
+
+Con la clave, `assembleRelease` genera el APK firmado:
+
+```sh
+export BOVEDA_KEYSTORE_FILE=/ruta/fuera/del/repo/boveda-release.p12
+export BOVEDA_KEYSTORE_PASSWORD=…   # el alias es «boveda» (se cambia con BOVEDA_KEY_ALIAS)
+./gradlew assembleRelease           # app/build/outputs/apk/release/app-release.apk
+```
+
+En las sesiones de Claude Code en la nube, la clave está en las variables del entorno:
+`BOVEDA_KEYSTORE_BASE64` (el `.p12` en base64) y `BOVEDA_KEYSTORE_PASSWORD`. Antes de compilar:
+`echo "$BOVEDA_KEYSTORE_BASE64" | base64 -d > /tmp/boveda-release.p12` y
+`export BOVEDA_KEYSTORE_FILE=/tmp/boveda-release.p12`.
 
 ## Copias de seguridad
 
