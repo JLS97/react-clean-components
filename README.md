@@ -119,9 +119,12 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
   cualquier modificación del archivo se detecta.
 - **Huella.** Una copia de la DEK se cifra con una clave de Keystore que exige huella fuerte
   (clase 3) en cada uso y que el sistema destruye si se añade una huella nueva.
-- **Freno a los intentos.** Tras 5 contraseñas incorrectas, cada fallo bloquea el desbloqueo durante
-  un tiempo creciente (30 s … 16 min). Además, cada intento cuesta una ejecución completa de
-  Argon2id.
+- **Freno a los intentos.** Tras 5 contraseñas incorrectas, cada fallo bloquea la siguiente
+  comprobación de contraseña (desbloqueo, cambio de contraseña o restauración) durante un tiempo
+  creciente (30 s … 64 min). La espera se mide con el reloj monótono del sistema y el contador de
+  arranques: adelantar la fecha del teléfono no la acorta y reiniciar vuelve a imponerla entera.
+  Además, cada intento cuesta una ejecución completa de Argon2id. Es una medida de velocidad: la
+  seguridad real descansa en Argon2id y en la contraseña maestra.
 - **Sin fugas.** Sin permiso de Internet (el manifiesto lo elimina aunque una librería lo pida).
   Sin copias en la nube ni transferencias entre dispositivos. `FLAG_SECURE` (sin capturas ni
   vista previa en recientes). Oculta superposiciones de otras apps (tapjacking). Excluida del

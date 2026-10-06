@@ -244,7 +244,7 @@ class VaultSession private constructor(
     /** Unlocks with the master password. The array is wiped. */
     suspend fun unlock(password: CharArray): OperationResult = writeMutex.withLock {
         try {
-            val blockedUntil = throttle.blockedUntil()
+            val blockedUntil = withContext(Dispatchers.IO) { throttle.blockedUntil() }
             if (blockedUntil > 0) return@withLock OperationResult.Throttled(blockedUntil)
             val lockCountAtStart = lockCount
             val newVault = withContext(Dispatchers.Default) {
@@ -304,6 +304,9 @@ class VaultSession private constructor(
      */
     suspend fun restoreBackup(backup: ByteArray, password: CharArray): OperationResult = writeMutex.withLock {
         try {
+            // Same throttle as unlock: checking the backup's password is also a password oracle.
+            val blockedUntil = withContext(Dispatchers.IO) { throttle.blockedUntil() }
+            if (blockedUntil > 0) return@withLock OperationResult.Throttled(blockedUntil)
             val lockCountAtStart = lockCount
             val newVault = withContext(Dispatchers.Default) {
                 val restored = try {
@@ -335,7 +338,11 @@ class VaultSession private constructor(
                     restored.dek.wipe()
                     throw e
                 }
-            } ?: return@withLock OperationResult.WrongPassword
+            }
+            if (newVault == null) {
+                val until = withContext(Dispatchers.IO) { throttle.recordFailure() }
+                return@withLock if (until > 0) OperationResult.Throttled(until) else OperationResult.WrongPassword
+            }
             finishUnlock(newVault, lockCountAtStart)
         } catch (e: CancellationException) {
             throw e
@@ -458,6 +465,10 @@ class VaultSession private constructor(
     suspend fun changeMasterPassword(currentPassword: CharArray, newPassword: CharArray): OperationResult =
         writeMutex.withLock {
             try {
+                // Same throttle as unlock: with the vault open (e.g. by fingerprint) this dialog
+                // would otherwise be an unlimited oracle of the master password.
+                val blockedUntil = withContext(Dispatchers.IO) { throttle.blockedUntil() }
+                if (blockedUntil > 0) return@withLock OperationResult.Throttled(blockedUntil)
                 val current = open ?: return@withLock OperationResult.Failure("La bóveda está bloqueada")
                 val lockCountAtStart = lockCount
                 val dek = current.dek.copyOf()
@@ -469,7 +480,12 @@ class VaultSession private constructor(
                         } else {
                             VaultContainer.changePassword(dek, newPassword)
                         }
-                    } ?: return@withLock OperationResult.WrongPassword
+                    }
+                    if (newHeader == null) {
+                        val until = withContext(Dispatchers.IO) { throttle.recordFailure() }
+                        return@withLock if (until > 0) OperationResult.Throttled(until) else OperationResult.WrongPassword
+                    }
+                    withContext(Dispatchers.IO) { throttle.reset() }
                     if (open !== current || lockCount != lockCountAtStart) {
                         return@withLock OperationResult.Failure(
                             "Se bloqueó mientras se cambiaba la contraseña. No se ha escrito nada.",
