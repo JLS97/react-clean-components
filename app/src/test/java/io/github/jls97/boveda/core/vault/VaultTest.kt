@@ -198,16 +198,35 @@ class VaultTest {
     }
 
     @Test
-    fun changePasswordKeepsDataAndDek() {
+    fun changePasswordKeepsDataAndRotatesTheDek() {
         val created = VaultContainer.create("vieja".toCharArray(), sampleData, testParams)
-        val newHeader = VaultContainer.changePassword(created.dek, "nueva".toCharArray(), testParams)
-        val blob = VaultContainer.seal(newHeader, created.dek, created.data)
+        val oldBlob = VaultContainer.seal(created.header, created.dek, created.data)
+        val rekeyed = VaultContainer.changePassword("nueva".toCharArray(), created.data, testParams)
+        val blob = VaultContainer.seal(rekeyed.header, rekeyed.dek, rekeyed.data)
 
-        assertEquals(sampleData, VaultContainer.open(blob, "nueva".toCharArray()).data)
+        assertFalse("The DEK must change with the password", created.dek.contentEquals(rekeyed.dek))
+        val opened = VaultContainer.open(blob, "nueva".toCharArray())
+        assertEquals(sampleData, opened.data)
+        assertArrayEquals(rekeyed.dek, opened.dek)
         try {
             VaultContainer.open(blob, "vieja".toCharArray())
             fail("The old password still opened the vault")
         } catch (expected: WrongPasswordException) {
+        }
+        // The attack of M-03: the DEK taken from an old backup opens nothing written after the change.
+        try {
+            VaultContainer.openWithKey(blob, created.dek)
+            fail("The old DEK still opened the re-encrypted vault")
+        } catch (expected: CorruptedVaultException) {
+        }
+        // Nor does the old body pass under the new header, with either key.
+        val oldBodyNewHeader = rekeyed.header.encoded + oldBlob.copyOfRange(created.header.encoded.size, oldBlob.size)
+        for (dek in listOf(rekeyed.dek, created.dek)) {
+            try {
+                VaultContainer.openWithKey(oldBodyNewHeader, dek)
+                fail("An old body was accepted under the new header")
+            } catch (expected: CorruptedVaultException) {
+            }
         }
     }
 

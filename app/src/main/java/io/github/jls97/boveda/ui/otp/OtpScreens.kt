@@ -521,10 +521,16 @@ fun RecoveryCodeScreen(
                 askFingerprint(context, otp, "Proteger códigos 2FA", "Tu huella abrirá cada código", otp.enrollmentCipher()) {
                     otp.setUp(it, onDone)
                 }
-            RecoveryCodePurpose.REPLACE ->
-                askFingerprint(context, otp, "Nuevo código de recuperación", "Confirma con tu huella", otp.unlockCipher()) {
-                    otp.replaceRecoveryCode(it, onDone)
+            RecoveryCodePurpose.REPLACE -> {
+                // Two fingerprints: one opens the current 2FA key, the other protects the new one.
+                // The new Keystore key is created first; it lives in another slot, so the current one keeps working.
+                val enrollment = otp.enrollmentCipher() ?: return
+                askFingerprint(context, otp, "Nuevo código de recuperación", "Abre tus códigos con tu huella", otp.unlockCipher()) { unlock ->
+                    askFingerprint(context, otp, "Nuevo código de recuperación", "Otra vez, para proteger la llave nueva", enrollment) {
+                        otp.replaceRecoveryCode(unlock, it, onDone)
+                    }
                 }
+            }
         }
     }
 
@@ -555,8 +561,9 @@ fun RecoveryCodeScreen(
                 )
             } else {
                 Text(
-                    "Este código sustituirá al anterior. Las copias de seguridad que ya tengas seguirán necesitando " +
-                        "el antiguo, así que haz una copia nueva después.",
+                    "Este código sustituirá al anterior y tus códigos 2FA se cifrarán con una llave nueva (te pedirá " +
+                        "la huella dos veces). Las copias de seguridad que ya tengas seguirán necesitando el antiguo, " +
+                        "así que haz una copia nueva después.",
                 )
             }
             Card(

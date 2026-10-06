@@ -2,6 +2,7 @@ package io.github.jls97.boveda.core.otp
 
 import io.github.jls97.boveda.core.crypto.KdfParams
 import io.github.jls97.boveda.core.vault.CorruptedVaultException
+import io.github.jls97.boveda.core.vault.VaultEntry
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -174,6 +175,47 @@ class OtpTest {
             fail("A different recovery code unwrapped the 2FA key")
         } catch (expected: WrongRecoveryCodeException) {
         }
+    }
+
+    @Test
+    fun resealMovesEverySecretToTheNewKeyAndNothingOpensWithTheOld() {
+        val oldKey = OtpCrypto.newKey()
+        val oldId = OtpCrypto.newKeyringId()
+        val first = OtpSecret(rfcKeySha1, OtpParams(), "ACME", "yo@example.com")
+        val second = OtpSecret(rfcKeySha256, OtpParams(OtpAlgorithm.SHA256, 8, 60), "Banco", "")
+        val entries = listOf(
+            VaultEntry(id = "e1", title = "ACME", createdAt = 1, updatedAt = 2, otp = OtpCrypto.seal(oldKey, oldId, "e1", first)),
+            VaultEntry(id = "e2", title = "Sin 2FA", createdAt = 3, updatedAt = 4),
+            VaultEntry(id = "e3", title = "Banco", createdAt = 5, updatedAt = 6, otp = OtpCrypto.seal(oldKey, oldId, "e3", second)),
+        )
+
+        val newKey = OtpCrypto.newKey()
+        val newId = OtpCrypto.newKeyringId()
+        val resealed = OtpCrypto.reseal(entries, oldKey, oldId, newKey, newId)
+
+        assertEquals(entries.map { it.id }, resealed.map { it.id })
+        assertEquals(entries[1], resealed[1])
+        assertNull(resealed[1].otp)
+        // Only the sealed secret changes: the entry itself is untouched.
+        assertEquals(entries[0].copy(otp = null), resealed[0].copy(otp = null))
+        assertEquals(first, OtpCrypto.open(newKey, newId, "e1", resealed[0].otp!!))
+        assertEquals(second, OtpCrypto.open(newKey, newId, "e3", resealed[2].otp!!))
+        assertNotEquals(entries[0].otp, resealed[0].otp)
+        expectCorrupted { OtpCrypto.open(oldKey, oldId, "e1", resealed[0].otp!!) }
+        expectCorrupted { OtpCrypto.open(oldKey, newId, "e3", resealed[2].otp!!) }
+        expectCorrupted { OtpCrypto.open(newKey, oldId, "e3", resealed[2].otp!!) }
+        // The old copies keep opening only with the old key: the one found in an old backup.
+        assertEquals(first, OtpCrypto.open(oldKey, oldId, "e1", entries[0].otp!!))
+        expectCorrupted { OtpCrypto.open(newKey, newId, "e1", entries[0].otp!!) }
+    }
+
+    @Test
+    fun resealRefusesAWrongOldKey() {
+        val oldKey = OtpCrypto.newKey()
+        val oldId = OtpCrypto.newKeyringId()
+        val secret = OtpSecret(rfcKeySha1, OtpParams(), "ACME", "yo@example.com")
+        val entries = listOf(VaultEntry(id = "e1", title = "ACME", createdAt = 1, updatedAt = 2, otp = OtpCrypto.seal(oldKey, oldId, "e1", secret)))
+        expectCorrupted { OtpCrypto.reseal(entries, OtpCrypto.newKey(), oldId, OtpCrypto.newKey(), OtpCrypto.newKeyringId()) }
     }
 
     @Test

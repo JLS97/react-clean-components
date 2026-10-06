@@ -13,6 +13,7 @@ import io.github.jls97.boveda.core.vault.CorruptedVaultException
 import io.github.jls97.boveda.core.vault.OtpKeyring
 import io.github.jls97.boveda.core.vault.SealedOtp
 import io.github.jls97.boveda.core.vault.UnsupportedVaultException
+import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.core.vault.VaultException
 import io.github.jls97.boveda.core.vault.asInt
 import io.github.jls97.boveda.core.vault.asString
@@ -161,6 +162,29 @@ object OtpCrypto {
         } finally {
             key?.wipe()
             plaintext.wipe()
+        }
+    }
+
+    /**
+     * Seals every 2FA secret of [entries] again under [newKey] and [newKeyringId], opening each one
+     * with [oldKey] and [oldKeyringId]. Pure: entries without a secret come back as they are and
+     * nothing is stored anywhere. After this, the old key opens none of the returned secrets.
+     *
+     * @throws CorruptedVaultException if a secret does not open with the old key and keyring id.
+     */
+    fun reseal(
+        entries: List<VaultEntry>,
+        oldKey: ByteArray,
+        oldKeyringId: ByteArray,
+        newKey: ByteArray,
+        newKeyringId: ByteArray,
+    ): List<VaultEntry> = entries.map { entry ->
+        val sealed = entry.otp ?: return@map entry
+        val secret = open(oldKey, oldKeyringId, entry.id, sealed)
+        try {
+            entry.copy(otp = seal(newKey, newKeyringId, entry.id, secret))
+        } finally {
+            secret.wipe()
         }
     }
 

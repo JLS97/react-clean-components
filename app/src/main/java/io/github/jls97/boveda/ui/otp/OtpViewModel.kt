@@ -195,13 +195,20 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
         }
     }
 
-    fun replaceRecoveryCode(authorized: Cipher, onDone: () -> Unit) {
+    /**
+     * New recovery code and new 2FA key: [authorized] opens the current key (from [unlockCipher])
+     * and [enrollment] (from [enrollmentCipher]) protects the new one on this phone.
+     */
+    fun replaceRecoveryCode(authorized: Cipher, enrollment: Cipher, onDone: () -> Unit) {
         val code = recoveryCode ?: return
         launchBusy {
-            when (val result = session.replaceOtpRecoveryCode(authorized, code)) {
+            when (val result = session.replaceOtpRecoveryCode(authorized, enrollment, code)) {
                 OperationResult.Success -> {
                     clearRecoveryCode()
-                    message("Código de recuperación cambiado. Las copias anteriores siguen necesitando el antiguo.")
+                    message(
+                        "Código de recuperación cambiado y códigos 2FA cifrados con una llave nueva. Haz una copia " +
+                            "nueva: las anteriores siguen usando el código antiguo.",
+                    )
                     onDone()
                 }
                 is OperationResult.Failure -> message(result.message)

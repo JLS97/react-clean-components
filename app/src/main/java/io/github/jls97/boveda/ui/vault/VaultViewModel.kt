@@ -84,9 +84,22 @@ class VaultViewModel(
     private val _messages = Channel<String>(Channel.BUFFERED)
     val messages: Flow<String> = _messages.receiveAsFlow()
 
+    /** The rollback warning is shown once per unlock. */
+    private var integrityWarned = false
+
     init {
         viewModelScope.launch {
-            session.state.collect { state -> if (state !is VaultState.Unlocked) forgetEverything() }
+            session.state.collect { state ->
+                if (state !is VaultState.Unlocked) {
+                    forgetEverything()
+                } else if (state.integrityWarning && !integrityWarned) {
+                    integrityWarned = true
+                    message(
+                        "El archivo de la bóveda no es el último que se guardó en este teléfono. Si no has " +
+                            "restaurado una copia, revisa tus entradas y vuelve a guardar una copia nueva.",
+                    )
+                }
+            }
         }
     }
 
@@ -97,6 +110,7 @@ class VaultViewModel(
         draft = EntryDraft()
         generated = ""
         busy = false
+        integrityWarned = false
     }
 
     private val unlockedData get() = (session.state.value as? VaultState.Unlocked)?.data
@@ -238,11 +252,16 @@ class VaultViewModel(
             message(problem)
             return
         }
+        val hadBiometric = (session.state.value as? VaultState.Unlocked)?.biometricEnabled == true
         launchBusy {
             when (val result = session.changeMasterPassword(current.toCharArray(), newPassword.toCharArray())) {
                 OperationResult.Success -> {
                     onSuccess()
-                    message("Contraseña maestra cambiada. Haz una copia nueva: las anteriores usan la antigua.")
+                    message(
+                        "Contraseña maestra cambiada con una clave de cifrado nueva. Haz una copia nueva: las " +
+                            "anteriores siguen abriéndose con la contraseña antigua." +
+                            if (hadBiometric) " La huella se ha desactivado; vuelve a activarla si quieres." else "",
+                    )
                 }
                 OperationResult.WrongPassword -> message("La contraseña actual no es correcta.")
                 is OperationResult.Failure -> message(result.message)

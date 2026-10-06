@@ -19,7 +19,8 @@ import io.github.jls97.boveda.core.crypto.wipe
  *
  * A random data-encryption key (DEK) encrypts the payload. The DEK is wrapped with a key derived
  * from the master password with Argon2id, authenticating the KDF section of the header as AAD.
- * Changing the password only re-wraps the DEK.
+ * Changing the password generates a new DEK, so the body is encrypted again: an old copy plus its
+ * old password never opens the copies made after the change.
  */
 object VaultContainer {
     private val MAGIC = byteArrayOf(0x42, 0x4F, 0x56, 0x44) // "BOVD"
@@ -83,9 +84,14 @@ object VaultContainer {
     /** Opens a vault with an already known DEK (biometric unlock). */
     fun openWithKey(blob: ByteArray, dek: ByteArray): Opened = openBody(blob, parseHeader(blob), dek.copyOf())
 
-    /** Re-wraps the same DEK under a new password and a new salt. Slow: runs Argon2id. */
-    fun changePassword(dek: ByteArray, newPassword: CharArray, params: KdfParams = KdfParams.DEFAULT): Header =
-        buildHeader(newPassword, dek, params)
+    /**
+     * Protects the vault with [newPassword]: a new random DEK is wrapped under it (and a new salt),
+     * so the body must be sealed again with the returned [Opened.dek]. The old DEK, and with it
+     * the fingerprint copy and every older backup, no longer opens the copies made from here on.
+     * Slow: runs Argon2id.
+     */
+    fun changePassword(newPassword: CharArray, data: VaultData, params: KdfParams = KdfParams.DEFAULT): Opened =
+        create(newPassword, data, params)
 
     /** True if [password] unwraps this header's DEK. Slow: runs Argon2id. */
     fun verifyPassword(header: Header, password: CharArray): Boolean {
