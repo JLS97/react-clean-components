@@ -96,6 +96,9 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
         get() = (session.state.value as? VaultState.Unlocked)?.data?.settings?.clipboardClearSeconds
             ?: VaultSettings.DEFAULT_CLIPBOARD_CLEAR_SECONDS
 
+    private val locksOnLeaving: Boolean
+        get() = (session.state.value as? VaultState.Unlocked)?.data?.settings?.autoLockSeconds == 0
+
     // region Adding a code
 
     fun startAdd(entryId: String) {
@@ -302,8 +305,9 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
         val current = revealed ?: return
         val now = System.currentTimeMillis()
         val seconds = clipboardSeconds
-        session.clipboard.copy("Código 2FA", current.secret.code(now), seconds)
-        message("Código copiado: cambia en ${current.secret.secondsLeft(now)} s y se borrará del portapapeles en $seconds s.")
+        session.clipboard.copy(current.secret.code(now), seconds)
+        val until = if (locksOnLeaving) "al salir de la app" else "en $seconds s"
+        message("Código copiado: cambia en ${current.secret.secondsLeft(now)} s y se borrará del portapapeles $until.")
     }
 
     /** Hides the revealed code (only if it belongs to [entryId], when given) and wipes its secret. */

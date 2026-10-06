@@ -204,8 +204,10 @@ class VaultViewModel(
 
     fun copy(label: String, value: String) {
         val seconds = settings.clipboardClearSeconds
-        session.clipboard.copy(label, value, seconds)
-        message("$label copiado. Se borrará del portapapeles en $seconds s.")
+        session.clipboard.copy(value, seconds)
+        // With auto-lock "on leaving the app", locking clears the clipboard before the timer.
+        val until = if (settings.autoLockSeconds == 0) "al salir de la app" else "en $seconds s"
+        message("$label copiado. Se borrará del portapapeles $until.")
     }
 
     // endregion
