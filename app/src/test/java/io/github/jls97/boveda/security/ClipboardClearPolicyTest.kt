@@ -71,6 +71,15 @@ class ClipboardClearPolicyTest {
     }
 
     @Test
+    fun lockedDeviceStillClearsWhenTheAlarmFires() {
+        // With the device locked Android hides the description too (only reads are restricted,
+        // clearPrimaryClip still works): the alarm receiver must clear, never just wait.
+        val hiddenByKeyguard: ObservedClip? = null
+        assertEquals(Verdict.CLEAR, ClipboardClearPolicy.decide(hiddenByKeyguard, stamp, deadline, deadline, force = false))
+        assertEquals(Verdict.CLEAR, ClipboardClearPolicy.decide(hiddenByKeyguard, stamp, deadline + 9 * 60_000, deadline, force = false))
+    }
+
+    @Test
     fun laterCopyReplacesTheEarlierOne() {
         val second = ObservedClip(ClipboardClearPolicy.LABEL, stamp + 10_000)
         // The timer of the first copy finds the second one and leaves it to its own timer.

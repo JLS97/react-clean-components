@@ -9,10 +9,11 @@ package io.github.jls97.boveda.security
  * timer, lock, and the alarm receiver that survives the death of the process) read the current
  * description and only clear when it is ours, so a clip the user copied afterwards is left alone.
  *
- * Android hides the clipboard from apps without focus: from the background the description reads
- * as `null` whether the clipboard is empty or holds someone else's clip. Since the clip was put
- * there by us and nothing tells us it changed, a hidden clip is treated as still ours: leaving a
- * secret behind is worse than wiping a clip we cannot see.
+ * Android hides the clipboard from apps without focus and while the device is locked: from the
+ * background the description reads as `null` whether the clipboard is empty or holds someone
+ * else's clip. Only reads are restricted; clearing always works. Since the clip was put there by
+ * us and nothing tells us it changed, a hidden clip is treated as still ours: leaving a secret
+ * behind is worse than wiping a clip we cannot see.
  */
 object ClipboardClearPolicy {
     /** Neutral clip label: a reader of the clipboard learns nothing about what was copied. */

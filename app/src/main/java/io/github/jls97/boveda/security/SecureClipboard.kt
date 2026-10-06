@@ -21,7 +21,10 @@ import kotlinx.coroutines.launch
  *
  * The timeout runs twice: a coroutine in the process (precise) and an [AlarmManager] alarm to
  * [ClipboardClearReceiver] (survives the death of the process; inexact, so it may run a bit late).
- * Whichever runs first clears the clipboard and cancels the other.
+ * Whichever runs first clears the clipboard and cancels the other. Clearing from the background
+ * is best effort: Android only restricts *reading* the clipboard (no focus, or device locked), so
+ * `clearPrimaryClip()` always works, but the description reads as `null` and the policy cannot
+ * tell our clip from one the user copied afterwards, which may then be wiped too.
  */
 class SecureClipboard(context: Context, private val scope: CoroutineScope) {
     private val appContext = context.applicationContext
@@ -70,7 +73,6 @@ class SecureClipboard(context: Context, private val scope: CoroutineScope) {
     companion object {
         const val ACTION_CLEAR = "io.github.jls97.boveda.action.CLEAR_CLIPBOARD"
         const val EXTRA_DEADLINE = "io.github.jls97.boveda.CLIP_DEADLINE"
-        const val EXTRA_RETRIES = "io.github.jls97.boveda.CLIP_RETRIES"
 
         /**
          * Applies [ClipboardClearPolicy] to the current clip and clears the clipboard if it says so.
@@ -93,26 +95,19 @@ class SecureClipboard(context: Context, private val scope: CoroutineScope) {
         }
 
         /**
-         * Arms the out-of-process clearing at [triggerAtMs] (monotonic clock). Inexact and allowed
+         * Arms the out-of-process clearing at [deadlineMs] (monotonic clock). Inexact and allowed
          * while idle, so it needs no alarm permission; a new call replaces the previous alarm.
          */
-        internal fun scheduleAlarm(
-            context: Context,
-            stamp: Long,
-            deadlineMs: Long,
-            triggerAtMs: Long = deadlineMs,
-            retries: Int = 0,
-        ) {
+        private fun scheduleAlarm(context: Context, stamp: Long, deadlineMs: Long) {
             val alarms = context.getSystemService(AlarmManager::class.java) ?: return
             val intent = clearIntent(context)
                 .putExtra(ClipboardClearPolicy.EXTRA_STAMP, stamp)
                 .putExtra(EXTRA_DEADLINE, deadlineMs)
-                .putExtra(EXTRA_RETRIES, retries)
             val pendingIntent = PendingIntent.getBroadcast(
                 context, REQUEST_CODE, intent,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
-            alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAtMs, pendingIntent)
+            alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, deadlineMs, pendingIntent)
         }
 
         private fun cancelAlarm(context: Context) {

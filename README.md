@@ -128,7 +128,10 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
 - **Sin fugas.** Sin permiso de Internet (el manifiesto lo elimina aunque una librería lo pida).
   Sin copias en la nube ni transferencias entre dispositivos. `FLAG_SECURE` (sin capturas ni
   vista previa en recientes). Oculta superposiciones de otras apps (tapjacking). Excluida del
-  autorrelleno de terceros. El portapapeles se marca como sensible y se borra solo.
+  autorrelleno de terceros. El portapapeles se marca como sensible y se borra solo pasado el
+  tiempo elegido, también si el sistema cierra la app (mejor esfuerzo: desde segundo plano
+  Android no deja comprobar si el clip sigue siendo el de Bóveda, así que puede borrar algo
+  copiado después).
 - **Memoria.** Las claves se borran al bloquear. Los textos descifrados se sueltan para que el
   recolector de basura los elimine, pero la JVM no permite borrarlos de forma garantizada.
 
