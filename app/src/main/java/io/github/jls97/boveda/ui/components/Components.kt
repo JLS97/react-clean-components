@@ -1,6 +1,7 @@
 package io.github.jls97.boveda.ui.components
 
 import android.app.Activity
+import android.app.KeyguardManager
 import android.content.ContentResolver
 import android.content.Context
 import android.content.ContextWrapper
@@ -200,7 +201,10 @@ fun ConfirmDialog(
     )
 }
 
-/** Dialog that asks for one password, for example the one of a backup file. */
+/**
+ * Dialog that asks for one password, for example the one of a backup file or, con otro [label],
+ * la contraseña maestra actual antes de una operación sensible.
+ */
 @Composable
 fun PasswordPromptDialog(
     title: String,
@@ -208,6 +212,7 @@ fun PasswordPromptDialog(
     confirmLabel: String,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
+    label: String = "Contraseña maestra de la copia",
 ) {
     var password by remember { mutableStateOf("") }
     SecureAlertDialog(
@@ -219,7 +224,7 @@ fun PasswordPromptDialog(
                 PasswordField(
                     value = password,
                     onValueChange = { password = it },
-                    label = "Contraseña maestra de la copia",
+                    label = label,
                     imeAction = ImeAction.Done,
                     onImeAction = { if (password.isNotEmpty()) onConfirm(password) },
                 )
@@ -296,6 +301,28 @@ tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+/** True si el teléfono tiene un bloqueo de pantalla seguro (PIN, patrón o contraseña). */
+fun Context.hasSecureLockScreen(): Boolean =
+    getSystemService(KeyguardManager::class.java)?.isDeviceSecure == true
+
+/**
+ * Aviso persistente para cuando el teléfono no tiene bloqueo de pantalla. La clave de hardware de
+ * la bóveda exige «teléfono desbloqueado», pero sin PIN el teléfono cuenta siempre como
+ * desbloqueado, así que esa capa deja de aportar nada y solo queda la contraseña maestra.
+ */
+@Composable
+fun InsecureDeviceWarning(modifier: Modifier = Modifier) {
+    Text(
+        "Este teléfono no tiene bloqueo de pantalla (PIN, patrón o contraseña). La capa de hardware de " +
+            "la bóveda solo protege con el teléfono bloqueado: ahora mismo cualquiera que lo coja llega " +
+            "hasta aquí y solo le separa de tus datos la contraseña maestra. Activa un bloqueo en los " +
+            "ajustes del teléfono.",
+        color = MaterialTheme.colorScheme.error,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = modifier,
+    )
 }
 
 /** Backups are small; anything bigger than this is not a vault file. */

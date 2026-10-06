@@ -23,6 +23,9 @@ class LockViewModel(private val session: VaultSession) : ViewModel() {
     private val _ui = MutableStateFlow(LockUiState())
     val ui: StateFlow<LockUiState> = _ui.asStateFlow()
 
+    /** Cambia cada vez que la pantalla vuelve al frente: sirve para releer el estado del teléfono. */
+    val resumeTicks: StateFlow<Int> = session.resumeTicks
+
     fun createVault(password: String, confirmation: String) {
         if (_ui.value.busy) return
         val problem = masterPasswordProblem(password, confirmation)

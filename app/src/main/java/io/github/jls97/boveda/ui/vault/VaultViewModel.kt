@@ -8,8 +8,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.jls97.boveda.core.crypto.wipe
 import io.github.jls97.boveda.core.generator.GeneratorOptions
 import io.github.jls97.boveda.core.generator.PasswordGenerator
+import io.github.jls97.boveda.core.otp.RecoveryCode
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.core.vault.VaultSettings
 import io.github.jls97.boveda.session.OperationResult
@@ -225,10 +227,32 @@ class VaultViewModel(
 
     fun setClipboardClear(seconds: Int) = updateSettings(settings.copy(clipboardClearSeconds = seconds))
 
-    private fun updateSettings(newSettings: VaultSettings) {
+    /** Guarda [newSettings] tal cual. Si relajan la seguridad, la pantalla pide antes la contraseña maestra. */
+    fun updateSettings(newSettings: VaultSettings) {
         launchBusy {
             val result = session.updateSettings(newSettings)
             if (result is OperationResult.Failure) message(result.message)
+        }
+    }
+
+    /**
+     * Vuelve a pedir la contraseña maestra antes de una operación sensible: [onVerified] solo se
+     * llama si es la correcta, y ya con [busy] a false para que pueda lanzar su propia operación.
+     */
+    fun verifyMasterPassword(password: String, onVerified: () -> Unit) {
+        if (busy) return
+        busy = true
+        viewModelScope.launch {
+            val verified = try {
+                session.verifyMasterPassword(password.toCharArray())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            } finally {
+                busy = false
+            }
+            if (verified) onVerified() else message("La contraseña maestra no es correcta.")
         }
     }
 
@@ -285,6 +309,9 @@ class VaultViewModel(
 
     fun biometricEnrollmentCipher(): Cipher? = session.biometricEnrollmentCipher()
 
+    /** Cipher de la huella ya activada, para confirmar con ella una operación sensible en vez de con la contraseña. */
+    fun biometricUnlockCipher(): Cipher? = session.biometricUnlockCipher()
+
     fun enableBiometric(authorizedCipher: Cipher) {
         launchBusy {
             when (val result = session.enableBiometric(authorizedCipher)) {
@@ -301,6 +328,32 @@ class VaultViewModel(
     }
 
     fun lock() = session.lock()
+
+    // endregion
+
+    // region 2FA
+
+    /** Comprueba que [typed] sigue siendo el código de recuperación 2FA de la bóveda. Solo dice si acierta. */
+    fun checkOtpRecoveryCode(typed: String) {
+        val code = RecoveryCode.normalize(typed)
+        if (code == null) {
+            message("El código de recuperación tiene 20 caracteres, en 4 grupos de 5.")
+            return
+        }
+        launchBusy {
+            try {
+                message(
+                    if (session.checkOtpRecoveryCode(code)) {
+                        "El código de recuperación es correcto: el papel sigue valiendo."
+                    } else {
+                        "Ese no es el código de recuperación de esta bóveda. Revisa lo que apuntaste."
+                    },
+                )
+            } finally {
+                code.wipe()
+            }
+        }
+    }
 
     // endregion
 
@@ -324,3 +377,12 @@ class VaultViewModel(
         }
     }
 }
+
+/**
+ * True si [proposed] deja la bóveda más expuesta que [current]: el bloqueo automático tarda más
+ * (0, «al salir de la app», es el más estricto) o el portapapeles se borra más tarde. Pasar a un
+ * valor más estricto, o no cambiar nada, no cuenta.
+ */
+fun relaxesSecurity(current: VaultSettings, proposed: VaultSettings): Boolean =
+    proposed.autoLockSeconds > current.autoLockSeconds ||
+        proposed.clipboardClearSeconds > current.clipboardClearSeconds

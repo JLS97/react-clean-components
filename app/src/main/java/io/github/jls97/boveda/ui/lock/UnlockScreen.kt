@@ -35,10 +35,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.ui.components.ConfirmDialog
+import io.github.jls97.boveda.ui.components.InsecureDeviceWarning
 import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
 import io.github.jls97.boveda.ui.components.findActivity
+import io.github.jls97.boveda.ui.components.hasSecureLockScreen
 import io.github.jls97.boveda.ui.components.readBackup
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -53,6 +55,9 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var confirmRestore by remember { mutableStateOf(false) }
     var pendingBackup by remember { mutableStateOf<ByteArray?>(null) }
+    // Se comprueba cada vez que la pantalla vuelve al frente: el usuario puede haber quitado el PIN.
+    val resumeTick by viewModel.resumeTicks.collectAsStateWithLifecycle()
+    val deviceSecure = remember(resumeTick) { context.hasSecureLockScreen() }
 
     val blocked = ui.blockedUntil > now
     LaunchedEffect(ui.blockedUntil) {
@@ -108,6 +113,7 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true) {
         ) {
             Text("Bóveda", style = MaterialTheme.typography.displaySmall)
             Text("Bloqueada", style = MaterialTheme.typography.titleMedium)
+            if (!deviceSecure) InsecureDeviceWarning()
             PasswordField(
                 value = password,
                 onValueChange = { password = it },

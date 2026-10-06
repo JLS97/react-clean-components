@@ -738,6 +738,27 @@ class VaultSession private constructor(
 
     // endregion
 
+    // region Re-autenticación
+
+    /**
+     * Comprueba que [password] es la contraseña maestra de la bóveda abierta, sin desbloquear ni
+     * cambiar nada: sirve para volver a pedirla antes de una operación sensible (activar la huella,
+     * exportar una copia, relajar un ajuste). Lenta: Argon2id. El array recibido se borra. Devuelve
+     * false si la bóveda está bloqueada.
+     */
+    suspend fun verifyMasterPassword(password: CharArray): Boolean {
+        val header = open?.header
+        val copy = password.copyOf()
+        password.wipe()
+        return try {
+            if (header == null) false else withContext(Dispatchers.Default) { VaultContainer.verifyPassword(header, copy) }
+        } finally {
+            copy.wipe()
+        }
+    }
+
+    // endregion
+
     private fun describe(e: Exception): String = when (e) {
         is DeviceBindingException ->
             "La bóveda no se puede abrir en este teléfono: su clave de hardware no está disponible. " +
