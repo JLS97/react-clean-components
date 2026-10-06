@@ -166,6 +166,11 @@ Fuera del control de la app, conviene revisar en el teléfono:
 - Un teclado malicioso capturando lo que escribes: usa un teclado de confianza.
 - Un servicio de accesibilidad malicioso, que puede leer lo que se muestra en pantalla.
   Revisa qué apps tienen ese permiso.
+- Una pantalla de desbloqueo falsa. Cualquier app puede saber qué gestor de contraseñas usas
+  (Android lo expone a todas) y, cuando le pides rellenar, dibujar una copia de la pantalla de
+  Bóveda para quedarse con tu contraseña maestra. Por eso Bóveda muestra siempre tu frase
+  antiphishing antes de pedirla y, con la huella activada, no enseña el campo de contraseña hasta
+  que lo pides: si no ves tu frase, no escribas la contraseña.
 - Olvidar la contraseña maestra: no hay forma de recuperarla.
 - Perder a la vez el móvil (o tus huellas) y el código de recuperación: los códigos 2FA no se
   podrían recuperar, y habría que volver a activar la verificación en cada web con sus códigos de

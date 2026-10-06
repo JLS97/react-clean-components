@@ -4,8 +4,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -31,8 +33,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.jls97.boveda.data.AntiPhishingPhrase
 import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.ui.components.ConfirmDialog
 import io.github.jls97.boveda.ui.components.InsecureDeviceWarning
@@ -45,13 +49,23 @@ import io.github.jls97.boveda.ui.components.readBackup
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * Pantalla de desbloqueo. [requestContext] es, en el autorrelleno, para quién se va a rellenar
+ * (p. ej. «Para: com.ejemplo.app»); se muestra bajo el título para que la pantalla no sea genérica
+ * (M-04). En la app principal queda a null.
+ */
 @Composable
-fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true) {
+fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true, requestContext: String? = null) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var password by remember { mutableStateOf("") }
     val biometricEnabled = remember { viewModel.isBiometricEnabled() }
+    // Con huella, la contraseña maestra queda plegada: cuanto menos se teclee en una pantalla que
+    // aparece encima de otra app, menos vale imitarla (M-04).
+    var usePassword by remember { mutableStateOf(!biometricEnabled) }
+    // Vive fuera de la bóveda cifrada: hay que enseñarla antes de abrirla (M-04).
+    val phrase = remember { AntiPhishingPhrase(context.applicationContext).phrase.value }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var confirmRestore by remember { mutableStateOf(false) }
     var pendingBackup by remember { mutableStateOf<ByteArray?>(null) }
@@ -113,15 +127,21 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true) {
         ) {
             Text("Bóveda", style = MaterialTheme.typography.displaySmall)
             Text("Bloqueada", style = MaterialTheme.typography.titleMedium)
+            if (requestContext != null) {
+                Text(requestContext, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            AntiPhishingBanner(phrase)
             if (!deviceSecure) InsecureDeviceWarning()
-            PasswordField(
-                value = password,
-                onValueChange = { password = it },
-                label = "Contraseña maestra",
-                imeAction = ImeAction.Done,
-                onImeAction = { if (!blocked) viewModel.unlock(password) },
-                enabled = !ui.busy && !blocked,
-            )
+            if (usePassword) {
+                PasswordField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = "Contraseña maestra",
+                    imeAction = ImeAction.Done,
+                    onImeAction = { if (!blocked) viewModel.unlock(password) },
+                    enabled = !ui.busy && !blocked,
+                )
+            }
             if (blocked) {
                 val seconds = (ui.blockedUntil - now + 999) / 1_000
                 Text(
@@ -137,16 +157,27 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true) {
                     Text("Descifrando…")
                 }
             } else {
-                Button(
-                    onClick = { viewModel.unlock(password) },
-                    enabled = password.isNotEmpty() && !blocked,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Desbloquear")
+                if (usePassword) {
+                    Button(
+                        onClick = { viewModel.unlock(password) },
+                        enabled = password.isNotEmpty() && !blocked,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Desbloquear")
+                    }
                 }
                 if (biometricEnabled) {
-                    OutlinedButton(onClick = { promptFingerprint() }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Usar huella")
+                    if (usePassword) {
+                        OutlinedButton(onClick = { promptFingerprint() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Usar huella")
+                        }
+                    } else {
+                        Button(onClick = { promptFingerprint() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Usar huella")
+                        }
+                        TextButton(onClick = { usePassword = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Usar contraseña")
+                        }
                     }
                 }
             }
@@ -185,5 +216,50 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true) {
             },
             onDismiss = { pendingBackup = null },
         )
+    }
+}
+
+/**
+ * La frase antiphishing, bien visible, encima de la contraseña (M-04). Sin frase (bóvedas creadas
+ * antes de existir), un aviso para elegirla en Ajustes: la pantalla sigue siendo genérica hasta
+ * entonces.
+ */
+@Composable
+private fun AntiPhishingBanner(phrase: String?) {
+    if (phrase == null) {
+        Text(
+            "Esta bóveda no tiene frase antiphishing. Elígela en Ajustes → Seguridad: Bóveda la mostrará " +
+                "siempre aquí y, si una app imita esta pantalla, no la conocerá.",
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        return
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "Tu frase antiphishing",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                phrase,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "Si no la ves, no escribas la contraseña.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
     }
 }

@@ -42,6 +42,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jls97.boveda.core.vault.VaultSettings
+import io.github.jls97.boveda.data.ANTI_PHISHING_MAX_LENGTH
+import io.github.jls97.boveda.data.ANTI_PHISHING_MIN_LENGTH
+import io.github.jls97.boveda.data.AntiPhishingPhrase
+import io.github.jls97.boveda.data.antiPhishingPhraseProblem
 import io.github.jls97.boveda.data.lastBackupLabel
 import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.session.OtpAccess
@@ -49,6 +53,7 @@ import io.github.jls97.boveda.ui.components.BackButton
 import io.github.jls97.boveda.ui.components.ChoiceDialog
 import io.github.jls97.boveda.ui.components.ConfirmDialog
 import io.github.jls97.boveda.ui.components.InsecureDeviceWarning
+import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
@@ -85,8 +90,12 @@ fun SettingsScreen(
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
     var confirmExport by remember { mutableStateOf(false) }
     var checkingRecoveryCode by remember { mutableStateOf(false) }
+    var editingPhrase by remember { mutableStateOf(false) }
     // Operación sensible a la espera de la contraseña maestra (B-35, B-36, B-37).
     var reauth by remember { mutableStateOf<Reauth?>(null) }
+    // Fuera de la bóveda cifrada: la pantalla de desbloqueo la enseña antes de abrirla (M-04).
+    val phrases = remember { AntiPhishingPhrase(context.applicationContext) }
+    val antiPhishingPhrase by phrases.phrase.collectAsStateWithLifecycle()
     val biometricAvailable = remember { BiometricPrompts.isStrongBiometricAvailable(context) }
     val resumeTick by viewModel.resumeTicks.collectAsStateWithLifecycle()
     val backupStatus by viewModel.backupStatus.collectAsStateWithLifecycle()
@@ -254,6 +263,28 @@ fun SettingsScreen(
             ListItem(
                 headlineContent = { Text("Cambiar contraseña maestra") },
                 modifier = Modifier.clickable(enabled = !viewModel.busy) { changingPassword = true },
+            )
+            ListItem(
+                headlineContent = { Text("Frase antiphishing") },
+                supportingContent = {
+                    Text(
+                        if (antiPhishingPhrase == null) {
+                            "Sin frase. Elige una: la pantalla de desbloqueo la mostrará siempre antes de pedir " +
+                                "la contraseña maestra y una app que la imite no la conocerá. Cambiarla pide la contraseña maestra."
+                        } else {
+                            "«$antiPhishingPhrase». Si al desbloquear no la ves, no escribas la contraseña maestra. " +
+                                "Cambiarla pide la contraseña maestra."
+                        },
+                    )
+                },
+                modifier = Modifier.clickable(enabled = !viewModel.busy) {
+                    reauth = Reauth(
+                        title = "Frase antiphishing",
+                        text = "Escribe la contraseña maestra para confirmar que eres tú.",
+                        confirmLabel = "Continuar",
+                        onVerified = { editingPhrase = true },
+                    )
+                },
             )
             HorizontalDivider()
 
@@ -467,6 +498,18 @@ fun SettingsScreen(
         )
     }
 
+    if (editingPhrase) {
+        AntiPhishingPhraseDialog(
+            current = antiPhishingPhrase,
+            onConfirm = { phrase ->
+                editingPhrase = false
+                phrases.save(phrase)
+                viewModel.message("Frase antiphishing guardada.")
+            },
+            onDismiss = { editingPhrase = false },
+        )
+    }
+
     if (checkingRecoveryCode) {
         RecoveryCodeCheckDialog(
             busy = viewModel.busy,
@@ -486,6 +529,43 @@ private class Reauth(
     val confirmLabel: String,
     val onVerified: () -> Unit,
 )
+
+/** Pide la nueva frase antiphishing; solo deja confirmar una válida (M-04). */
+@Composable
+private fun AntiPhishingPhraseDialog(
+    current: String?,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var typed by remember { mutableStateOf(current.orEmpty()) }
+    val problem = antiPhishingPhraseProblem(typed)
+    SecureAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Frase antiphishing") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Una frase corta que solo tú conozcas. Bóveda la mostrará siempre antes de pedirte la " +
+                        "contraseña maestra, también al rellenar en otras apps: si no la ves, no escribas la contraseña.",
+                )
+                NoLearningTextField(
+                    value = typed,
+                    onValueChange = { if (it.length <= ANTI_PHISHING_MAX_LENGTH) typed = it },
+                    label = "Frase ($ANTI_PHISHING_MIN_LENGTH-$ANTI_PHISHING_MAX_LENGTH caracteres)",
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                )
+                if (typed.isNotEmpty() && problem != null) {
+                    Text(problem, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(typed) }, enabled = problem == null) { Text("Guardar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
 
 /** Pide el código de recuperación 2FA para comprobarlo; solo se dirá si es correcto o no. */
 @Composable
