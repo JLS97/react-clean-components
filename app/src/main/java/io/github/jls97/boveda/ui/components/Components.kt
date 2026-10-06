@@ -6,6 +6,7 @@ import android.content.ContentResolver
 import android.content.Context
 import android.content.ContextWrapper
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -49,9 +50,12 @@ import androidx.compose.ui.unit.dp
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
 import io.github.jls97.boveda.core.generator.PasswordStrength
 import io.github.jls97.boveda.core.generator.StrengthLevel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
+import java.io.FileOutputStream
+import java.io.IOException
 import java.text.DateFormat
 import java.util.Date
 
@@ -342,6 +346,37 @@ suspend fun readBackup(resolver: ContentResolver, uri: Uri): ByteArray? = withCo
     }
 }
 
+/**
+ * Escribe la copia truncando el archivo y la fuerza a disco (fsync) cuando el flujo lo permite,
+ * para que desconectar un USB nada más terminar no la deje a medias (M-10). Devuelve false si el
+ * proveedor no abre el archivo o la escritura falla; el que llama relee y verifica el archivo.
+ */
 suspend fun writeBackup(resolver: ContentResolver, uri: Uri, bytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
-    resolver.openOutputStream(uri, "wt")?.use { it.write(bytes) } != null
+    try {
+        val stream = resolver.openOutputStream(uri, "wt") ?: return@withContext false
+        stream.use {
+            it.write(bytes)
+            it.flush()
+            if (it is FileOutputStream) it.fd.sync()
+        }
+        true
+    } catch (e: IOException) {
+        false
+    } catch (e: SecurityException) {
+        false
+    }
+}
+
+/**
+ * Borra el documento que el selector del sistema ya creó cuando la copia no se pudo escribir o
+ * verificar, para no dejar un .bvd vacío o dañado con nombre válido (M-10). Devuelve false si el
+ * proveedor no lo permite; entonces se avisa al usuario para que lo borre a mano.
+ */
+suspend fun deleteDocument(resolver: ContentResolver, uri: Uri): Boolean = withContext(Dispatchers.IO) {
+    try {
+        DocumentsContract.deleteDocument(resolver, uri)
+    } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        false
+    }
 }

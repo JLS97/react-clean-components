@@ -757,6 +757,32 @@ class VaultSession private constructor(
         }
     }
 
+    /**
+     * Comprueba que [bytes], releídos del archivo recién escrito, son una copia válida de ESTA
+     * bóveda (M-10): la cabecera se analiza con [VaultContainer.parseHeader] y debe ser la misma
+     * que la de la bóveda abierta, y el cuerpo se autentica (AES-GCM) con una copia de la DEK. No
+     * deriva la contraseña, así que es rápido, y no cambia nada. Devuelve false si la bóveda está
+     * bloqueada o la copia no se abre. Lo descifrado se descarta en el acto.
+     */
+    suspend fun verifyExportedBackup(bytes: ByteArray): Boolean {
+        val current = open ?: return false
+        val dek = current.dek.copyOf()
+        return try {
+            withContext(Dispatchers.Default) {
+                val header = VaultContainer.parseHeader(bytes)
+                if (!header.encoded.contentEquals(current.header.encoded)) return@withContext false
+                VaultContainer.openWithKey(bytes, dek).dek.wipe()
+                true
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        } finally {
+            dek.wipe()
+        }
+    }
+
     // endregion
 
     private fun describe(e: Exception): String = when (e) {

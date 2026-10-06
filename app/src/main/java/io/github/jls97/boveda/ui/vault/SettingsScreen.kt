@@ -42,12 +42,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jls97.boveda.core.vault.VaultSettings
+import io.github.jls97.boveda.data.lastBackupLabel
 import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.ui.components.BackButton
 import io.github.jls97.boveda.ui.components.ChoiceDialog
 import io.github.jls97.boveda.ui.components.ConfirmDialog
-import io.github.jls97.boveda.ui.components.CreateLocalDocument
 import io.github.jls97.boveda.ui.components.InsecureDeviceWarning
 import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
@@ -57,6 +57,7 @@ import io.github.jls97.boveda.ui.components.StrengthMeter
 import io.github.jls97.boveda.ui.components.autoLockLabel
 import io.github.jls97.boveda.ui.components.durationLabel
 import io.github.jls97.boveda.ui.components.findActivity
+import io.github.jls97.boveda.ui.components.formatDate
 import io.github.jls97.boveda.ui.components.hasSecureLockScreen
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -72,6 +73,7 @@ fun SettingsScreen(
     otpCount: Int,
     onRecoverOtp: () -> Unit,
     onNewRecoveryCode: () -> Unit,
+    onPickExportDestination: (String) -> Unit,
     viewModel: VaultViewModel,
     snackbar: SnackbarHostState,
 ) {
@@ -87,6 +89,7 @@ fun SettingsScreen(
     var reauth by remember { mutableStateOf<Reauth?>(null) }
     val biometricAvailable = remember { BiometricPrompts.isStrongBiometricAvailable(context) }
     val resumeTick by viewModel.resumeTicks.collectAsStateWithLifecycle()
+    val backupStatus by viewModel.backupStatus.collectAsStateWithLifecycle()
     val deviceSecure = remember(resumeTick) { context.hasSecureLockScreen() }
     val autofillEnabled = remember(resumeTick) {
         context.getSystemService(AutofillManager::class.java)?.hasEnabledAutofillServices() == true
@@ -110,24 +113,20 @@ fun SettingsScreen(
         }
     }
 
-    val exportLauncher = rememberLauncherForActivityResult(CreateLocalDocument("application/octet-stream")) { uri ->
-        if (uri != null) viewModel.exportBackup(uri)
-    }
     val restoreLauncher = rememberLauncherForActivityResult(OpenLocalDocument()) { uri ->
         restoreUri = uri
     }
 
     /**
-     * Abre el selector de destino. Puede llamarse en diferido (tras comprobar la contraseña maestra), así que
-     * si la pantalla ya ha salido de la composición el launcher está desregistrado y lanzar fallaría.
+     * Sella la copia primero y solo después abre el selector de destino (M-10). El selector vive en la
+     * raíz de la app, no en esta pantalla, así que sigue registrado aunque Ajustes salga de la
+     * composición o la bóveda se bloquee mientras está abierto.
      */
     fun launchExport() {
-        val date = SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(Date())
-        try {
-            exportLauncher.launch("boveda-$date.bvd")
+        viewModel.prepareExport {
+            val date = SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(Date())
             viewModel.expectExternalActivity()
-        } catch (e: IllegalStateException) {
-            viewModel.message("La exportación se canceló al salir de Ajustes. Vuelve a intentarlo.")
+            onPickExportDestination("boveda-$date.bvd")
         }
     }
 
@@ -339,8 +338,12 @@ fun SettingsScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
             ListItem(
+                headlineContent = { Text("Última copia verificada") },
+                supportingContent = { Text(lastBackupLabel(backupStatus) { formatDate(it) }) },
+            )
+            ListItem(
                 headlineContent = { Text("Exportar copia cifrada") },
-                supportingContent = { Text("Pide confirmación y tu huella o contraseña maestra.") },
+                supportingContent = { Text("Pide confirmación y tu huella o contraseña maestra; el archivo se relee y se verifica.") },
                 modifier = Modifier.clickable(enabled = !viewModel.busy) { confirmExport = true },
             )
             ListItem(
