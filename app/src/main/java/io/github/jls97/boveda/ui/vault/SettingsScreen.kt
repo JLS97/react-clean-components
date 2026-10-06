@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -116,10 +117,18 @@ fun SettingsScreen(
         restoreUri = uri
     }
 
+    /**
+     * Abre el selector de destino. Puede llamarse en diferido (tras comprobar la contraseña maestra), así que
+     * si la pantalla ya ha salido de la composición el launcher está desregistrado y lanzar fallaría.
+     */
     fun launchExport() {
-        viewModel.expectExternalActivity()
         val date = SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(Date())
-        exportLauncher.launch("boveda-$date.bvd")
+        try {
+            exportLauncher.launch("boveda-$date.bvd")
+            viewModel.expectExternalActivity()
+        } catch (e: IllegalStateException) {
+            viewModel.message("La exportación se canceló al salir de Ajustes. Vuelve a intentarlo.")
+        }
     }
 
     val exportReauth = Reauth(
@@ -195,10 +204,14 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Ajustes") },
-                navigationIcon = { BackButton { viewModel.back() } },
-            )
+            Column {
+                TopAppBar(
+                    title = { Text("Ajustes") },
+                    navigationIcon = { BackButton { viewModel.back() } },
+                )
+                // Comprobar la contraseña maestra tarda unos segundos: que se vea que algo está en marcha.
+                if (viewModel.busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
