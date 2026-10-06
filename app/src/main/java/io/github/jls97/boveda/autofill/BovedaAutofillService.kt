@@ -7,6 +7,7 @@ import android.service.autofill.FillRequest
 import android.service.autofill.FillResponse
 import android.service.autofill.SaveCallback
 import android.service.autofill.SaveRequest
+import io.github.jls97.boveda.core.autofill.SaveCapture
 
 /**
  * Android's autofill entry point. Everything happens on the phone: the system hands over the
@@ -38,8 +39,10 @@ class BovedaAutofillService : AutofillService() {
             val structure = request.fillContexts.lastOrNull()?.structure
             val parsed = structure?.let { StructureParser.parse(it) }
             val login = parsed?.login
+            // A password change form has the current password next to the new one: only the new
+            // one is worth saving, and not when its two copies disagree (see SaveCapture).
             val password = login?.let { fields ->
-                parsed.textOf(fields.password) ?: fields.newPasswords.firstNotNullOfOrNull { parsed.textOf(it) }
+                SaveCapture.choosePassword(parsed.textOf(fields.password), fields.newPasswords.map { parsed.textOf(it) })
             }
             if (parsed == null || login == null || password.isNullOrEmpty() || parsed.packageName == packageName) {
                 null

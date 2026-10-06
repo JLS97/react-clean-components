@@ -71,6 +71,8 @@ class AutofillActivity : ComponentActivity() {
     }
 
     private fun finishWith(dataset: Dataset?) {
+        // Closing or cancelling the save screen is the end of those credentials, whatever follows.
+        saveToken?.let { PendingSaves.remove(it) }
         if (dataset != null) {
             setResult(RESULT_OK, Intent().putExtra(AutofillManager.EXTRA_AUTHENTICATION_RESULT, dataset))
         } else {

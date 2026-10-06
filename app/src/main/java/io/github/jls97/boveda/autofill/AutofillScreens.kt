@@ -33,6 +33,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -51,6 +53,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
 import io.github.jls97.boveda.core.autofill.ExternalText
+import io.github.jls97.boveda.core.autofill.SaveCapture
 import io.github.jls97.boveda.core.autofill.TrustedBrowsers
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.security.BiometricPrompts
@@ -89,7 +92,7 @@ internal fun AutofillApp(
                     emptyText = "La bóveda está vacía.",
                     viewModel = viewModel,
                     onPick = { entry, rememberChoice ->
-                        viewModel.pick(entry, request.target, rememberChoice) { chosen ->
+                        viewModel.pick(entry, request.target, rememberChoice, onLocked = onClose) { chosen ->
                             val dataset = AutofillResponses.filledDataset(
                                 context,
                                 request.usernameId,
@@ -122,7 +125,7 @@ internal fun AutofillApp(
                         emptyText = "No tienes ningún código 2FA guardado. Añádelo en Bóveda, desde la entrada de la cuenta.",
                         viewModel = viewModel,
                         onPick = { entry, rememberChoice ->
-                            viewModel.pick(entry, request.target, rememberChoice) { chosen ->
+                            viewModel.pick(entry, request.target, rememberChoice, onLocked = onClose) { chosen ->
                                 val activity = context.findActivity()
                                 val cipher = viewModel.otpCipher()
                                 if (activity != null && cipher != null) {
@@ -326,11 +329,24 @@ private fun SaveEntryScreen(
     val impersonated = remember(entries, pending) { CredentialMatcher.impersonationWarnings(entries, pending.target) }
     // The user name was typed in the other app: shown (and saved) without invisible characters.
     val typedUsername = remember(pending) { ExternalText.sanitize(pending.username) }
+    // Decided once, from the entries as they were when the screen opened, so a successful save
+    // doesn't flip the screen into this message before it closes.
+    val alreadyStored = remember(pending) { SaveCapture.alreadyStored(matches, typedUsername, pending.password) }
+    if (alreadyStored != null) {
+        MessageScreen(
+            title = "Ya está en Bóveda",
+            text = "«${alreadyStored.title.ifBlank { "(sin nombre)" }}» ya guarda este usuario y esta contraseña " +
+                "para ${pending.target.label}. No hay nada que cambiar.",
+            onClose = onCancel,
+        )
+        return
+    }
     var title by remember { mutableStateOf(CredentialMatcher.suggestedTitle(pending.target, entries)) }
     var username by remember { mutableStateOf(typedUsername) }
-    var replaceId by remember {
-        mutableStateOf(matches.firstOrNull { it.username.equals(typedUsername, ignoreCase = true) }?.id)
-    }
+    // "Actualizar" only comes preselected for an exact match of the destination with the same user.
+    var replaceId by remember { mutableStateOf(SaveCapture.preselect(matches, typedUsername)?.id) }
+    var revealed by remember { mutableStateOf(false) }
+    val existing = replaceId?.let { id -> matches.find { it.id == id } }
 
     Scaffold(
         topBar = {
@@ -351,10 +367,33 @@ private fun SaveEntryScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                "Credenciales de ${pending.target.label}. La contraseña (${pending.password.length} caracteres) " +
-                    "se guardará cifrada.",
+                if (existing != null) {
+                    "Credenciales de ${pending.target.label}. Se actualizará «${existing.title}». " +
+                        SaveCapture.changeSummary(existing, username, pending.password)
+                } else {
+                    "Credenciales de ${pending.target.label}. La contraseña (${pending.password.length} caracteres) " +
+                        "se guardará cifrada."
+                },
                 style = MaterialTheme.typography.bodyMedium,
             )
+            // What is about to be stored is never a blind overwrite: the user can compare both values.
+            TextButton(onClick = { revealed = !revealed }) {
+                Text(if (revealed) "Ocultar" else "Mostrar")
+            }
+            if (revealed) {
+                Text(
+                    "Capturada: ${pending.password}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace,
+                )
+                if (existing != null) {
+                    Text(
+                        "Actual: ${existing.password.ifEmpty { "(vacía)" }}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
             idnWarning(pending.target)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
             if (impersonated.isNotEmpty()) {
                 Text(
@@ -394,6 +433,8 @@ private fun SaveEntryScreen(
                 value = username,
                 onValueChange = { username = it },
                 label = { Text("Usuario o email") },
+                // Empty while updating keeps the stored user, which is shown here as a hint.
+                placeholder = existing?.username?.takeIf { it.isNotEmpty() }?.let { { Text(it) } },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false),
                 modifier = Modifier.fillMaxWidth(),

@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
+import io.github.jls97.boveda.core.autofill.SaveCapture
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.VaultSession
@@ -29,7 +30,13 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
      * Fills with [entry]. With [rememberChoice], links the app or site to it first, unless the
      * target can't be linked safely (see AutofillTarget.key).
      */
-    fun pick(entry: VaultEntry, target: AutofillTarget, rememberChoice: Boolean, onReady: (VaultEntry) -> Unit) {
+    fun pick(
+        entry: VaultEntry,
+        target: AutofillTarget,
+        rememberChoice: Boolean,
+        onLocked: () -> Unit,
+        onReady: (VaultEntry) -> Unit,
+    ) {
         if (busy) return
         if (!rememberChoice || target.key == null || CredentialMatcher.isExactMatch(entry, target) || impersonates(target)) {
             onReady(entry)
@@ -41,6 +48,12 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
             // If saving the link fails, still fill: the user asked for this entry.
             session.saveEntry(linked)
             busy = false
+            // Unless the vault locked while waiting for the write (screen off, another screen
+            // holding it): after a lock nothing decrypted leaves, not even an entry just chosen.
+            if (session.state.value !is VaultState.Unlocked) {
+                onLocked()
+                return@launch
+            }
             onReady(linked)
         }
     }
@@ -89,8 +102,9 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
             val entries = (session.state.value as? VaultState.Unlocked)?.data?.entries.orEmpty()
             val existing = replaceId?.let { id -> entries.find { it.id == id } }
             val entry = if (existing != null) {
+                // A form without a user field (a password change) must not empty the stored one.
                 CredentialMatcher.remember(existing, pending.target)
-                    .copy(username = username.trim(), password = pending.password, updatedAt = now)
+                    .copy(username = SaveCapture.mergedUsername(existing, username), password = pending.password, updatedAt = now)
             } else {
                 val host = pending.target.host
                 VaultEntry(
