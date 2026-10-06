@@ -268,6 +268,7 @@ class VaultViewModel(
                 OperationResult.WrongPassword -> message("La contraseña actual no es correcta.")
                 is OperationResult.Failure -> message(result.message)
                 is OperationResult.Throttled -> message("Espera antes de volver a intentarlo.")
+                else -> message("No se pudo cambiar la contraseña.")
             }
         }
     }
@@ -293,11 +294,17 @@ class VaultViewModel(
                 return@launchBusy
             }
             when (val result = session.restoreBackup(backup, password.toCharArray())) {
-                OperationResult.Success -> {
+                OperationResult.Success, is OperationResult.Restored -> {
                     backToList()
-                    message("Copia restaurada. La huella se ha desactivado; vuelve a activarla si quieres.")
+                    val passwordNote = if ((result as? OperationResult.Restored)?.masterPasswordChanged == true) {
+                        " La contraseña maestra es ahora la de la copia."
+                    } else {
+                        ""
+                    }
+                    message("Copia restaurada.$passwordNote La huella se ha desactivado; vuelve a activarla si quieres.")
                 }
                 OperationResult.WrongPassword -> message("La contraseña de la copia no es correcta.")
+                OperationResult.WrongCurrentPassword -> message("La contraseña maestra actual no es correcta.")
                 is OperationResult.Failure -> message(result.message)
                 is OperationResult.Throttled -> message("Espera antes de volver a intentarlo.")
             }

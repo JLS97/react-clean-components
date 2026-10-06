@@ -47,13 +47,22 @@ internal class DeviceKeyManager(private val keys: KeystoreKeys, private val file
      * Returns the existing layer key, or creates a new one only when there is none to keep: no
      * file, or a key the Keystore can never open again. A Keystore that merely did not answer
      * propagates, so a transient failure never rotates the key the current vault is sealed with.
+     * A readable vault therefore keeps its key: the only files sealed under the old key when a
+     * new one is created are files nobody can open any more.
+     *
+     * [beforeCreate] runs right before a new key is created (never when the existing one loads),
+     * so the caller can drop whatever was sealed under the key that is gone, such as the copy of
+     * the vault kept for undoing a restore.
      */
-    fun loadOrCreate(): ByteArray =
+    fun loadOrCreate(beforeCreate: () -> Unit = {}): ByteArray =
         try {
             load()
         } catch (e: DeviceBindingException) {
             null
-        } ?: create()
+        } ?: run {
+            beforeCreate()
+            create()
+        }
 
     /** Where the Keystore key that wraps the layer key lives. */
     fun securityLevel(): KeySecurityLevel = keys.securityLevel(ALIAS)

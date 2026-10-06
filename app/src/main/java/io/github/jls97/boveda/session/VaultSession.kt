@@ -91,7 +91,18 @@ enum class OtpAccess {
 sealed interface OperationResult {
     data object Success : OperationResult
 
+    /**
+     * A backup was restored ([VaultSession.restoreBackup]). [masterPasswordChanged] is set when a
+     * vault was replaced and its master password is not known to be the backup's: the UI must say
+     * that the master password is now the backup's. [hadUndo] is set when the replaced vault was
+     * kept for [VaultSession.undoRestore].
+     */
+    data class Restored(val masterPasswordChanged: Boolean, val hadUndo: Boolean) : OperationResult
+
     data object WrongPassword : OperationResult
+
+    /** The master password of the vault already on this phone (asked besides the backup's) is wrong. */
+    data object WrongCurrentPassword : OperationResult
 
     /** Too many wrong passwords: try again after [untilMillis] (epoch millis). */
     data class Throttled(val untilMillis: Long) : OperationResult
@@ -269,7 +280,8 @@ class VaultSession private constructor(
         try {
             val lockCountAtStart = lockCount
             val newVault = withContext(Dispatchers.Default) {
-                val layerKey = deviceKeys.loadOrCreate()
+                // A key created now would not open the copy kept for undoRestore, if any.
+                val layerKey = deviceKeys.loadOrCreate(beforeCreate = storage::deletePreviousVault)
                 try {
                     val created = VaultContainer.create(password, VaultData())
                     try {
@@ -367,15 +379,75 @@ class VaultSession private constructor(
     }
 
     /**
-     * Replaces the vault on this phone with a backup. Works locked or unlocked, like clearing the
-     * app's data in system settings would. The array is wiped.
+     * Replaces the vault on this phone with a backup. Works locked or unlocked. The vault.bin being
+     * replaced is kept as vault.prev.bin, sealed with the same layer key, so [undoRestore] can put
+     * it back until the next restore; the layer key is never rotated while the current vault is
+     * readable ([DeviceKeyManager.loadOrCreate]). Both arrays are wiped.
+     *
+     * Whether [currentPassword] is needed is decided by [RestorePolicy]. With a vault on this phone:
+     * - unlocked, it is required and checked against the open vault's header;
+     * - locked, it is checked if given (against the header of the file on disk) and may be omitted
+     *   only with [forceWithoutCurrent], the "I do not remember my password" path that the UI
+     *   enables after a strong confirmation (a typed word, a delay): it writes over a vault nobody
+     *   proved to own, so the wrong-password throttle is not cleared and the kept copy is the only
+     *   way back. A vault on disk that this phone can no longer open (permanent Keystore failure,
+     *   damaged file) has nothing left to protect, so the check is skipped for it; a Keystore that
+     *   merely did not answer fails the restore so that it can be retried.
+     * Without a vault on this phone nothing is checked. The throttle covers both checks: each
+     * password is an oracle of a master password.
+     *
+     * biometric.key wraps the DEK of the vault that leaves, so it is deleted; otp.key is kept only
+     * when it holds the 2FA key of the restored vault (an older backup of this same vault keeps
+     * working with the fingerprint) and deleted otherwise, so no orphan key of another vault stays
+     * on the phone.
+     *
+     * On success the result is [OperationResult.Restored], which says whether the master password
+     * is now a different one (the backup's) and whether the copy for [undoRestore] exists.
      */
-    suspend fun restoreBackup(backup: ByteArray, password: CharArray): OperationResult = writeMutex.withLock {
+    suspend fun restoreBackup(
+        backup: ByteArray,
+        password: CharArray,
+        currentPassword: CharArray?,
+        forceWithoutCurrent: Boolean = false,
+    ): OperationResult = writeMutex.withLock {
         try {
             // Same throttle as unlock: checking the backup's password is also a password oracle.
             val blockedUntil = withContext(Dispatchers.IO) { throttle.blockedUntil() }
             if (blockedUntil > 0) return@withLock OperationResult.Throttled(blockedUntil)
+            val current = open
+            val vaultOnPhone = current != null || withContext(Dispatchers.IO) { storage.vaultExists() }
+            val decision = RestorePolicy.decide(
+                vaultOnPhone = vaultOnPhone,
+                unlocked = current != null,
+                currentPasswordGiven = currentPassword != null,
+                forceWithoutCurrent = forceWithoutCurrent,
+            )
+            if (decision == RestorePolicy.Decision.REFUSE) {
+                return@withLock OperationResult.Failure(
+                    if (current != null) CURRENT_PASSWORD_REQUIRED else CURRENT_PASSWORD_OR_CONFIRMATION_REQUIRED,
+                )
+            }
+            val masterPasswordChanged = RestorePolicy.masterPasswordChanges(
+                vaultOnPhone = vaultOnPhone,
+                currentPasswordGiven = currentPassword != null,
+                samePassword = currentPassword?.contentEquals(password) == true,
+            )
+            if (decision == RestorePolicy.Decision.VERIFY_CURRENT && currentPassword != null) {
+                val currentHeader = current?.header
+                val currentPasswordOk = withContext(Dispatchers.Default) {
+                    try {
+                        verifyCurrentPassword(currentHeader, currentPassword)
+                    } catch (e: OutOfMemoryError) {
+                        throw KdfMemoryException("Key derivation ran out of memory")
+                    }
+                }
+                if (!currentPasswordOk) {
+                    val until = withContext(Dispatchers.IO) { throttle.recordFailure() }
+                    return@withLock if (until > 0) OperationResult.Throttled(until) else OperationResult.WrongCurrentPassword
+                }
+            }
             val lockCountAtStart = lockCount
+            var hadUndo = false
             val newVault = withContext(Dispatchers.Default) {
                 val opened = try {
                     VaultContainer.open(backup, password)
@@ -398,20 +470,28 @@ class VaultSession private constructor(
                     opened
                 }
                 try {
-                    val layerKey = deviceKeys.loadOrCreate()
+                    // Only created when nothing opens with the old key, in which case the copy for
+                    // undoRestore would be unreadable too.
+                    var layerKeyRotated = false
+                    val layerKey = deviceKeys.loadOrCreate(beforeCreate = { layerKeyRotated = true })
                     try {
                         val portable = VaultContainer.seal(restored.header, restored.dek, restored.data)
-                        writeVault(DeviceLayer.seal(layerKey, portable))
+                        val sealed = DeviceLayer.seal(layerKey, portable)
+                        hadUndo = keepPreviousVault(keep = vaultOnPhone && !layerKeyRotated)
+                        writeVault(sealed)
                         biometricKeys.disable()
-                        throttle.reset()
+                        // An older backup of this same vault keeps working with the fingerprint;
+                        // the 2FA key of any other vault would stay as an orphan.
+                        val otpOnDevice = otpOnDevice(restored.data)
+                        if (!otpOnDevice) otpKeys.disable()
+                        if (RestorePolicy.resetsThrottle(decision)) throttle.reset()
                         OpenVault(
                             restored.header,
                             restored.dek,
                             layerKey,
                             restored.data,
                             biometricEnabled = false,
-                            // An older backup of this same vault keeps working with the fingerprint.
-                            otpOnDevice = otpOnDevice(restored.data),
+                            otpOnDevice = otpOnDevice,
                             deviceKeySecurityLevel = deviceKeys.securityLevel(),
                         )
                     } catch (e: Throwable) {
@@ -427,15 +507,113 @@ class VaultSession private constructor(
                 val until = withContext(Dispatchers.IO) { throttle.recordFailure() }
                 return@withLock if (until > 0) OperationResult.Throttled(until) else OperationResult.WrongPassword
             }
-            finishUnlock(newVault, lockCountAtStart)
+            when (val result = finishUnlock(newVault, lockCountAtStart)) {
+                OperationResult.Success -> OperationResult.Restored(masterPasswordChanged, hadUndo)
+                else -> result
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             OperationResult.Failure(describe(e))
         } finally {
             password.wipe()
+            currentPassword?.wipe()
         }
     }
+
+    /**
+     * [restoreBackup] without the current password and without forcing: it only succeeds when
+     * there is no vault on this phone yet (first run) and refuses otherwise.
+     */
+    suspend fun restoreBackup(backup: ByteArray, password: CharArray): OperationResult =
+        restoreBackup(backup, password, currentPassword = null, forceWithoutCurrent = false)
+
+    /**
+     * True if [password] is the master password of the vault on this phone: the open one
+     * ([header] given) or, locked, the file on disk. A file this phone can no longer open for
+     * good (device key gone, damaged file) has nothing to protect, so it counts as verified.
+     * Runs off the main thread: Argon2id.
+     */
+    private fun verifyCurrentPassword(header: VaultContainer.Header?, password: CharArray): Boolean {
+        if (header != null) return VaultContainer.verifyPassword(header, password)
+        val layerKey = try {
+            deviceKeys.load()
+        } catch (e: DeviceBindingException) {
+            null
+        } ?: return true
+        try {
+            val portable = try {
+                DeviceLayer.open(layerKey, storage.readVault())
+            } catch (e: DeviceBindingException) {
+                return true
+            } catch (e: CorruptedVaultException) {
+                return true
+            }
+            try {
+                val storedHeader = try {
+                    VaultContainer.parseHeader(portable)
+                } catch (e: CorruptedVaultException) {
+                    return true
+                } catch (e: UnsupportedVaultException) {
+                    return true
+                }
+                return VaultContainer.verifyPassword(storedHeader, password)
+            } finally {
+                portable.wipe()
+            }
+        } finally {
+            layerKey.wipe()
+        }
+    }
+
+    /**
+     * Keeps the vault.bin about to be replaced as vault.prev.bin for [undoRestore], or drops a
+     * stale copy when there is nothing to keep. Runs off the main thread.
+     */
+    private fun keepPreviousVault(keep: Boolean): Boolean {
+        if (!keep || !storage.vaultExists()) {
+            storage.deletePreviousVault()
+            return false
+        }
+        storage.writePreviousVault(storage.readVault())
+        return true
+    }
+
+    /** True while the vault.bin that the last [restoreBackup] replaced is still kept. */
+    fun canUndoRestore(): Boolean = storage.previousVaultExists()
+
+    /**
+     * Puts back the vault that the last [restoreBackup] replaced and keeps the restored one in its
+     * place, so calling it again undoes the undo: nothing is lost either way. The session locks
+     * (the keys in memory belong to the file that leaves) and the fingerprint is turned off
+     * (biometric.key wraps that file's DEK); the vault then opens with its own master password.
+     * This phone's 2FA key, if any, stays: the vault compares its id when it opens.
+     */
+    suspend fun undoRestore(): OperationResult = writeMutex.withLock {
+        try {
+            if (!storage.previousVaultExists()) {
+                return@withLock OperationResult.Failure("No hay ninguna restauración que deshacer.")
+            }
+            lock()
+            withContext(Dispatchers.IO) {
+                val previous = storage.readPreviousVault()
+                val replaced = if (storage.vaultExists()) storage.readVault() else null
+                biometricKeys.disable()
+                writeVault(previous)
+                if (replaced != null) storage.writePreviousVault(replaced) else storage.deletePreviousVault()
+            }
+            OperationResult.Success
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            OperationResult.Failure(describe(e))
+        } finally {
+            if (open == null) _state.value = if (storage.vaultExists()) VaultState.Locked else VaultState.NoVault
+        }
+    }
+
+    /** Drops the copy kept for [undoRestore], when the user asks for it. */
+    fun discardUndo() = storage.deletePreviousVault()
 
     /** Reads, unwraps the device layer and opens the vault file. Runs off the main thread. */
     private fun openStoredVault(openPortable: (ByteArray) -> VaultContainer.Opened): OpenVault {
@@ -968,6 +1146,11 @@ class VaultSession private constructor(
     }
 
     companion object {
+        private const val CURRENT_PASSWORD_REQUIRED =
+            "Para sustituir la bóveda de este teléfono hace falta su contraseña maestra actual."
+        private const val CURRENT_PASSWORD_OR_CONFIRMATION_REQUIRED =
+            "Para sustituir la bóveda de este teléfono hace falta su contraseña maestra actual, " +
+                "o confirmar expresamente que se restaura sin ella."
         private const val SOFTWARE_KEY_WARNING =
             "La clave de este teléfono es solo de software: una copia de los archivos de la app " +
                 "sacada del teléfono podría abrirse en otro sitio con la contraseña maestra."

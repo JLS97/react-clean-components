@@ -62,7 +62,9 @@ class LockViewModel(private val session: VaultSession) : ViewModel() {
         viewModelScope.launch {
             _ui.value = when (val result = operation()) {
                 OperationResult.Success -> LockUiState()
+                is OperationResult.Restored -> LockUiState()
                 OperationResult.WrongPassword -> LockUiState(error = "Contraseña incorrecta.")
+                OperationResult.WrongCurrentPassword -> LockUiState(error = "La contraseña maestra actual no es correcta.")
                 is OperationResult.Throttled -> LockUiState(
                     error = "Demasiados intentos fallidos.",
                     blockedUntil = result.untilMillis,
