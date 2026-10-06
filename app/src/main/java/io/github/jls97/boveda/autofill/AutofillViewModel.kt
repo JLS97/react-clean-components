@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
+import io.github.jls97.boveda.core.autofill.SaveCapture
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.VaultSession
@@ -27,22 +28,48 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
 
     /**
      * Fills with [entry]. With [rememberChoice], links the app or site to it first, unless the
-     * target can't be linked safely (see AutofillTarget.key).
+     * target can't be linked safely (see AutofillTarget.key). An entry already linked to the app
+     * through an older certificate of its key rotation gets its link moved to the current one.
      */
-    fun pick(entry: VaultEntry, target: AutofillTarget, rememberChoice: Boolean, onReady: (VaultEntry) -> Unit) {
+    fun pick(
+        entry: VaultEntry,
+        target: AutofillTarget,
+        rememberChoice: Boolean,
+        onLocked: () -> Unit,
+        onReady: (VaultEntry) -> Unit,
+    ) {
         if (busy) return
-        if (!rememberChoice || target.key == null || CredentialMatcher.isExactMatch(entry, target)) {
+        // A new link needs the user's choice and a linkable target; an existing one only needs
+        // following the app's current key. Neither happens next to a suspected impersonation.
+        val exact = CredentialMatcher.isExactMatch(entry, target)
+        if ((!exact && (!rememberChoice || target.key == null)) || impersonates(target)) {
+            onReady(entry)
+            return
+        }
+        val linked = CredentialMatcher.remember(entry, target)
+        if (linked == entry) {
             onReady(entry)
             return
         }
         busy = true
         viewModelScope.launch {
-            val linked = CredentialMatcher.remember(entry, target)
             // If saving the link fails, still fill: the user asked for this entry.
             session.saveEntry(linked)
             busy = false
+            // Unless the vault locked while waiting for the write (screen off, another screen
+            // holding it): after a lock nothing decrypted leaves, not even an entry just chosen.
+            if (session.state.value !is VaultState.Unlocked) {
+                onLocked()
+                return@launch
+            }
             onReady(linked)
         }
+    }
+
+    /** True when [target] shares its package name with a linked app but not its signature: never linked. */
+    private fun impersonates(target: AutofillTarget): Boolean {
+        val entries = (session.state.value as? VaultState.Unlocked)?.data?.entries.orEmpty()
+        return CredentialMatcher.impersonationWarnings(entries, target).isNotEmpty()
     }
 
     /** Cipher of the 2FA key for the fingerprint prompt, or null (with an error shown) if it can't open. */
@@ -83,8 +110,9 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
             val entries = (session.state.value as? VaultState.Unlocked)?.data?.entries.orEmpty()
             val existing = replaceId?.let { id -> entries.find { it.id == id } }
             val entry = if (existing != null) {
+                // A form without a user field (a password change) must not empty the stored one.
                 CredentialMatcher.remember(existing, pending.target)
-                    .copy(username = username.trim(), password = pending.password, updatedAt = now)
+                    .copy(username = SaveCapture.mergedUsername(existing, username), password = pending.password, updatedAt = now)
             } else {
                 val host = pending.target.host
                 VaultEntry(
@@ -96,7 +124,7 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
                     createdAt = now,
                     updatedAt = now,
                     // Web sites match through the url; apps through a link, if they can be linked.
-                    autofillTargets = if (host == null) listOfNotNull(pending.target.key) else emptyList(),
+                    autofillTargets = if (host == null && !impersonates(pending.target)) listOfNotNull(pending.target.key) else emptyList(),
                 )
             }
             val result = session.saveEntry(entry)

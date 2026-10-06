@@ -4,15 +4,15 @@ import android.app.assist.AssistStructure
 import android.text.InputType
 import android.view.View
 import android.view.autofill.AutofillId
-import io.github.jls97.boveda.core.autofill.DetectedField
-import io.github.jls97.boveda.core.autofill.FieldClassifier
-import io.github.jls97.boveda.core.autofill.FieldKind
+import io.github.jls97.boveda.core.autofill.AutofillNode
 import io.github.jls97.boveda.core.autofill.FieldSelection
 import io.github.jls97.boveda.core.autofill.FieldSignals
 import io.github.jls97.boveda.core.autofill.InputKind
 import io.github.jls97.boveda.core.autofill.LoginFields
-
-internal class ParsedField(val id: AutofillId, val kind: FieldKind, val text: String?)
+import io.github.jls97.boveda.core.autofill.StructureWalker
+import io.github.jls97.boveda.core.autofill.TargetResolver
+import io.github.jls97.boveda.core.autofill.WalkedField
+import io.github.jls97.boveda.core.autofill.WalkedStructure
 
 /**
  * The screen of another app as Bóveda sees it. [packageName] comes from the system and can be
@@ -21,38 +21,58 @@ internal class ParsedField(val id: AutofillId, val kind: FieldKind, val text: St
  */
 internal class ParsedStructure(
     val packageName: String,
-    val reportedWebDomain: String?,
-    private val fields: List<ParsedField>,
+    private val walked: WalkedStructure<AutofillId>,
 ) {
-    val login: LoginFields<AutofillId>? = FieldSelection.select(fields.map { DetectedField(it.id, it.kind) })
+    private val fields: List<WalkedField<AutofillId>> get() = walked.fields
+
+    val login: LoginFields<AutofillId>? = FieldSelection.select(fields.map { it.field }, walked.mainWebDomain)
+
+    private val filled: List<WalkedField<AutofillId>> =
+        login?.let { chosen -> fields.filter { it.field.id in chosen.allIds } }.orEmpty()
+
+    /**
+     * Domain of the fields that are going to be filled or saved (they all share it), not the first
+     * one of the tree: what the user is shown is where the data ends up.
+     */
+    val reportedWebDomain: String? = filled.firstNotNullOfOrNull { it.field.webDomain }
+
+    /** Scheme of those fields; an unencrypted one wins so the warning is never hidden. */
+    val reportedWebScheme: String? =
+        filled.firstOrNull { TargetResolver.isUnencrypted(it.field.webScheme) }?.field?.webScheme
+            ?: filled.firstNotNullOfOrNull { it.field.webScheme }
 
     /** Current text of a field; only present in save requests. */
-    fun textOf(id: AutofillId?): String? = if (id == null) null else fields.firstOrNull { it.id == id }?.text
+    fun textOf(id: AutofillId?): String? = if (id == null) null else fields.firstOrNull { it.field.id == id }?.text
 }
 
 /** Walks the view tree the system hands to autofill services and classifies every text field. */
 internal object StructureParser {
 
-    fun parse(structure: AssistStructure): ParsedStructure {
-        val fields = ArrayList<ParsedField>()
-        var webDomain: String? = null
+    /** The parsed screen, or null when the tree is too big to be an honest screen. */
+    fun parse(structure: AssistStructure): ParsedStructure? {
+        val roots = List(structure.windowNodeCount) { index -> ViewNodeAdapter(structure.getWindowNodeAt(index).rootViewNode) }
+        val walked = StructureWalker.walk(roots) ?: return null
+        return ParsedStructure(structure.activityComponent.packageName, walked)
+    }
 
-        fun visit(node: AssistStructure.ViewNode) {
-            if (webDomain == null) node.webDomain?.takeIf { it.isNotBlank() }?.let { webDomain = it }
-            val id = node.autofillId
-            if (id != null && node.autofillType == View.AUTOFILL_TYPE_TEXT && node.visibility == View.VISIBLE) {
-                val kind = FieldClassifier.classify(signalsOf(node))
-                if (kind != FieldKind.IGNORED) {
-                    val value = node.autofillValue
-                    val text = if (value != null && value.isText) value.textValue.toString() else null
-                    fields += ParsedField(id, kind, text)
-                }
+    /** [AutofillNode] over the platform's node, so the walk itself has no Android in it. */
+    private class ViewNodeAdapter(private val node: AssistStructure.ViewNode) : AutofillNode<AutofillId> {
+        override val autofillId: AutofillId? get() = node.autofillId
+        override val isTextField: Boolean get() = node.autofillType == View.AUTOFILL_TYPE_TEXT
+        override val isVisible: Boolean get() = node.visibility == View.VISIBLE
+        override val width: Int get() = node.width
+        override val height: Int get() = node.height
+        override val alpha: Float get() = node.alpha
+        override val webDomain: String? get() = node.webDomain
+        override val webScheme: String? get() = node.webScheme
+        override val signals: FieldSignals get() = signalsOf(node)
+        override val text: String?
+            get() {
+                val value = node.autofillValue
+                return if (value != null && value.isText) value.textValue.toString() else null
             }
-            for (index in 0 until node.childCount) visit(node.getChildAt(index))
-        }
-
-        for (index in 0 until structure.windowNodeCount) visit(structure.getWindowNodeAt(index).rootViewNode)
-        return ParsedStructure(structure.activityComponent.packageName, webDomain, fields)
+        override val children: List<AutofillNode<AutofillId>>
+            get() = List(node.childCount) { index -> ViewNodeAdapter(node.getChildAt(index)) }
     }
 
     private fun signalsOf(node: AssistStructure.ViewNode): FieldSignals {

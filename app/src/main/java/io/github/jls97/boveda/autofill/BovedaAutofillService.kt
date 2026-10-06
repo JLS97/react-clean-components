@@ -7,6 +7,7 @@ import android.service.autofill.FillRequest
 import android.service.autofill.FillResponse
 import android.service.autofill.SaveCallback
 import android.service.autofill.SaveRequest
+import io.github.jls97.boveda.core.autofill.SaveCapture
 
 /**
  * Android's autofill entry point. Everything happens on the phone: the system hands over the
@@ -25,8 +26,9 @@ class BovedaAutofillService : AutofillService() {
             } else {
                 AutofillResponses.fillResponse(this, request.inlineSuggestionsRequest, parsed, login)
             }
-        } catch (e: Exception) {
-            // A screen we don't understand must never break the other app.
+        } catch (e: Throwable) {
+            // A screen we don't understand must never break the other app, nor Bóveda: a hostile
+            // tree can overflow the stack (an Error, not an Exception) while the system reads it.
             null
         }
         callback.onSuccess(response)
@@ -37,17 +39,19 @@ class BovedaAutofillService : AutofillService() {
             val structure = request.fillContexts.lastOrNull()?.structure
             val parsed = structure?.let { StructureParser.parse(it) }
             val login = parsed?.login
+            // A password change form has the current password next to the new one: only the new
+            // one is worth saving, and not when its two copies disagree (see SaveCapture).
             val password = login?.let { fields ->
-                parsed.textOf(fields.password) ?: fields.newPasswords.firstNotNullOfOrNull { parsed.textOf(it) }
+                SaveCapture.choosePassword(parsed.textOf(fields.password), fields.newPasswords.map { parsed.textOf(it) })
             }
             if (parsed == null || login == null || password.isNullOrEmpty() || parsed.packageName == packageName) {
                 null
             } else {
-                val target = AppSigners.resolveTarget(this, parsed.packageName, parsed.reportedWebDomain)
+                val target = AppSigners.resolveTarget(this, parsed.packageName, parsed.reportedWebDomain, parsed.reportedWebScheme)
                 val token = PendingSaves.put(PendingSave(target, parsed.textOf(login.username).orEmpty(), password))
                 AutofillActivity.saveIntentSender(this, token)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             null
         }
         if (saveIntent == null) callback.onSuccess() else callback.onSuccess(saveIntent)

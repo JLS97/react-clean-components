@@ -9,30 +9,34 @@ internal class PendingSave(
     val target: AutofillTarget,
     val username: String,
     val password: String,
-    val createdAt: Long = SystemClock.elapsedRealtime(),
 ) {
     override fun toString() = "PendingSave(${target.label})"
 }
 
 /**
  * Hands credentials from the autofill service to [AutofillActivity] inside this process, so they
- * never travel in an Intent. They expire after a few minutes.
+ * never travel in an Intent. At most [MAX_SIZE] wait at once (the oldest is dropped), each one
+ * expires [MAX_AGE_MS] after [put] (checked on every [put] and [get]) and the save screen removes
+ * its own as soon as it closes. [clock] is injectable so the expiry can be tested on the JVM.
  */
-internal object PendingSaves {
-    private const val MAX_AGE_MS = 5 * 60 * 1_000L
-    private val saves = HashMap<String, PendingSave>()
+internal open class PendingSaveStore(private val clock: () -> Long) {
+    private class Stored(val save: PendingSave, val createdAt: Long)
+
+    /** Insertion order is age: the first entry is always the oldest. */
+    private val saves = LinkedHashMap<String, Stored>()
 
     @Synchronized
     fun put(save: PendingSave): String {
         prune()
-        return UUID.randomUUID().toString().also { saves[it] = save }
+        while (saves.size >= MAX_SIZE) saves.remove(saves.keys.first())
+        return UUID.randomUUID().toString().also { saves[it] = Stored(save, clock()) }
     }
 
     /** Reading doesn't remove it, so the save screen survives a rotation; see [remove]. */
     @Synchronized
     fun get(token: String): PendingSave? {
         prune()
-        return saves[token]
+        return saves[token]?.save
     }
 
     @Synchronized
@@ -41,7 +45,14 @@ internal object PendingSaves {
     }
 
     private fun prune() {
-        val now = SystemClock.elapsedRealtime()
+        val now = clock()
         saves.entries.removeAll { now - it.value.createdAt > MAX_AGE_MS }
     }
+
+    companion object {
+        const val MAX_SIZE = 8
+        const val MAX_AGE_MS = 5 * 60 * 1_000L
+    }
 }
+
+internal object PendingSaves : PendingSaveStore(SystemClock::elapsedRealtime)

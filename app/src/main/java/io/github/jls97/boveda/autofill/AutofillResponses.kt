@@ -46,7 +46,14 @@ internal object AutofillResponses {
             // No values yet: they arrive after authentication, from AutofillActivity.
             login.fillIds.forEach { dataset.setField(it, null) }
             dataset.setAuthentication(
-                AutofillActivity.fillIntentSender(context, parsed.packageName, parsed.reportedWebDomain, login.username, login.password),
+                AutofillActivity.fillIntentSender(
+                    context,
+                    parsed.packageName,
+                    parsed.reportedWebDomain,
+                    parsed.reportedWebScheme,
+                    login.username,
+                    login.password,
+                ),
             )
             builder.addDataset(dataset.build())
             hasContent = true
@@ -57,7 +64,7 @@ internal object AutofillResponses {
             val dataset = Dataset.Builder(presentations(context, inlineRequest, TITLE, OTP_SUBTITLE))
             dataset.setField(otpId, null)
             dataset.setAuthentication(
-                AutofillActivity.otpIntentSender(context, parsed.packageName, parsed.reportedWebDomain, otpId),
+                AutofillActivity.otpIntentSender(context, parsed.packageName, parsed.reportedWebDomain, parsed.reportedWebScheme, otpId),
             )
             builder.addDataset(dataset.build())
             hasContent = true
@@ -139,6 +146,8 @@ internal object AutofillResponses {
      *
      * `getSlice()` is marked as restricted to the androidx.autofill library, yet it is how the
      * library's own documentation builds an InlinePresentation, and there is no public alternative.
+     * Because that API may change without notice in a library update, any failure while building
+     * the chip (a missing method included) gives null, and the suggestion falls back to the menu.
      */
     @SuppressLint("RestrictedApi")
     private fun inlinePresentation(
@@ -157,13 +166,15 @@ internal object AutofillResponses {
             Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        val slice = InlineSuggestionUi.newContentBuilder(attribution)
-            .setTitle(title)
-            .setSubtitle(subtitle)
-            .setStartIcon(Icon.createWithResource(context, R.drawable.ic_autofill))
-            .setContentDescription("$title. $subtitle")
-            .build()
-            .slice
-        return InlinePresentation(slice, spec, false)
+        return runCatching {
+            val slice = InlineSuggestionUi.newContentBuilder(attribution)
+                .setTitle(title)
+                .setSubtitle(subtitle)
+                .setStartIcon(Icon.createWithResource(context, R.drawable.ic_autofill))
+                .setContentDescription("$title. $subtitle")
+                .build()
+                .slice
+            InlinePresentation(slice, spec, false)
+        }.getOrNull()
     }
 }
