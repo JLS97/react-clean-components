@@ -17,7 +17,7 @@ class PublicSuffixesTest {
             block()
         } finally {
             // Deja la lista real para el resto de tests del proceso.
-            javaClass.getResourceAsStream("/public_suffix_list.dat")!!.use { PublicSuffixes.load(it) }
+            loadRealPublicSuffixList()
         }
     }
 
@@ -62,7 +62,7 @@ class PublicSuffixesTest {
 
     @Test
     fun realListKnowsSharedHostsAndCountryCodes() {
-        javaClass.getResourceAsStream("/public_suffix_list.dat")!!.use { PublicSuffixes.load(it) }
+        loadRealPublicSuffixList()
         assertTrue(PublicSuffixes.isLoaded)
         for (suffix in listOf("es", "com", "co.uk", "github.io", "blogspot.com", "netlify.app", "pages.dev", "web.app")) {
             assertTrue(suffix, PublicSuffixes.isPublicSuffix(suffix))

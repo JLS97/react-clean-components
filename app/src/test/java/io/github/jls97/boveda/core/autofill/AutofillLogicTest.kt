@@ -29,7 +29,7 @@ class AutofillLogicTest {
     @Before
     fun loadPublicSuffixList() {
         if (!PublicSuffixes.isLoaded) {
-            javaClass.getResourceAsStream("/public_suffix_list.dat")!!.use { PublicSuffixes.load(it) }
+            loadRealPublicSuffixList()
         }
     }
 
