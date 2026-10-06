@@ -184,7 +184,8 @@ debug es otra app distinta (`Bóveda Debug`, con sus propios datos) y se puede d
 6. Cuando termines, desactiva la depuración USB.
 
 Las futuras versiones deben firmarse con la misma clave para instalarse encima sin perder la
-bóveda.
+bóveda. En [docs/RELEASE.md](docs/RELEASE.md) está cómo crear y custodiar esa clave, firmar desde
+la línea de comandos y comprobar el APK antes de instalarlo.
 
 ## Copias de seguridad
 
