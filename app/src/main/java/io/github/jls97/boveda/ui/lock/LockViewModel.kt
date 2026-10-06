@@ -3,6 +3,8 @@ package io.github.jls97.boveda.ui.lock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.jls97.boveda.core.generator.PasswordStrength
+import io.github.jls97.boveda.data.AntiPhishingPhrase
+import io.github.jls97.boveda.data.antiPhishingPhraseProblem
 import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.VaultSession
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,14 +25,26 @@ class LockViewModel(private val session: VaultSession) : ViewModel() {
     private val _ui = MutableStateFlow(LockUiState())
     val ui: StateFlow<LockUiState> = _ui.asStateFlow()
 
-    fun createVault(password: String, confirmation: String) {
+    /** Cambia cada vez que la pantalla vuelve al frente: sirve para releer el estado del teléfono. */
+    val resumeTicks: StateFlow<Int> = session.resumeTicks
+
+    /**
+     * Crea la bóveda y, solo si sale bien, guarda [phrase] en [phrases] como frase antiphishing de la
+     * pantalla de desbloqueo (M-04). La frase se comprueba antes de cifrar nada.
+     */
+    fun createVault(password: String, confirmation: String, phrase: String, phrases: AntiPhishingPhrase) {
         if (_ui.value.busy) return
         val problem = masterPasswordProblem(password, confirmation)
+            ?: antiPhishingPhraseProblem(phrase)?.let { "Frase antiphishing: $it" }
         if (problem != null) {
             showError(problem)
             return
         }
-        launchOperation { session.create(password.toCharArray()) }
+        launchOperation {
+            session.create(password.toCharArray()).also { result ->
+                if (result == OperationResult.Success) phrases.save(phrase)
+            }
+        }
     }
 
     fun unlock(password: String) {

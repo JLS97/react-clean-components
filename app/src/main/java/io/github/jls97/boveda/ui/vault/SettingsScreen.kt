@@ -12,13 +12,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -33,23 +35,35 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jls97.boveda.core.vault.VaultSettings
+import io.github.jls97.boveda.data.ANTI_PHISHING_MAX_LENGTH
+import io.github.jls97.boveda.data.ANTI_PHISHING_MIN_LENGTH
+import io.github.jls97.boveda.data.AntiPhishingPhrase
+import io.github.jls97.boveda.data.antiPhishingPhraseProblem
+import io.github.jls97.boveda.data.lastBackupLabel
 import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.ui.components.BackButton
 import io.github.jls97.boveda.ui.components.ChoiceDialog
 import io.github.jls97.boveda.ui.components.ConfirmDialog
-import io.github.jls97.boveda.ui.components.CreateLocalDocument
+import io.github.jls97.boveda.ui.components.InsecureDeviceWarning
+import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
+import io.github.jls97.boveda.ui.components.SecureAlertDialog
 import io.github.jls97.boveda.ui.components.StrengthMeter
 import io.github.jls97.boveda.ui.components.autoLockLabel
 import io.github.jls97.boveda.ui.components.durationLabel
 import io.github.jls97.boveda.ui.components.findActivity
+import io.github.jls97.boveda.ui.components.formatDate
+import io.github.jls97.boveda.ui.components.hasSecureLockScreen
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -64,6 +78,7 @@ fun SettingsScreen(
     otpCount: Int,
     onRecoverOtp: () -> Unit,
     onNewRecoveryCode: () -> Unit,
+    onPickExportDestination: (String) -> Unit,
     viewModel: VaultViewModel,
     snackbar: SnackbarHostState,
 ) {
@@ -73,8 +88,18 @@ fun SettingsScreen(
     var changingPassword by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
+    var confirmExport by remember { mutableStateOf(false) }
+    var checkingRecoveryCode by remember { mutableStateOf(false) }
+    var editingPhrase by remember { mutableStateOf(false) }
+    // Operación sensible a la espera de la contraseña maestra (B-35, B-36, B-37).
+    var reauth by remember { mutableStateOf<Reauth?>(null) }
+    // Fuera de la bóveda cifrada: la pantalla de desbloqueo la enseña antes de abrirla (M-04).
+    val phrases = remember { AntiPhishingPhrase(context.applicationContext) }
+    val antiPhishingPhrase by phrases.phrase.collectAsStateWithLifecycle()
     val biometricAvailable = remember { BiometricPrompts.isStrongBiometricAvailable(context) }
     val resumeTick by viewModel.resumeTicks.collectAsStateWithLifecycle()
+    val backupStatus by viewModel.backupStatus.collectAsStateWithLifecycle()
+    val deviceSecure = remember(resumeTick) { context.hasSecureLockScreen() }
     val autofillEnabled = remember(resumeTick) {
         context.getSystemService(AutofillManager::class.java)?.hasEnabledAutofillServices() == true
     }
@@ -97,18 +122,50 @@ fun SettingsScreen(
         }
     }
 
-    val exportLauncher = rememberLauncherForActivityResult(CreateLocalDocument("application/octet-stream")) { uri ->
-        if (uri != null) viewModel.exportBackup(uri)
-    }
     val restoreLauncher = rememberLauncherForActivityResult(OpenLocalDocument()) { uri ->
         restoreUri = uri
     }
 
-    fun setBiometric(enable: Boolean) {
-        if (!enable) {
-            viewModel.disableBiometric()
+    /**
+     * Sella la copia primero y solo después abre el selector de destino (M-10). El selector vive en la
+     * raíz de la app, no en esta pantalla, así que sigue registrado aunque Ajustes salga de la
+     * composición o la bóveda se bloquee mientras está abierto.
+     */
+    fun launchExport() {
+        viewModel.prepareExport {
+            val date = SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(Date())
+            viewModel.expectExternalActivity()
+            onPickExportDestination("boveda-$date.bvd")
+        }
+    }
+
+    val exportReauth = Reauth(
+        title = "Exportar copia cifrada",
+        text = "La copia sale del teléfono protegida solo por tu contraseña maestra. Escríbela para confirmar que eres tú.",
+        confirmLabel = "Exportar",
+        onVerified = ::launchExport,
+    )
+
+    /** Tras la confirmación: la huella si está activada (y su clave sigue válida); si no, la contraseña maestra. */
+    fun authorizeExport() {
+        val activity = context.findActivity()
+        val cipher = if (biometricEnabled) viewModel.biometricUnlockCipher() else null
+        if (activity == null || cipher == null) {
+            reauth = exportReauth
             return
         }
+        BiometricPrompts.authenticate(activity, "Exportar copia cifrada", "Confirma con tu huella", cipher) { authorized, error ->
+            when {
+                authorized != null -> launchExport()
+                error != null -> viewModel.message(error)
+                // «Usar contraseña» o cancelación: se ofrece la contraseña maestra.
+                else -> reauth = exportReauth
+            }
+        }
+    }
+
+    /** Segundo paso de la activación: la contraseña maestra ya se ha comprobado. */
+    fun enrollBiometric() {
         val activity = context.findActivity() ?: return
         val cipher = viewModel.biometricEnrollmentCipher()
         if (cipher == null) {
@@ -123,12 +180,46 @@ fun SettingsScreen(
         }
     }
 
+    fun setBiometric(enable: Boolean) {
+        if (!enable) {
+            viewModel.disableBiometric()
+            return
+        }
+        // Activarla es dar una llave permanente a cualquier dedo registrado en el teléfono: solo con la contraseña.
+        reauth = Reauth(
+            title = "Activar desbloqueo con huella",
+            text = "Cualquier huella registrada en este teléfono podrá abrir la bóveda sin la contraseña maestra. " +
+                "Escríbela para confirmar que eres tú.",
+            confirmLabel = "Continuar",
+            onVerified = ::enrollBiometric,
+        )
+    }
+
+    /** Aplica [proposed]; si deja la bóveda más expuesta que ahora, pide antes la contraseña maestra. */
+    fun changeSettings(proposed: VaultSettings) {
+        if (!relaxesSecurity(settings, proposed)) {
+            viewModel.updateSettings(proposed)
+            return
+        }
+        reauth = Reauth(
+            title = "Relajar la seguridad",
+            text = "Vas a dejar la bóveda o el portapapeles abiertos más tiempo que ahora. " +
+                "Escribe la contraseña maestra para confirmar el cambio.",
+            confirmLabel = "Cambiar",
+            onVerified = { viewModel.updateSettings(proposed) },
+        )
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Ajustes") },
-                navigationIcon = { BackButton { viewModel.back() } },
-            )
+            Column {
+                TopAppBar(
+                    title = { Text("Ajustes") },
+                    navigationIcon = { BackButton { viewModel.back() } },
+                )
+                // Comprobar la contraseña maestra tarda unos segundos: que se vea que algo está en marcha.
+                if (viewModel.busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -138,6 +229,7 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
         ) {
             SectionTitle("Seguridad")
+            if (!deviceSecure) InsecureDeviceWarning(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             ListItem(
                 headlineContent = { Text("Bloqueo automático") },
                 supportingContent = { Text(autoLockLabel(settings.autoLockSeconds) + ". Siempre al apagar la pantalla.") },
@@ -153,7 +245,8 @@ fun SettingsScreen(
                 supportingContent = {
                     Text(
                         if (biometricAvailable) {
-                            "La clave solo se libera con una huella fuerte y se invalida si añades otra."
+                            "Vale cualquier huella registrada en el teléfono (solo huellas fuertes); la clave se " +
+                                "invalida si añades otra. Activarla pide la contraseña maestra."
                         } else {
                             "No hay ninguna huella segura registrada en el teléfono."
                         },
@@ -170,6 +263,28 @@ fun SettingsScreen(
             ListItem(
                 headlineContent = { Text("Cambiar contraseña maestra") },
                 modifier = Modifier.clickable(enabled = !viewModel.busy) { changingPassword = true },
+            )
+            ListItem(
+                headlineContent = { Text("Frase antiphishing") },
+                supportingContent = {
+                    Text(
+                        if (antiPhishingPhrase == null) {
+                            "Sin frase. Elige una: la pantalla de desbloqueo la mostrará siempre antes de pedir " +
+                                "la contraseña maestra y una app que la imite no la conocerá. Cambiarla pide la contraseña maestra."
+                        } else {
+                            "«$antiPhishingPhrase». Si al desbloquear no la ves, no escribas la contraseña maestra. " +
+                                "Cambiarla pide la contraseña maestra."
+                        },
+                    )
+                },
+                modifier = Modifier.clickable(enabled = !viewModel.busy) {
+                    reauth = Reauth(
+                        title = "Frase antiphishing",
+                        text = "Escribe la contraseña maestra para confirmar que eres tú.",
+                        confirmLabel = "Continuar",
+                        onVerified = { editingPhrase = true },
+                    )
+                },
             )
             HorizontalDivider()
 
@@ -228,6 +343,13 @@ fun SettingsScreen(
             }
             if (otpAccess == OtpAccess.READY) {
                 ListItem(
+                    headlineContent = { Text("Comprobar mi código de recuperación") },
+                    supportingContent = {
+                        Text("Asegúrate de vez en cuando de que el papel sigue legible y bien copiado, mientras aún puedes hacer uno nuevo.")
+                    },
+                    modifier = Modifier.clickable(enabled = !viewModel.busy) { checkingRecoveryCode = true },
+                )
+                ListItem(
                     headlineContent = { Text("Nuevo código de recuperación") },
                     supportingContent = { Text("Si has perdido el papel donde lo apuntaste o alguien lo ha visto.") },
                     modifier = Modifier.clickable(enabled = !viewModel.busy) { onNewRecoveryCode() },
@@ -237,9 +359,11 @@ fun SettingsScreen(
 
             SectionTitle("Copias de seguridad")
             Text(
-                "La copia es un archivo cifrado con tu contraseña maestra actual. Solo se puede guardar en " +
-                    "el almacenamiento del teléfono o en un USB conectado, nunca en la nube. Pásala después " +
-                    "a un USB o a un ordenador: si pierdes el móvil, es la única forma de recuperar tus " +
+                "La copia es un archivo cifrado con tu contraseña maestra actual: su seguridad fuera del " +
+                    "teléfono es la de esa contraseña. El selector intenta ocultar la nube y Bóveda rechaza " +
+                    "los servicios en la nube que conoce, pero si la guardas en Descargas y tienes activa una " +
+                    "sincronización de carpetas podría subirse: pásala después a un USB o a un ordenador y " +
+                    "bórrala del teléfono. Si pierdes el móvil, esa copia es la única forma de recuperar tus " +
                     "$entryCount entradas. Los códigos 2FA van dentro, cifrados: para abrirlos en otro móvil " +
                     "hará falta también tu código de recuperación.",
                 style = MaterialTheme.typography.bodyMedium,
@@ -247,12 +371,13 @@ fun SettingsScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
             ListItem(
+                headlineContent = { Text("Última copia verificada") },
+                supportingContent = { Text(lastBackupLabel(backupStatus) { formatDate(it) }) },
+            )
+            ListItem(
                 headlineContent = { Text("Exportar copia cifrada") },
-                modifier = Modifier.clickable(enabled = !viewModel.busy) {
-                    viewModel.expectExternalActivity()
-                    val date = SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(Date())
-                    exportLauncher.launch("boveda-$date.bvd")
-                },
+                supportingContent = { Text("Pide confirmación y tu huella o contraseña maestra; el archivo se relee y se verifica.") },
+                modifier = Modifier.clickable(enabled = !viewModel.busy) { confirmExport = true },
             )
             ListItem(
                 headlineContent = { Text("Restaurar copia") },
@@ -289,7 +414,7 @@ fun SettingsScreen(
             selected = settings.autoLockSeconds,
             onSelect = {
                 choosingAutoLock = false
-                viewModel.setAutoLock(it)
+                changeSettings(settings.copy(autoLockSeconds = it))
             },
             onDismiss = { choosingAutoLock = false },
         )
@@ -302,7 +427,7 @@ fun SettingsScreen(
             selected = settings.clipboardClearSeconds,
             onSelect = {
                 choosingClipboard = false
-                viewModel.setClipboardClear(it)
+                changeSettings(settings.copy(clipboardClearSeconds = it))
             },
             onDismiss = { choosingClipboard = false },
         )
@@ -344,6 +469,140 @@ fun SettingsScreen(
             onDismiss = { restoreUri = null },
         )
     }
+
+    if (confirmExport) {
+        ConfirmDialog(
+            title = "¿Exportar una copia?",
+            text = "El archivo contendrá todas tus entradas y códigos 2FA, cifrados solo con tu contraseña maestra " +
+                "(sin la capa de hardware del teléfono). Guárdalo donde nadie más llegue.",
+            confirmLabel = "Continuar",
+            onConfirm = {
+                confirmExport = false
+                authorizeExport()
+            },
+            onDismiss = { confirmExport = false },
+        )
+    }
+
+    reauth?.let { pending ->
+        PasswordPromptDialog(
+            title = pending.title,
+            text = pending.text,
+            confirmLabel = pending.confirmLabel,
+            label = "Contraseña maestra",
+            onConfirm = { password ->
+                reauth = null
+                viewModel.verifyMasterPassword(password, pending.onVerified)
+            },
+            onDismiss = { reauth = null },
+        )
+    }
+
+    if (editingPhrase) {
+        AntiPhishingPhraseDialog(
+            current = antiPhishingPhrase,
+            onConfirm = { phrase ->
+                editingPhrase = false
+                phrases.save(phrase)
+                viewModel.message("Frase antiphishing guardada.")
+            },
+            onDismiss = { editingPhrase = false },
+        )
+    }
+
+    if (checkingRecoveryCode) {
+        RecoveryCodeCheckDialog(
+            busy = viewModel.busy,
+            onConfirm = { typed ->
+                checkingRecoveryCode = false
+                viewModel.checkOtpRecoveryCode(typed)
+            },
+            onDismiss = { checkingRecoveryCode = false },
+        )
+    }
+}
+
+/** Operación sensible que espera a que el usuario vuelva a escribir la contraseña maestra. */
+private class Reauth(
+    val title: String,
+    val text: String,
+    val confirmLabel: String,
+    val onVerified: () -> Unit,
+)
+
+/** Pide la nueva frase antiphishing; solo deja confirmar una válida (M-04). */
+@Composable
+private fun AntiPhishingPhraseDialog(
+    current: String?,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var typed by remember { mutableStateOf(current.orEmpty()) }
+    val problem = antiPhishingPhraseProblem(typed)
+    SecureAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Frase antiphishing") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Una frase corta que solo tú conozcas. Bóveda la mostrará siempre antes de pedirte la " +
+                        "contraseña maestra, también al rellenar en otras apps: si no la ves, no escribas la contraseña.",
+                )
+                NoLearningTextField(
+                    value = typed,
+                    onValueChange = { if (it.length <= ANTI_PHISHING_MAX_LENGTH) typed = it },
+                    label = "Frase ($ANTI_PHISHING_MIN_LENGTH-$ANTI_PHISHING_MAX_LENGTH caracteres)",
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                )
+                if (typed.isNotEmpty() && problem != null) {
+                    Text(problem, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(typed) }, enabled = problem == null) { Text("Guardar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
+
+/** Pide el código de recuperación 2FA para comprobarlo; solo se dirá si es correcto o no. */
+@Composable
+private fun RecoveryCodeCheckDialog(
+    busy: Boolean,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var typed by remember { mutableStateOf("") }
+    SecureAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Comprobar el código de recuperación") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Escribe el código tal y como lo apuntaste. Bóveda solo te dirá si es el correcto.")
+                OutlinedTextField(
+                    value = typed,
+                    onValueChange = { typed = it },
+                    label = { Text("Código de recuperación") },
+                    placeholder = { Text("XXXXX-XXXXX-XXXXX-XXXXX") },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        capitalization = KeyboardCapitalization.Characters,
+                        autoCorrectEnabled = false,
+                    ),
+                    singleLine = true,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(typed) }, enabled = !busy && typed.isNotBlank()) { Text("Comprobar") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
 }
 
 @Composable
@@ -365,7 +624,7 @@ private fun ChangePasswordDialog(
     var current by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
-    AlertDialog(
+    SecureAlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("Cambiar contraseña maestra") },
         text = {

@@ -74,12 +74,16 @@ fun GeneratorScreen(
                 )
             }
             if (password.isNotEmpty()) {
+                val warning = generatorWarning(entropy)
                 Text(
                     "≈ ${entropy.roundToInt()} bits de entropía · " +
                         strengthLabel(PasswordStrength.level(entropy)),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (warning != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (warning != null) {
+                    Text(warning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(onClick = onRegenerate) {
@@ -112,6 +116,21 @@ fun GeneratorScreen(
         }
     }
 }
+
+/** Por debajo de esta entropía estimada el generador avisa (I-40). */
+const val LOW_ENTROPY_BITS = 60
+
+/** Longitud mínima que debe proponer el generador por defecto (I-40). */
+const val MIN_DEFAULT_LENGTH = 16
+
+/** Aviso para la combinación elegida, o null si da al menos [LOW_ENTROPY_BITS] bits. */
+fun generatorWarning(entropyBits: Double): String? =
+    if (entropyBits < LOW_ENTROPY_BITS) {
+        "Menos de $LOW_ENTROPY_BITS bits: solo para sitios que no admitan una contraseña más larga " +
+            "o con más tipos de carácter."
+    } else {
+        null
+    }
 
 @Composable
 private fun OptionSwitch(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {

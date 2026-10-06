@@ -738,6 +738,53 @@ class VaultSession private constructor(
 
     // endregion
 
+    // region Re-autenticación
+
+    /**
+     * Comprueba que [password] es la contraseña maestra de la bóveda abierta, sin desbloquear ni
+     * cambiar nada: sirve para volver a pedirla antes de una operación sensible (activar la huella,
+     * exportar una copia, relajar un ajuste). Lenta: Argon2id. El array recibido se borra. Devuelve
+     * false si la bóveda está bloqueada.
+     */
+    suspend fun verifyMasterPassword(password: CharArray): Boolean {
+        val header = open?.header
+        val copy = password.copyOf()
+        password.wipe()
+        return try {
+            if (header == null) false else withContext(Dispatchers.Default) { VaultContainer.verifyPassword(header, copy) }
+        } finally {
+            copy.wipe()
+        }
+    }
+
+    /**
+     * Comprueba que [bytes], releídos del archivo recién escrito, son una copia válida de ESTA
+     * bóveda (M-10): la cabecera se analiza con [VaultContainer.parseHeader] y debe ser la misma
+     * que la de la bóveda abierta, y el cuerpo se autentica (AES-GCM) con una copia de la DEK. No
+     * deriva la contraseña, así que es rápido, y no cambia nada. Devuelve false si la bóveda está
+     * bloqueada o la copia no se abre. Lo descifrado se descarta en el acto.
+     */
+    suspend fun verifyExportedBackup(bytes: ByteArray): Boolean {
+        val current = open ?: return false
+        val dek = current.dek.copyOf()
+        return try {
+            withContext(Dispatchers.Default) {
+                val header = VaultContainer.parseHeader(bytes)
+                if (!header.encoded.contentEquals(current.header.encoded)) return@withContext false
+                VaultContainer.openWithKey(bytes, dek).dek.wipe()
+                true
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        } finally {
+            dek.wipe()
+        }
+    }
+
+    // endregion
+
     private fun describe(e: Exception): String = when (e) {
         is DeviceBindingException ->
             "La bóveda no se puede abrir en este teléfono: su clave de hardware no está disponible. " +

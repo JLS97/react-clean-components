@@ -1,7 +1,28 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+// Firma de release reproducible desde la línea de comandos (`./gradlew assembleRelease`), sin pasar
+// por el asistente de Android Studio. La ruta del almacén y las contraseñas se leen de variables de
+// entorno o, en su defecto, de local.properties (ignorado por git), nunca del repositorio. Si falta
+// cualquiera de las cuatro, la release se compila sin firmar, como hasta ahora. Ver docs/RELEASE.md.
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.isFile) file.inputStream().use { load(it) }
+}
+
+fun signingSetting(name: String): String? =
+    (System.getenv(name) ?: localProperties.getProperty(name))?.takeIf { it.isNotBlank() }
+
+val releaseKeystorePath = signingSetting("BOVEDA_KEYSTORE")
+val releaseKeystorePassword = signingSetting("BOVEDA_KEYSTORE_PASSWORD")
+val releaseKeyAlias = signingSetting("BOVEDA_KEY_ALIAS")
+val releaseKeyPassword = signingSetting("BOVEDA_KEY_PASSWORD")
+val releaseSigningConfigured = releaseKeystorePath != null && releaseKeystorePassword != null &&
+    releaseKeyAlias != null && releaseKeyPassword != null
 
 android {
     namespace = "io.github.jls97.boveda"
@@ -19,6 +40,22 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = rootProject.file(releaseKeystorePath!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                // Sin v1 (solo lo usan versiones anteriores a Android 7; minSdk es 33). Con este
+                // minSdk AGP emite solo v3, que cubre el archivo completo; v2 queda como respaldo.
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         debug {
             // Separate app (own data, own keys) so testing never touches the real vault, and
@@ -29,6 +66,8 @@ android {
             // No shrinking: the code is public anyway, and it keeps the build free of R8 rules
             // for Bouncy Castle.
             isMinifyEnabled = false
+            // Solo si las credenciales están disponibles; si no, el APK sale sin firmar.
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
@@ -45,6 +84,12 @@ android {
         dex {
             // Compress the code inside the APK. The APK is shared through a chat with a 30 MB limit,
             // and compressed DEX roughly halves its size at a small cost when installing.
+            //
+            // Con minSdk 33 el valor por defecto de AGP sería DEX sin comprimir; aquí se revierte a
+            // propósito por el límite de tamaño. No debilita la firma del APK (los esquemas v2/v3
+            // cubren el archivo completo), pero sí impide declarar android:useEmbeddedDex="true" en
+            // el manifiesto, que exige DEX sin comprimir. Si el APK baja de 30 MB (p. ej. con R8),
+            // conviene poner esto a false y activar useEmbeddedDex como defensa adicional.
             useLegacyPackaging = true
         }
     }
@@ -68,7 +113,11 @@ dependencies {
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
-    implementation(libs.androidx.camera.view)
+    // PreviewView solo necesita vista previa y análisis de fotogramas; camera-video arrastraría
+    // media3, Guava, Dagger y un appcompat antiguo que la app nunca ejecuta.
+    implementation(libs.androidx.camera.view) {
+        exclude(group = "androidx.camera", module = "camera-video")
+    }
     implementation(libs.zxing.core)
 
     testImplementation(libs.junit)

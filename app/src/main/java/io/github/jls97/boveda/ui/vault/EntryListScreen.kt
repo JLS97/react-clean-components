@@ -51,6 +51,7 @@ import io.github.jls97.boveda.core.vault.VaultEntry
 @Composable
 fun EntryListScreen(
     entries: List<VaultEntry>,
+    backupReminder: String?,
     query: String,
     onQueryChange: (String) -> Unit,
     onOpen: (VaultEntry) -> Unit,
@@ -135,6 +136,21 @@ fun EntryListScreen(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
             )
+            // Aviso discreto de copia de seguridad (B-38): tocarlo lleva a Ajustes y copias.
+            if (backupReminder != null) {
+                Text(
+                    text = "$backupReminder Toca para ir a las copias.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.small)
+                        .background(MaterialTheme.colorScheme.tertiaryContainer)
+                        .clickable { onSettings() }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
             if (visible.isEmpty()) {
                 Box(
                     modifier = Modifier

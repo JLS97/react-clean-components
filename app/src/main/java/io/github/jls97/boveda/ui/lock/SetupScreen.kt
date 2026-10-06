@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -30,8 +31,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.jls97.boveda.data.ANTI_PHISHING_MAX_LENGTH
+import io.github.jls97.boveda.data.ANTI_PHISHING_MIN_LENGTH
+import io.github.jls97.boveda.data.AntiPhishingPhrase
+import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
@@ -46,7 +52,10 @@ fun SetupScreen(viewModel: LockViewModel) {
     val scope = rememberCoroutineScope()
     var password by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
+    var phrase by remember { mutableStateOf("") }
     var understood by remember { mutableStateOf(false) }
+    // Fuera de la bóveda: se enseña antes de desbloquear (M-04).
+    val phrases = remember { AntiPhishingPhrase(context.applicationContext) }
     var pendingBackup by remember { mutableStateOf<ByteArray?>(null) }
 
     val openBackup = rememberLauncherForActivityResult(OpenLocalDocument()) { uri ->
@@ -93,6 +102,24 @@ fun SetupScreen(viewModel: LockViewModel) {
                 imeAction = ImeAction.Done,
                 enabled = !ui.busy,
             )
+            HorizontalDivider()
+            Text("Tu frase antiphishing", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Elige una frase corta que solo tú conozcas. Bóveda la mostrará siempre antes de pedirte " +
+                    "la contraseña maestra, también cuando rellene en otras apps. Una app que imite la " +
+                    "pantalla de Bóveda no la conoce: si no ves tu frase, no escribas la contraseña. " +
+                    "No es un secreto que cifre nada y podrás cambiarla en Ajustes.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            NoLearningTextField(
+                value = phrase,
+                onValueChange = { if (it.length <= ANTI_PHISHING_MAX_LENGTH) phrase = it },
+                label = "Frase antiphishing ($ANTI_PHISHING_MIN_LENGTH-$ANTI_PHISHING_MAX_LENGTH caracteres)",
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                enabled = !ui.busy,
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = understood, onCheckedChange = { understood = it }, enabled = !ui.busy)
                 Text("Entiendo que si olvido la contraseña maestra perderé el acceso a mis datos.")
@@ -113,10 +140,10 @@ fun SetupScreen(viewModel: LockViewModel) {
                                     "del teléfono: la clave de hardware de la bóveda depende de él.",
                             )
                         } else {
-                            viewModel.createVault(password, confirmation)
+                            viewModel.createVault(password, confirmation, phrase, phrases)
                         }
                     },
-                    enabled = understood && password.isNotEmpty() && confirmation.isNotEmpty(),
+                    enabled = understood && password.isNotEmpty() && confirmation.isNotEmpty() && phrase.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Crear bóveda")

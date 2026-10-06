@@ -8,13 +8,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.jls97.boveda.core.crypto.wipe
 import io.github.jls97.boveda.core.generator.GeneratorOptions
 import io.github.jls97.boveda.core.generator.PasswordGenerator
+import io.github.jls97.boveda.core.otp.RecoveryCode
+import io.github.jls97.boveda.core.vault.VaultData
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.core.vault.VaultSettings
+import io.github.jls97.boveda.data.BackupLog
+import io.github.jls97.boveda.data.BackupStatus
 import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
+import io.github.jls97.boveda.ui.components.CloudAuthorities
+import io.github.jls97.boveda.ui.components.deleteDocument
 import io.github.jls97.boveda.ui.components.readBackup
 import io.github.jls97.boveda.ui.components.writeBackup
 import io.github.jls97.boveda.ui.lock.LockViewModel
@@ -48,6 +55,13 @@ sealed interface Route {
     data object OtpRecover : Route
 }
 
+/**
+ * Etiqueta neutra para todo lo que la interfaz copia al portapapeles (I-42): la `ClipDescription`
+ * viaja con el clip y la leen las mismas apps que el contenido, así que no debe decir si lo copiado
+ * es una contraseña o un código 2FA.
+ */
+const val CLIP_LABEL = "Bóveda"
+
 /** What the edit form holds. `toString` hides the values. */
 data class EntryDraft(
     val id: String? = null,
@@ -68,6 +82,7 @@ data class EntryDraft(
 class VaultViewModel(
     private val session: VaultSession,
     private val contentResolver: ContentResolver,
+    private val backupLog: BackupLog,
 ) : ViewModel() {
     val backStack = mutableStateListOf<Route>(Route.EntryList)
     var query by mutableStateOf("")
@@ -81,12 +96,41 @@ class VaultViewModel(
 
     val resumeTicks: StateFlow<Int> = session.resumeTicks
 
+    /** Fecha de la última copia verificada y cambios desde entonces (B-38). */
+    val backupStatus: StateFlow<BackupStatus> = backupLog.status
+
     private val _messages = Channel<String>(Channel.BUFFERED)
     val messages: Flow<String> = _messages.receiveAsFlow()
 
+    /** Copia ya sellada a la espera de que el usuario elija dónde guardarla, y sus entradas. */
+    private var pendingBackup: ByteArray? = null
+    private var pendingBackupEntries = 0
+
+    /** La bóveda se bloqueó con el selector de destino abierto: la copia se descartó sin escribirse. */
+    private var exportInterrupted = false
+
+    /** Último contenido publicado estando desbloqueada, para contar cambios entre publicaciones. */
+    private var lastSeenData: VaultData? = null
+
     init {
         viewModelScope.launch {
-            session.state.collect { state -> if (state !is VaultState.Unlocked) forgetEverything() }
+            session.state.collect { state ->
+                if (state is VaultState.Unlocked) trackChanges(state.data) else forgetEverything()
+            }
+        }
+    }
+
+    /**
+     * Cada publicación con datos distintos a los anteriores (dentro de la misma sesión desbloqueada)
+     * es un guardado o borrado que la última copia no recoge. Al desbloquear no cuenta.
+     */
+    private fun trackChanges(data: VaultData) {
+        val previous = lastSeenData
+        lastSeenData = data
+        if (previous != null && previous != data) backupLog.recordChange()
+        if (exportInterrupted) {
+            exportInterrupted = false
+            message("La bóveda se bloqueó mientras elegías dónde guardar la copia: no se guardó ninguna. Vuelve a exportarla.")
         }
     }
 
@@ -97,6 +141,11 @@ class VaultViewModel(
         draft = EntryDraft()
         generated = ""
         busy = false
+        lastSeenData = null
+        if (pendingBackup != null) {
+            discardPendingBackup()
+            exportInterrupted = true
+        }
     }
 
     private val unlockedData get() = (session.state.value as? VaultState.Unlocked)?.data
@@ -112,18 +161,43 @@ class VaultViewModel(
     /** Returns false when already on the first screen. */
     fun back(): Boolean {
         if (backStack.size <= 1) return false
-        backStack.removeAt(backStack.lastIndex)
+        forgetSecretsOf(backStack.removeAt(backStack.lastIndex))
         return true
     }
 
     fun backToList() {
-        backStack.clear()
+        while (backStack.isNotEmpty()) forgetSecretsOf(backStack.removeAt(backStack.lastIndex))
         backStack.add(Route.EntryList)
     }
 
     /** Goes back until the current screen matches [predicate], or to the first screen. */
     fun popTo(predicate: (Route) -> Boolean) {
-        while (backStack.size > 1 && !predicate(backStack.last())) backStack.removeAt(backStack.lastIndex)
+        while (backStack.size > 1 && !predicate(backStack.last())) forgetSecretsOf(backStack.removeAt(backStack.lastIndex))
+    }
+
+    /**
+     * Al abandonar una pantalla sin guardar, lo que tenía en memoria se olvida ya, no solo al
+     * bloquear (I-37): el borrador del editor y la contraseña generada. Volver del generador al
+     * editor conserva el borrador, que sigue en pantalla.
+     */
+    private fun forgetSecretsOf(route: Route) {
+        when (route) {
+            is Route.Edit -> draft = EntryDraft()
+            is Route.Generator -> generated = ""
+            else -> Unit
+        }
+    }
+
+    /** Escribir en la búsqueda cuenta como interacción para el autobloqueo (I-31). */
+    fun updateQuery(text: String) {
+        session.touch()
+        query = text
+    }
+
+    /** Escribir en el editor cuenta como interacción para el autobloqueo (I-31). */
+    fun updateDraft(newDraft: EntryDraft) {
+        session.touch()
+        draft = newDraft
     }
 
     // endregion
@@ -188,9 +262,10 @@ class VaultViewModel(
         }
     }
 
+    /** [label] solo se usa en el aviso al usuario; el clip lleva la etiqueta neutra [CLIP_LABEL] (I-42). */
     fun copy(label: String, value: String) {
         val seconds = settings.clipboardClearSeconds
-        session.clipboard.copy(label, value, seconds)
+        session.clipboard.copy(CLIP_LABEL, value, seconds)
         message("$label copiado. Se borrará del portapapeles en $seconds s.")
     }
 
@@ -225,10 +300,32 @@ class VaultViewModel(
 
     fun setClipboardClear(seconds: Int) = updateSettings(settings.copy(clipboardClearSeconds = seconds))
 
-    private fun updateSettings(newSettings: VaultSettings) {
+    /** Guarda [newSettings] tal cual. Si relajan la seguridad, la pantalla pide antes la contraseña maestra. */
+    fun updateSettings(newSettings: VaultSettings) {
         launchBusy {
             val result = session.updateSettings(newSettings)
             if (result is OperationResult.Failure) message(result.message)
+        }
+    }
+
+    /**
+     * Vuelve a pedir la contraseña maestra antes de una operación sensible: [onVerified] solo se
+     * llama si es la correcta, y ya con [busy] a false para que pueda lanzar su propia operación.
+     */
+    fun verifyMasterPassword(password: String, onVerified: () -> Unit) {
+        if (busy) return
+        busy = true
+        viewModelScope.launch {
+            val verified = try {
+                session.verifyMasterPassword(password.toCharArray())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            } finally {
+                busy = false
+            }
+            if (verified) onVerified() else message("La contraseña maestra no es correcta.")
         }
     }
 
@@ -242,7 +339,7 @@ class VaultViewModel(
             when (val result = session.changeMasterPassword(current.toCharArray(), newPassword.toCharArray())) {
                 OperationResult.Success -> {
                     onSuccess()
-                    message("Contraseña maestra cambiada. Haz una copia nueva: las anteriores usan la antigua.")
+                    suggestBackup("Has cambiado la contraseña maestra: las copias anteriores usan la antigua.")
                 }
                 OperationResult.WrongPassword -> message("La contraseña actual no es correcta.")
                 is OperationResult.Failure -> message(result.message)
@@ -253,15 +350,118 @@ class VaultViewModel(
 
     fun expectExternalActivity() = session.expectExternalActivity()
 
-    fun exportBackup(uri: Uri) {
+    /**
+     * Primer paso de la exportación (M-10): sella la copia AHORA, con la bóveda abierta, y la
+     * retiene (es solo texto cifrado) mientras el usuario elige el destino; [onReady] abre el
+     * selector. Así el bloqueo por inactividad durante el selector no deja un archivo vacío.
+     */
+    fun prepareExport(onReady: () -> Unit) {
         launchBusy {
+            discardPendingBackup()
             val backup = session.exportBackup()
-            when {
-                backup == null -> message("La bóveda está bloqueada.")
-                writeBackup(contentResolver, uri, backup) -> message("Copia cifrada guardada.")
-                else -> message("No se pudo escribir el archivo.")
+            if (backup == null) {
+                message("La bóveda está bloqueada.")
+                return@launchBusy
+            }
+            pendingBackup = backup
+            pendingBackupEntries = unlockedData?.entries?.size ?: 0
+            onReady()
+        }
+    }
+
+    /** El selector no llegó a abrirse: la copia sellada se olvida. */
+    fun discardPendingBackup() {
+        pendingBackup?.wipe()
+        pendingBackup = null
+        pendingBackupEntries = 0
+    }
+
+    /**
+     * Segundo paso, al volver del selector. Escribe la copia retenida, la relee, comprueba la
+     * longitud y la verifica con [VaultSession.verifyExportedBackup]; si algo falla borra el
+     * documento para no dejar un .bvd vacío o dañado. Si la bóveda se bloqueó entretanto la copia
+     * ya se descartó y solo queda borrar el archivo vacío que creó el sistema.
+     */
+    fun finishExport(uri: Uri?) {
+        val backup = pendingBackup
+        val entries = pendingBackupEntries
+        pendingBackup = null
+        pendingBackupEntries = 0
+        if (uri == null) {
+            backup?.wipe()
+            return
+        }
+        // EXTRA_LOCAL_ONLY es solo una pista al selector: un destino en la nube conocido se rechaza (B-42).
+        if (CloudAuthorities.isCloud(uri.authority)) {
+            backup?.wipe()
+            exportInterrupted = false
+            viewModelScope.launch {
+                val deleted = deleteDocument(contentResolver, uri)
+                message(
+                    "Ese destino es un servicio en la nube y la copia no se ha guardado" +
+                        (if (deleted) "." else "; borra el archivo vacío que quedó.") +
+                        " Elige el almacenamiento del teléfono o un USB conectado.",
+                )
+            }
+            return
+        }
+        if (backup == null) {
+            val interrupted = exportInterrupted
+            exportInterrupted = false
+            viewModelScope.launch {
+                val deleted = deleteDocument(contentResolver, uri)
+                message(
+                    (if (interrupted) "La bóveda se bloqueó mientras elegías dónde guardar la copia: " else "La exportación se interrumpió: ") +
+                        "no se guardó ninguna" +
+                        (if (deleted) " y el archivo vacío se ha borrado." else "; borra el archivo vacío que quedó.") +
+                        " Vuelve a exportarla.",
+                )
+            }
+            return
+        }
+        launchBusy {
+            try {
+                val verified = writeBackup(contentResolver, uri, backup) && verifyWritten(uri, backup)
+                if (verified) {
+                    backupLog.recordVerifiedBackup(System.currentTimeMillis())
+                    message("Copia verificada ($entries ${if (entries == 1) "entrada" else "entradas"}, ${(backup.size + 1023) / 1024} KB).")
+                } else {
+                    val deleted = deleteDocument(contentResolver, uri)
+                    message(
+                        if (deleted) {
+                            "La copia no se pudo escribir o verificar y el archivo se ha borrado. Prueba en otra carpeta."
+                        } else {
+                            "La copia no se pudo escribir o verificar. Borra ese archivo: no sirve. Prueba en otra carpeta."
+                        },
+                    )
+                }
+            } finally {
+                backup.wipe()
             }
         }
+    }
+
+    /** Relee el documento recién escrito y comprueba longitud, contenido y autenticación con la DEK. */
+    private suspend fun verifyWritten(uri: Uri, expected: ByteArray): Boolean {
+        val readBack = try {
+            readBackup(contentResolver, uri)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        } ?: return false
+        try {
+            if (readBack.size != expected.size || !readBack.contentEquals(expected)) return false
+            return session.verifyExportedBackup(readBack)
+        } finally {
+            readBack.wipe()
+        }
+    }
+
+    /** Un cambio que deja obsoletas las copias anteriores: se avisa ahora y se recuerda hasta la próxima copia. */
+    fun suggestBackup(reason: String) {
+        backupLog.requestBackup(reason)
+        message("$reason Haz una copia de seguridad ahora.")
     }
 
     fun restoreBackup(uri: Uri, password: String) {
@@ -285,6 +485,9 @@ class VaultViewModel(
 
     fun biometricEnrollmentCipher(): Cipher? = session.biometricEnrollmentCipher()
 
+    /** Cipher de la huella ya activada, para confirmar con ella una operación sensible en vez de con la contraseña. */
+    fun biometricUnlockCipher(): Cipher? = session.biometricUnlockCipher()
+
     fun enableBiometric(authorizedCipher: Cipher) {
         launchBusy {
             when (val result = session.enableBiometric(authorizedCipher)) {
@@ -301,6 +504,32 @@ class VaultViewModel(
     }
 
     fun lock() = session.lock()
+
+    // endregion
+
+    // region 2FA
+
+    /** Comprueba que [typed] sigue siendo el código de recuperación 2FA de la bóveda. Solo dice si acierta. */
+    fun checkOtpRecoveryCode(typed: String) {
+        val code = RecoveryCode.normalize(typed)
+        if (code == null) {
+            message("El código de recuperación tiene 20 caracteres, en 4 grupos de 5.")
+            return
+        }
+        launchBusy {
+            try {
+                message(
+                    if (session.checkOtpRecoveryCode(code)) {
+                        "El código de recuperación es correcto: el papel sigue valiendo."
+                    } else {
+                        "Ese no es el código de recuperación de esta bóveda. Revisa lo que apuntaste."
+                    },
+                )
+            } finally {
+                code.wipe()
+            }
+        }
+    }
 
     // endregion
 
@@ -324,3 +553,12 @@ class VaultViewModel(
         }
     }
 }
+
+/**
+ * True si [proposed] deja la bóveda más expuesta que [current]: el bloqueo automático tarda más
+ * (0, «al salir de la app», es el más estricto) o el portapapeles se borra más tarde. Pasar a un
+ * valor más estricto, o no cambiar nada, no cuenta.
+ */
+fun relaxesSecurity(current: VaultSettings, proposed: VaultSettings): Boolean =
+    proposed.autoLockSeconds > current.autoLockSeconds ||
+        proposed.clipboardClearSeconds > current.clipboardClearSeconds

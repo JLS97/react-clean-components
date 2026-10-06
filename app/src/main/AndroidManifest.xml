@@ -31,11 +31,15 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.App">
+        <!-- allowCrossUidActivitySwitchFromBelow="false" (Android 15+): una actividad de otra app que
+             esté debajo en la misma tarea no puede lanzar nada encima de las de Bóveda (M-04). -->
         <activity
             android:name=".MainActivity"
+            android:allowCrossUidActivitySwitchFromBelow="false"
             android:exported="true"
             android:taskAffinity=""
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            tools:targetApi="35">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -46,10 +50,12 @@
         <!-- Opened only by the system, through Bóveda's own pending intents. -->
         <activity
             android:name=".autofill.AutofillActivity"
+            android:allowCrossUidActivitySwitchFromBelow="false"
             android:excludeFromRecents="true"
             android:exported="false"
             android:taskAffinity=""
-            android:windowSoftInputMode="adjustResize" />
+            android:windowSoftInputMode="adjustResize"
+            tools:targetApi="35" />
 
         <!-- Only the system can bind to it (BIND_AUTOFILL_SERVICE). It works entirely on the phone. -->
         <service

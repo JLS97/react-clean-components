@@ -146,8 +146,12 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
 - No hay servidores, cuentas, APIs externas, analíticas ni informes de errores. Las dependencias
   son solo AndroidX (interfaz y cámara), Bouncy Castle (Argon2id) y ZXing (lectura de QR), que
   funcionan sin red.
-- Las copias de seguridad solo se pueden guardar en el almacenamiento del teléfono o en un USB
-  conectado: el selector de archivos oculta Google Drive y cualquier otra nube.
+- Las copias de seguridad están pensadas para el almacenamiento del teléfono o un USB conectado:
+  el selector de archivos intenta ocultar Google Drive y cualquier otra nube (es una pista al
+  selector, no una garantía del sistema) y la app rechaza los destinos en la nube que conoce. Si
+  guardas la copia en Descargas y tienes una sincronización de carpetas activa (Xiaomi Cloud,
+  Google Files, Dropbox...), podría subirse: pásala a un USB o a un ordenador y bórrala del
+  teléfono. Si acabara fuera, solo la protege tu contraseña maestra (Argon2id).
 - Las copias en la nube de Android y la transferencia a un móvil nuevo están desactivadas. Aunque
   algún sistema de copia copiara el archivo, no se podría abrir sin el chip de este teléfono.
 - Solo Android Studio usa Internet, en tu ordenador, para descargar el SDK y las librerías al
@@ -159,7 +163,8 @@ Fuera del control de la app, conviene revisar en el teléfono:
   con la nube, desactívalo. La app marca lo copiado como sensible y lo borra, pero no puede
   impedir que otra app lo lea mientras está copiado. Con el autorrelleno no hace falta copiar.
 - **Teclado:** la contraseña maestra pasa por el teclado. Usa uno de confianza; los teclados sin
-  permiso de Internet son la opción más estricta.
+  permiso de Internet son la opción más estricta. En los campos de nombre, usuario y notas la app
+  pide al teclado que no aprenda ni sugiera lo escrito, pero depende de que el teclado lo respete.
 
 ### Lo que no puede proteger
 
@@ -167,6 +172,11 @@ Fuera del control de la app, conviene revisar en el teléfono:
 - Un teclado malicioso capturando lo que escribes: usa un teclado de confianza.
 - Un servicio de accesibilidad malicioso, que puede leer lo que se muestra en pantalla.
   Revisa qué apps tienen ese permiso.
+- Una pantalla de desbloqueo falsa. Cualquier app puede saber qué gestor de contraseñas usas
+  (Android lo expone a todas) y, cuando le pides rellenar, dibujar una copia de la pantalla de
+  Bóveda para quedarse con tu contraseña maestra. Por eso Bóveda muestra siempre tu frase
+  antiphishing antes de pedirla y, con la huella activada, no enseña el campo de contraseña hasta
+  que lo pides: si no ves tu frase, no escribas la contraseña.
 - Olvidar la contraseña maestra: no hay forma de recuperarla.
 - Perder a la vez el móvil (o tus huellas) y el código de recuperación: los códigos 2FA no se
   podrían recuperar, y habría que volver a activar la verificación en cada web con sus códigos de
@@ -189,12 +199,15 @@ debug es otra app distinta (`Bóveda Debug`, con sus propios datos) y se puede d
 6. Cuando termines, desactiva la depuración USB.
 
 Las futuras versiones deben firmarse con la misma clave para instalarse encima sin perder la
-bóveda.
+bóveda. En [docs/RELEASE.md](docs/RELEASE.md) está cómo crear y custodiar esa clave, firmar desde
+la línea de comandos y comprobar el APK antes de instalarlo.
 
 ## Copias de seguridad
 
-Haz una copia en **Ajustes y copias → Exportar copia cifrada**. Se guarda en el teléfono o en un
-USB conectado (nunca en la nube). Después pásala a un USB o a un ordenador, por cable. Si pierdes
+Haz una copia en **Ajustes y copias → Exportar copia cifrada**. Guárdala en el teléfono o en un
+USB conectado (el selector intenta ocultar la nube y la app rechaza los servicios en la nube que
+conoce, pero una carpeta sincronizada podría subirla igualmente). Después pásala a un USB o a un
+ordenador, por cable, y bórrala del teléfono. Si pierdes
 el móvil, esa copia y tu contraseña maestra son la única forma de recuperar los datos. Repite la
 copia después de cambios importantes o de cambiar la contraseña maestra.
 
