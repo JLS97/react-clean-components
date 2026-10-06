@@ -140,8 +140,12 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
 - No hay servidores, cuentas, APIs externas, analíticas ni informes de errores. Las dependencias
   son solo AndroidX (interfaz y cámara), Bouncy Castle (Argon2id) y ZXing (lectura de QR), que
   funcionan sin red.
-- Las copias de seguridad solo se pueden guardar en el almacenamiento del teléfono o en un USB
-  conectado: el selector de archivos oculta Google Drive y cualquier otra nube.
+- Las copias de seguridad están pensadas para el almacenamiento del teléfono o un USB conectado:
+  el selector de archivos intenta ocultar Google Drive y cualquier otra nube (es una pista al
+  selector, no una garantía del sistema) y la app rechaza los destinos en la nube que conoce. Si
+  guardas la copia en Descargas y tienes una sincronización de carpetas activa (Xiaomi Cloud,
+  Google Files, Dropbox...), podría subirse: pásala a un USB o a un ordenador y bórrala del
+  teléfono. Si acabara fuera, solo la protege tu contraseña maestra (Argon2id).
 - Las copias en la nube de Android y la transferencia a un móvil nuevo están desactivadas. Aunque
   algún sistema de copia copiara el archivo, no se podría abrir sin el chip de este teléfono.
 - Solo Android Studio usa Internet, en tu ordenador, para descargar el SDK y las librerías al
@@ -189,8 +193,10 @@ la línea de comandos y comprobar el APK antes de instalarlo.
 
 ## Copias de seguridad
 
-Haz una copia en **Ajustes y copias → Exportar copia cifrada**. Se guarda en el teléfono o en un
-USB conectado (nunca en la nube). Después pásala a un USB o a un ordenador, por cable. Si pierdes
+Haz una copia en **Ajustes y copias → Exportar copia cifrada**. Guárdala en el teléfono o en un
+USB conectado (el selector intenta ocultar la nube y la app rechaza los servicios en la nube que
+conoce, pero una carpeta sincronizada podría subirla igualmente). Después pásala a un USB o a un
+ordenador, por cable, y bórrala del teléfono. Si pierdes
 el móvil, esa copia y tu contraseña maestra son la única forma de recuperar los datos. Repite la
 copia después de cambios importantes o de cambiar la contraseña maestra.
 

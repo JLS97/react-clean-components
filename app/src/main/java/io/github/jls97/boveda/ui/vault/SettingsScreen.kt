@@ -328,9 +328,11 @@ fun SettingsScreen(
 
             SectionTitle("Copias de seguridad")
             Text(
-                "La copia es un archivo cifrado con tu contraseña maestra actual. Solo se puede guardar en " +
-                    "el almacenamiento del teléfono o en un USB conectado, nunca en la nube. Pásala después " +
-                    "a un USB o a un ordenador: si pierdes el móvil, es la única forma de recuperar tus " +
+                "La copia es un archivo cifrado con tu contraseña maestra actual: su seguridad fuera del " +
+                    "teléfono es la de esa contraseña. El selector intenta ocultar la nube y Bóveda rechaza " +
+                    "los servicios en la nube que conoce, pero si la guardas en Descargas y tienes activa una " +
+                    "sincronización de carpetas podría subirse: pásala después a un USB o a un ordenador y " +
+                    "bórrala del teléfono. Si pierdes el móvil, esa copia es la única forma de recuperar tus " +
                     "$entryCount entradas. Los códigos 2FA van dentro, cifrados: para abrirlos en otro móvil " +
                     "hará falta también tu código de recuperación.",
                 style = MaterialTheme.typography.bodyMedium,

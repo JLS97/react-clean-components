@@ -20,6 +20,7 @@ import io.github.jls97.boveda.data.BackupStatus
 import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
+import io.github.jls97.boveda.ui.components.CloudAuthorities
 import io.github.jls97.boveda.ui.components.deleteDocument
 import io.github.jls97.boveda.ui.components.readBackup
 import io.github.jls97.boveda.ui.components.writeBackup
@@ -53,6 +54,13 @@ sealed interface Route {
 
     data object OtpRecover : Route
 }
+
+/**
+ * Etiqueta neutra para todo lo que la interfaz copia al portapapeles (I-42): la `ClipDescription`
+ * viaja con el clip y la leen las mismas apps que el contenido, así que no debe decir si lo copiado
+ * es una contraseña o un código 2FA.
+ */
+const val CLIP_LABEL = "Bóveda"
 
 /** What the edit form holds. `toString` hides the values. */
 data class EntryDraft(
@@ -153,18 +161,43 @@ class VaultViewModel(
     /** Returns false when already on the first screen. */
     fun back(): Boolean {
         if (backStack.size <= 1) return false
-        backStack.removeAt(backStack.lastIndex)
+        forgetSecretsOf(backStack.removeAt(backStack.lastIndex))
         return true
     }
 
     fun backToList() {
-        backStack.clear()
+        while (backStack.isNotEmpty()) forgetSecretsOf(backStack.removeAt(backStack.lastIndex))
         backStack.add(Route.EntryList)
     }
 
     /** Goes back until the current screen matches [predicate], or to the first screen. */
     fun popTo(predicate: (Route) -> Boolean) {
-        while (backStack.size > 1 && !predicate(backStack.last())) backStack.removeAt(backStack.lastIndex)
+        while (backStack.size > 1 && !predicate(backStack.last())) forgetSecretsOf(backStack.removeAt(backStack.lastIndex))
+    }
+
+    /**
+     * Al abandonar una pantalla sin guardar, lo que tenía en memoria se olvida ya, no solo al
+     * bloquear (I-37): el borrador del editor y la contraseña generada. Volver del generador al
+     * editor conserva el borrador, que sigue en pantalla.
+     */
+    private fun forgetSecretsOf(route: Route) {
+        when (route) {
+            is Route.Edit -> draft = EntryDraft()
+            is Route.Generator -> generated = ""
+            else -> Unit
+        }
+    }
+
+    /** Escribir en la búsqueda cuenta como interacción para el autobloqueo (I-31). */
+    fun updateQuery(text: String) {
+        session.touch()
+        query = text
+    }
+
+    /** Escribir en el editor cuenta como interacción para el autobloqueo (I-31). */
+    fun updateDraft(newDraft: EntryDraft) {
+        session.touch()
+        draft = newDraft
     }
 
     // endregion
@@ -229,9 +262,10 @@ class VaultViewModel(
         }
     }
 
+    /** [label] solo se usa en el aviso al usuario; el clip lleva la etiqueta neutra [CLIP_LABEL] (I-42). */
     fun copy(label: String, value: String) {
         val seconds = settings.clipboardClearSeconds
-        session.clipboard.copy(label, value, seconds)
+        session.clipboard.copy(CLIP_LABEL, value, seconds)
         message("$label copiado. Se borrará del portapapeles en $seconds s.")
     }
 
@@ -355,6 +389,20 @@ class VaultViewModel(
         pendingBackupEntries = 0
         if (uri == null) {
             backup?.wipe()
+            return
+        }
+        // EXTRA_LOCAL_ONLY es solo una pista al selector: un destino en la nube conocido se rechaza (B-42).
+        if (CloudAuthorities.isCloud(uri.authority)) {
+            backup?.wipe()
+            exportInterrupted = false
+            viewModelScope.launch {
+                val deleted = deleteDocument(contentResolver, uri)
+                message(
+                    "Ese destino es un servicio en la nube y la copia no se ha guardado" +
+                        (if (deleted) "." else "; borra el archivo vacío que quedó.") +
+                        " Elige el almacenamiento del teléfono o un USB conectado.",
+                )
+            }
             return
         }
         if (backup == null) {

@@ -49,6 +49,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import io.github.jls97.boveda.core.otp.OtpAlgorithm
 import io.github.jls97.boveda.core.otp.OtpSecret
@@ -59,6 +61,7 @@ import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.ui.components.BackButton
 import io.github.jls97.boveda.ui.components.ChoiceDialog
 import io.github.jls97.boveda.ui.components.ConfirmDialog
+import io.github.jls97.boveda.ui.components.OnAppBackground
 import io.github.jls97.boveda.ui.components.findActivity
 import kotlinx.coroutines.delay
 import javax.crypto.Cipher
@@ -101,6 +104,8 @@ fun OtpCard(
 
     // Leaving the entry hides its code.
     DisposableEffect(entry.id) { onDispose { otp.hide(entry.id) } }
+    // Pasar a segundo plano también lo oculta: no debe seguir en pantalla al volver (B-39).
+    OnAppBackground { otp.hide(entry.id) }
 
     fun open(copy: Boolean) {
         askFingerprint(context, otp, "Código 2FA", entry.title, otp.unlockCipher()) { authorized ->
@@ -244,9 +249,13 @@ fun OtpAddScreen(
 ) {
     val context = LocalContext.current
     var showAdvanced by rememberSaveable { mutableStateOf(false) }
+    var showKey by remember { mutableStateOf(false) }
     var choosing by remember { mutableStateOf<String?>(null) }
     val pending = otp.pending
     val inputError = otp.inputError
+
+    // La clave se oculta al pasar a segundo plano (B-39) y el borrador se vacía al salir (B-40).
+    OnAppBackground { showKey = false }
 
     fun leave() {
         otp.clearDraft()
@@ -299,27 +308,58 @@ fun OtpAddScreen(
             Button(onClick = onScan, enabled = !otp.busy, modifier = Modifier.fillMaxWidth()) {
                 Text("Escanear el código QR")
             }
-            OutlinedTextField(
-                value = otp.input,
-                onValueChange = otp::updateInput,
-                label = { Text("Clave de configuración") },
-                placeholder = { Text("p. ej. JBSW Y3DP EHPK 3PXP") },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-                // A password keyboard doesn't learn or suggest what is typed.
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    capitalization = KeyboardCapitalization.Characters,
-                    autoCorrectEnabled = false,
-                ),
-                isError = inputError != null,
-                supportingText = if (inputError != null) {
-                    { Text(otpInputErrorText(inputError)) }
-                } else {
-                    null
-                },
-                maxLines = 4,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (otp.inputIsLink) {
+                // Clave leída de un QR (o enlace pegado): la URI otpauth lleva el secreto en claro, así
+                // que nunca se pinta; solo se muestra de quién es y el código en vivo (B-40).
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Clave leída del código QR", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        if (pending != null) {
+                            Text(pending.label.ifEmpty { "Sin nombre de cuenta" }, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "${pending.params.algorithm.label} · ${pending.params.digits} cifras · cada ${pending.params.period} s",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (inputError != null) {
+                            Text(otpInputErrorText(inputError), color = MaterialTheme.colorScheme.error)
+                        }
+                        CardActions {
+                            TextButton(onClick = { otp.updateInput("") }, enabled = !otp.busy) { Text("Descartar") }
+                        }
+                    }
+                }
+            } else {
+                OutlinedTextField(
+                    value = otp.input,
+                    onValueChange = otp::updateInput,
+                    label = { Text("Clave de configuración") },
+                    placeholder = { Text("p. ej. JBSW Y3DP EHPK 3PXP") },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
+                    // Oculta por defecto, como una contraseña: es un secreto de larga duración (B-40).
+                    visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        TextButton(onClick = { showKey = !showKey }) {
+                            Text(if (showKey) "Ocultar" else "Mostrar")
+                        }
+                    },
+                    // A password keyboard doesn't learn or suggest what is typed.
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        capitalization = KeyboardCapitalization.Characters,
+                        autoCorrectEnabled = false,
+                    ),
+                    isError = inputError != null,
+                    supportingText = if (inputError != null) {
+                        { Text(otpInputErrorText(inputError)) }
+                    } else {
+                        null
+                    },
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             if (!otp.inputIsLink) {
                 TextButton(onClick = { showAdvanced = !showAdvanced }) {
                     Text(if (showAdvanced) "Ocultar opciones avanzadas" else "Opciones avanzadas")
@@ -578,7 +618,10 @@ fun RecoveryCodeScreen(
             )
             OutlinedTextField(
                 value = typed,
-                onValueChange = { typed = it },
+                onValueChange = {
+                    otp.touch()
+                    typed = it
+                },
                 label = { Text("Escríbelo para confirmar que lo has apuntado") },
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
                 keyboardOptions = KeyboardOptions(
@@ -641,7 +684,10 @@ fun OtpRecoverScreen(otp: OtpViewModel, onDone: () -> Unit, onBack: () -> Unit, 
             Text("Escribe el código de recuperación que apuntaste al guardar tu primer código 2FA.")
             OutlinedTextField(
                 value = typed,
-                onValueChange = { typed = it },
+                onValueChange = {
+                    otp.touch()
+                    typed = it
+                },
                 label = { Text("Código de recuperación") },
                 placeholder = { Text("XXXXX-XXXXX-XXXXX-XXXXX") },
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),

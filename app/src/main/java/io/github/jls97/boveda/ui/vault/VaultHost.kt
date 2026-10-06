@@ -50,7 +50,7 @@ fun VaultHost(
             // Con la bóveda vacía no hay nada que copiar todavía.
             backupReminder = if (entries.isEmpty()) null else backupReminder(backupStatus, System.currentTimeMillis()),
             query = viewModel.query,
-            onQueryChange = { viewModel.query = it },
+            onQueryChange = viewModel::updateQuery,
             onOpen = { viewModel.navigate(Route.Detail(it.id)) },
             onAdd = viewModel::newEntry,
             onGenerator = { viewModel.openGenerator(forEditor = false) },
@@ -88,11 +88,12 @@ fun VaultHost(
             }
         }
 
+        // Atrás desde el editor o el generador olvida el borrador o la contraseña generada (I-37, en back()).
         is Route.Edit -> EntryEditScreen(
             draft = viewModel.draft,
             isNew = route.entryId == null,
             busy = viewModel.busy,
-            onDraftChange = { viewModel.draft = it },
+            onDraftChange = viewModel::updateDraft,
             onGenerate = { viewModel.openGenerator(forEditor = true) },
             onSave = viewModel::saveDraft,
             onBack = { viewModel.back() },

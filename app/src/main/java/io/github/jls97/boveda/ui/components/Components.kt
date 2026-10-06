@@ -8,8 +8,10 @@ import android.content.ContextWrapper
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.text.InputType
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputConnectionWrapper
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,9 +31,11 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -47,6 +51,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
 import io.github.jls97.boveda.core.generator.PasswordStrength
 import io.github.jls97.boveda.core.generator.StrengthLevel
@@ -71,6 +78,8 @@ fun PasswordField(
     enabled: Boolean = true,
 ) {
     var visible by remember { mutableStateOf(false) }
+    // Al pasar a segundo plano vuelve a ocultarse: al regresar no debe seguir en claro (B-39).
+    OnAppBackground { visible = false }
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -126,6 +135,81 @@ fun NoLearningTextField(
             enabled = enabled,
             keyboardOptions = keyboardOptions,
         )
+    }
+}
+
+/**
+ * Ejecuta [onBackground] cada vez que la app pasa a segundo plano (ON_STOP de la Activity), para
+ * que lo que estaba revelado (contraseña, código 2FA, campo con «Mostrar») vuelva a ocultarse y no
+ * reaparezca en claro al volver a Bóveda dentro de la ventana de autobloqueo (B-39).
+ */
+@Composable
+fun OnAppBackground(onBackground: () -> Unit) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentOnBackground by rememberUpdatedState(onBackground)
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) currentOnBackground()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+}
+
+/**
+ * Hace que escribir con el teclado en pantalla cuente como interacción (I-31).
+ *
+ * `Activity.onUserInteraction()` solo ve toques y teclas físicas, no el texto que el IME entrega
+ * por `InputConnection`, así que teclear notas largas sin tocar la pantalla dejaba que el
+ * autobloqueo saltara a mitad de edición. Aquí se envuelve la conexión de cada campo bajo
+ * [content] para llamar a [onTyping] en cada texto confirmado, composición o borrado.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun TouchOnTyping(onTyping: () -> Unit, content: @Composable () -> Unit) {
+    val currentOnTyping by rememberUpdatedState(onTyping)
+    val interceptor = remember {
+        object : PlatformTextInputInterceptor {
+            override suspend fun interceptStartInputMethod(
+                request: PlatformTextInputMethodRequest,
+                nextHandler: PlatformTextInputSession,
+            ): Nothing = nextHandler.startInputMethod(
+                object : PlatformTextInputMethodRequest {
+                    override fun createInputConnection(outAttributes: EditorInfo): InputConnection =
+                        TypingInputConnection(request.createInputConnection(outAttributes)) { currentOnTyping() }
+                },
+            )
+        }
+    }
+    InterceptPlatformTextInput(interceptor = interceptor, content = content)
+}
+
+/** Conexión con el IME que avisa de cada edición de texto antes de pasarla al campo. */
+private class TypingInputConnection(target: InputConnection, private val onTyping: () -> Unit) :
+    InputConnectionWrapper(target, false) {
+    override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+        onTyping()
+        return super.commitText(text, newCursorPosition)
+    }
+
+    override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
+        onTyping()
+        return super.setComposingText(text, newCursorPosition)
+    }
+
+    override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+        onTyping()
+        return super.deleteSurroundingText(beforeLength, afterLength)
+    }
+
+    override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean {
+        onTyping()
+        return super.deleteSurroundingTextInCodePoints(beforeLength, afterLength)
+    }
+
+    override fun sendKeyEvent(event: KeyEvent?): Boolean {
+        onTyping()
+        return super.sendKeyEvent(event)
     }
 }
 

@@ -18,6 +18,7 @@ import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
+import io.github.jls97.boveda.ui.vault.CLIP_LABEL
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -104,9 +105,14 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
     }
 
     fun updateInput(text: String) {
+        // Teclear la clave cuenta como interacción para el autobloqueo (I-31).
+        session.touch()
         input = text
         reparse()
     }
+
+    /** Escribir en cualquier campo de las pantallas 2FA pospone el autobloqueo (I-31). */
+    fun touch() = session.touch()
 
     fun updateParams(params: OtpParams) {
         manualParams = params
@@ -278,6 +284,10 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
     fun enrollmentCipher(): Cipher? =
         session.otpEnrollmentCipher().also { if (it == null) message("No se pudo preparar la huella. Comprueba que tienes una registrada.") }
 
+    /**
+     * Abre el código con la huella. Con [copy] se copia sin mostrarlo (I-41): quien eligió «Copiar»
+     * desde el estado oculto no quiere verlo en pantalla, y el secreto se borra en el acto.
+     */
     fun reveal(authorized: Cipher, entryId: String, copy: Boolean) {
         launchBusy {
             val secret = session.revealOtp(authorized, entryId)
@@ -285,18 +295,30 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
                 message("No se pudo abrir el código 2FA.")
                 return@launchBusy
             }
+            if (copy) {
+                try {
+                    copyCode(secret)
+                } finally {
+                    secret.wipe()
+                }
+                return@launchBusy
+            }
             hide()
             revealed = RevealedOtp(entryId, secret, SystemClock.elapsedRealtime())
-            if (copy) copyCode()
         }
     }
 
     fun copyCode() {
         val current = revealed ?: return
+        copyCode(current.secret)
+    }
+
+    /** Copia el código actual de [secret] con etiqueta neutra (I-42) y avisa de cuánto dura. */
+    private fun copyCode(secret: OtpSecret) {
         val now = System.currentTimeMillis()
         val seconds = clipboardSeconds
-        session.clipboard.copy("Código 2FA", current.secret.code(now), seconds)
-        message("Código copiado: cambia en ${current.secret.secondsLeft(now)} s y se borrará del portapapeles en $seconds s.")
+        session.clipboard.copy(CLIP_LABEL, secret.code(now), seconds)
+        message("Código copiado: cambia en ${secret.secondsLeft(now)} s y se borrará del portapapeles en $seconds s.")
     }
 
     /** Hides the revealed code (only if it belongs to [entryId], when given) and wipes its secret. */

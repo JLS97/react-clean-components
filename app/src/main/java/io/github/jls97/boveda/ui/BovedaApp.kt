@@ -10,6 +10,7 @@ import io.github.jls97.boveda.data.BackupLog
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
 import io.github.jls97.boveda.ui.components.CreateLocalDocument
+import io.github.jls97.boveda.ui.components.TouchOnTyping
 import io.github.jls97.boveda.ui.lock.LockViewModel
 import io.github.jls97.boveda.ui.lock.SetupScreen
 import io.github.jls97.boveda.ui.lock.UnlockScreen
@@ -30,14 +31,17 @@ fun BovedaApp(session: VaultSession) {
     val exportLauncher = rememberLauncherForActivityResult(CreateLocalDocument("application/octet-stream")) { uri ->
         vaultViewModel.finishExport(uri)
     }
-    when (val current = state) {
-        VaultState.NoVault -> SetupScreen(viewModel { LockViewModel(session) })
-        VaultState.Locked -> UnlockScreen(viewModel { LockViewModel(session) })
-        is VaultState.Unlocked -> VaultHost(
-            session = session,
-            state = current,
-            viewModel = vaultViewModel,
-            onPickExportDestination = { fileName -> exportLauncher.launch(fileName) },
-        )
+    // Escribir con el teclado en pantalla también pospone el autobloqueo (I-31).
+    TouchOnTyping(onTyping = session::touch) {
+        when (val current = state) {
+            VaultState.NoVault -> SetupScreen(viewModel { LockViewModel(session) })
+            VaultState.Locked -> UnlockScreen(viewModel { LockViewModel(session) })
+            is VaultState.Unlocked -> VaultHost(
+                session = session,
+                state = current,
+                viewModel = vaultViewModel,
+                onPickExportDestination = { fileName -> exportLauncher.launch(fileName) },
+            )
+        }
     }
 }

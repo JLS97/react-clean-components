@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.ui.components.BackButton
 import io.github.jls97.boveda.ui.components.ConfirmDialog
+import io.github.jls97.boveda.ui.components.OnAppBackground
 import io.github.jls97.boveda.ui.components.autofillTargetLabel
 import io.github.jls97.boveda.ui.components.formatDate
 
@@ -51,6 +52,8 @@ fun EntryDetailScreen(
 ) {
     var revealPassword by remember(entry.id) { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    // En segundo plano la contraseña vuelve a ocultarse y no reaparece en claro al volver (B-39).
+    OnAppBackground { revealPassword = false }
 
     Scaffold(
         topBar = {

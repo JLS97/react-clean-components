@@ -56,8 +56,11 @@ internal fun QrCameraPreview(onDecoded: (String) -> Unit, onError: () -> Unit, m
                     val decoder = QrFrameDecoder()
                     var lastText: String? = null // Only touched on the analysis thread.
                     analysis.setAnalyzer(analysisExecutor) { image ->
+                        // Ningún error de un frame debe salir del hilo de análisis (B-44).
                         val text = try {
                             decoder.decode(image)
+                        } catch (e: Throwable) {
+                            null
                         } finally {
                             image.close()
                         }
@@ -97,6 +100,11 @@ internal class QrFrameDecoder {
     private val reader = QRCodeReader()
     private val hints = mapOf(DecodeHintType.TRY_HARDER to true)
 
+    /**
+     * Devuelve el texto del QR del frame, o null si no hay ninguno. Cualquier fallo (un frame
+     * malformado, un error interno de ZXing) se trata como «sin código» y se pasa al siguiente
+     * frame: el analizador corre en su propio hilo y una excepción sin capturar cerraría la app (B-44).
+     */
     fun decode(image: ImageProxy): String? {
         val plane = image.planes.firstOrNull() ?: return null
         val rowStride = plane.rowStride
@@ -108,6 +116,9 @@ internal class QrFrameDecoder {
             val source = PlanarYUVLuminanceSource(luminance, rowStride, image.height, 0, 0, image.width, image.height, false)
             // Light-on-dark codes (some dark themes) only read once inverted.
             return read(source) ?: read(source.invert())
+        } catch (e: Throwable) {
+            // Frame inservible (geometría inesperada, buffer liberado...): se ignora.
+            return null
         } finally {
             luminance.fill(0)
         }
@@ -117,6 +128,9 @@ internal class QrFrameDecoder {
         try {
             reader.decode(BinaryBitmap(HybridBinarizer(source)), hints).text
         } catch (e: ReaderException) {
+            null
+        } catch (e: Throwable) {
+            // ZXing ha tenido errores de índice con imágenes adversarias: este frame se ignora.
             null
         } finally {
             reader.reset()

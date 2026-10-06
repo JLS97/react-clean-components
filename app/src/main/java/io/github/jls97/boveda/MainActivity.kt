@@ -48,6 +48,10 @@ class MainActivity : ComponentActivity() {
         if (!isChangingConfigurations) session.onAppBackground()
     }
 
+    /**
+     * Toques y teclas físicas. El texto que entrega el teclado en pantalla no pasa por aquí: lo
+     * cubre [io.github.jls97.boveda.ui.components.TouchOnTyping] en la raíz de la interfaz (I-31).
+     */
     override fun onUserInteraction() {
         super.onUserInteraction()
         session.touch()
