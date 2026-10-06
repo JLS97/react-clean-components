@@ -13,7 +13,8 @@ depende de ningún servidor ni API externa.
 - Generador de contraseñas (8–128 caracteres, tipos de caracteres, evitar caracteres parecidos).
 - Copiar al portapapeles marcado como sensible y borrado automático (15 s – 2 min).
 - Desbloqueo con huella opcional, ligado a una clave de hardware.
-- Bloqueo automático por inactividad, al salir de la app y siempre al apagar la pantalla.
+- Bloqueo automático por inactividad (configurable, con la opción de bloquear al salir de la
+  app), siempre al apagar la pantalla y, con cualquier ajuste, tras 5 minutos en segundo plano.
 - Copias de seguridad cifradas (exportar e importar un archivo `.bvd`).
 - Cambio de contraseña maestra.
 - **Autorrelleno** en otras apps y en Chrome desde la barra de sugerencias del teclado, y oferta de
@@ -133,7 +134,10 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
   Android no deja comprobar si el clip sigue siendo el de Bóveda, así que puede borrar algo
   copiado después).
 - **Memoria.** Las claves se borran al bloquear. Los textos descifrados se sueltan para que el
-  recolector de basura los elimine, pero la JVM no permite borrarlos de forma garantizada.
+  recolector de basura los elimine, pero la JVM no permite borrarlos de forma garantizada. El
+  bloqueo por apagado de pantalla y el de inactividad se ejecutan dentro del proceso: si Android
+  lo congela en segundo plano, se aplican en cuanto lo descongela (al volver a la app como muy
+  tarde), y mientras tanto las claves siguen en memoria.
 
 ### Cero nube, cero Internet
 

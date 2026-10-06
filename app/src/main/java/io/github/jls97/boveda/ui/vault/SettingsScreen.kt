@@ -87,11 +87,13 @@ fun SettingsScreen(
             )
             return
         }
-        viewModel.expectExternalActivity()
         val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
             .setData(Uri.parse("package:${context.packageName}"))
         try {
             context.startActivity(intent)
+            // Only once the system screen is really on its way: if it is not, "lock when leaving
+            // the app" must keep working on the next exit.
+            viewModel.expectExternalActivity()
         } catch (e: ActivityNotFoundException) {
             viewModel.message("Actívalo en los ajustes del teléfono: busca «Servicio de autocompletar».")
         }

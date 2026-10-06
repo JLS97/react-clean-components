@@ -146,7 +146,12 @@ class VaultSession private constructor(
     private var lockCount = 0
     private var lastInteraction = SystemClock.elapsedRealtime()
     private var autoLockJob: Job? = null
-    private var externalActivityExpected = false
+
+    /** Monotonic deadline of the last [expectExternalActivity]; 0 when none. */
+    private var externalActivityExpectedUntil = 0L
+
+    /** Monotonic instant of the last [onAppBackground] not yet followed by [onAppForeground]. */
+    private var backgroundSince: Long? = null
 
     // region Lifecycle and auto-lock
 
@@ -156,19 +161,32 @@ class VaultSession private constructor(
     }
 
     /**
-     * Call right before opening a system screen on purpose (the file picker for backups), so
-     * "lock when leaving the app" does not lock in the middle of the operation. The inactivity
-     * timeout and the screen-off lock still apply.
+     * Call right before opening a system screen on purpose (the file picker for backups, the
+     * autofill settings), so "lock when leaving the app" does not lock in the middle of the
+     * operation. The exception lasts [AutoLockPolicy.EXTERNAL_ACTIVITY_GRACE_MS] at most and,
+     * while it lasts, that same time applies as inactivity timeout even with "lock when leaving"
+     * ([AutoLockPolicy]): a picker abandoned with the Home button cannot leave the vault open
+     * without limit. The screen-off lock still applies.
      */
     fun expectExternalActivity() {
-        externalActivityExpected = true
+        externalActivityExpectedUntil = AutoLockPolicy.externalActivityDeadline(SystemClock.elapsedRealtime())
     }
 
+    private fun isExternalActivityExpected(): Boolean =
+        AutoLockPolicy.isExternalActivityExpected(externalActivityExpectedUntil, SystemClock.elapsedRealtime())
+
     fun onAppForeground() {
-        externalActivityExpected = false
+        externalActivityExpectedUntil = 0L
+        val since = backgroundSince
+        backgroundSince = null
         val current = open ?: return
-        val timeout = current.data.settings.autoLockSeconds
-        if (timeout > 0 && SystemClock.elapsedRealtime() - lastInteraction >= timeout * 1_000L) lock()
+        val shouldLock = AutoLockPolicy.shouldLockOnForeground(
+            current.data.settings.autoLockSeconds,
+            since,
+            lastInteraction,
+            SystemClock.elapsedRealtime(),
+        )
+        if (shouldLock) lock()
     }
 
     fun onAppResumed() {
@@ -176,8 +194,9 @@ class VaultSession private constructor(
     }
 
     fun onAppBackground() {
+        backgroundSince = SystemClock.elapsedRealtime()
         val current = open ?: return
-        if (current.data.settings.autoLockSeconds == 0 && !externalActivityExpected) lock()
+        if (AutoLockPolicy.shouldLockOnBackground(current.data.settings.autoLockSeconds, isExternalActivityExpected())) lock()
     }
 
     fun isBiometricEnabled(): Boolean = biometricKeys.isEnabled()
@@ -199,8 +218,15 @@ class VaultSession private constructor(
             while (isActive) {
                 delay(1_000)
                 val current = open ?: break
-                val timeout = current.data.settings.autoLockSeconds
-                if (timeout > 0 && SystemClock.elapsedRealtime() - lastInteraction >= timeout * 1_000L) {
+                // Against the monotonic clock, not the count of ticks: a frozen process (cached
+                // apps freezer, doze) misses ticks but not the time that went by.
+                val shouldLock = AutoLockPolicy.shouldLockForInactivity(
+                    current.data.settings.autoLockSeconds,
+                    isExternalActivityExpected(),
+                    lastInteraction,
+                    SystemClock.elapsedRealtime(),
+                )
+                if (shouldLock) {
                     lock()
                     break
                 }
