@@ -42,8 +42,8 @@ Cómo protege tus datos:
 - **Antiphishing: webs.** Cualquier app puede decirle a Android que está mostrando `banco.es`, así
   que Bóveda solo se cree el dominio cuando lo informa un navegador reconocido con su firma digital
   verificada: Chrome, Firefox, Edge, Brave, Samsung Internet, Vivaldi, DuckDuckGo, Opera y los
-  demás de la lista oficial de Google (63 navegadores). Una app que muestre una web sin ser uno de
-  ellos se trata como app, con aviso.
+  demás de la lista de apps privilegiadas de Google, curada para dejar solo navegadores (57). Una
+  app que muestre una web sin ser uno de ellos se trata como app, con aviso.
 - **Antiphishing: apps.** Las apps se reconocen por su nombre de paquete **y su firma digital**,
   que Android verifica. Una app falsa con el mismo nombre de paquete que la de tu banco, instalada
   fuera de Play Store, no pasaría por la buena.

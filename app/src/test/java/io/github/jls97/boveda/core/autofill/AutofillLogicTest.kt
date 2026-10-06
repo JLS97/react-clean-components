@@ -6,8 +6,24 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
+import java.time.Period
 
 class AutofillLogicTest {
+
+    private companion object {
+        /** Entradas de TrustedBrowsers; se actualiza a la vez que la lista. */
+        const val EXPECTED_SIZE = 57
+
+        /** Claves públicas de prueba de AOSP (su clave privada está publicada): nunca pueden ser de confianza. */
+        val AOSP_TEST_KEYS = mapOf(
+            "testkey" to "a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc",
+            "platform" to "c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8",
+            "shared" to "28bbfe4a7b97e74681dc55c2fbb6ccb8d6c74963733f6af6ae74d8c3a6e879fd",
+            "media" to "465983f7791f2abeb43ea2cbdc7f21a8260b72bc08a55c839fc1a43bc741a81e",
+            "networkstack" to "e1dbadce60dc080d15b58a014b0dcf9400e24de23fa00b287a5a982bfebda2ee",
+        )
+    }
 
     private fun kind(
         hints: List<String> = emptyList(),
@@ -263,5 +279,40 @@ class AutofillLogicTest {
         val multi = AppCertificates("$chromeCertificate,${"e".repeat(64)}", setOf("$chromeCertificate,${"e".repeat(64)}"))
         assertTrue(TrustedBrowsers.isTrusted("com.android.chrome", multi))
         assertFalse(TrustedBrowsers.isTrusted("com.android.chrome", attacker))
+    }
+
+    @Test
+    fun everyTrustedBrowserEntryIsSoundAndNotAnAospTestKey() {
+        val table = TrustedBrowsers.all()
+        assertEquals("Actualiza EXPECTED_SIZE al cambiar la lista de navegadores", EXPECTED_SIZE, table.size)
+        for ((packageName, certificates) in table) {
+            assertTrue("$packageName sin huellas", certificates.isNotEmpty())
+            assertFalse("$packageName es un paquete de depuración", packageName.endsWith(".debug"))
+            for (fingerprint in certificates) {
+                assertTrue(
+                    "$packageName: huella mal formada «$fingerprint» (deben ser 64 hex minúsculas)",
+                    fingerprint.length == 64 && fingerprint.all { c -> c in "0123456789abcdef" },
+                )
+                for ((keyName, testKey) in AOSP_TEST_KEYS) {
+                    assertFalse("$packageName acepta la clave pública de prueba «$keyName» de AOSP", fingerprint == testKey)
+                }
+            }
+        }
+        // Las apps que no son navegadores de consumo quedaron fuera al curar la lista de Google.
+        for (packageName in listOf("com.google.android.gms", "com.fido.fido2client", "com.oplus.credential", "com.citrix.Receiver", "com.zoho.primeum.stable")) {
+            assertTrue("$packageName no es un navegador", TrustedBrowsers.certificatesOf(packageName).isEmpty())
+        }
+    }
+
+    @Test
+    fun trustedBrowserListIsRecentEnough() {
+        val listDate = LocalDate.parse(TrustedBrowsers.LIST_DATE)
+        val age = Period.between(listDate, LocalDate.now())
+        val months = age.years * 12 + age.months
+        assertTrue(
+            "La lista de navegadores de confianza (TrustedBrowsers.LIST_DATE = ${TrustedBrowsers.LIST_DATE}) tiene $months meses: " +
+                "regenérala desde fido2_privileged_google.json, cúrala, y actualiza LIST_DATE, EXPECTED_SIZE y el README",
+            months <= 18,
+        )
     }
 }
