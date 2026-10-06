@@ -96,4 +96,23 @@ class CryptoTest {
     fun aesGcmRejectsTruncatedInput() {
         AesGcm.open(randomBytes(AesGcm.KEY_SIZE), ByteArray(AesGcm.OVERHEAD - 1), ByteArray(0))
     }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun aesGcmRefusesToSealWithAnAllZeroKey() {
+        // A key of all zeros is what wipe() leaves behind: sealing with it must never produce a file.
+        AesGcm.seal(ByteArray(AesGcm.KEY_SIZE), "secreto".toByteArray(), ByteArray(0))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun aesGcmRefusesToOpenWithAnAllZeroKey() {
+        val sealed = AesGcm.seal(randomBytes(AesGcm.KEY_SIZE), "secreto".toByteArray(), ByteArray(0))
+        AesGcm.open(ByteArray(AesGcm.KEY_SIZE), sealed, ByteArray(0))
+    }
+
+    @Test
+    fun aesGcmAcceptsAKeyWithASingleNonZeroByte() {
+        val key = ByteArray(AesGcm.KEY_SIZE).also { it[31] = 1 }
+        val sealed = AesGcm.seal(key, "secreto".toByteArray(), ByteArray(0))
+        assertArrayEquals("secreto".toByteArray(), AesGcm.open(key, sealed, ByteArray(0)))
+    }
 }

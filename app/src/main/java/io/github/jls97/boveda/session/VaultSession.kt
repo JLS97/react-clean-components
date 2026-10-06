@@ -422,51 +422,76 @@ class VaultSession private constructor(
         OperationResult.Success
     }
 
-    /** Encrypts and writes [data] using private copies of the keys. */
+    /**
+     * Encrypts and writes [data] using private copies of the keys of [keysFrom]. Call it right after
+     * reading [open], with no suspension in between: the copies are taken here, so a [lock] that ran
+     * before this call would have left [keysFrom] wiped. Anything that suspends first (Argon2id,
+     * Keystore) must copy the keys itself beforehand and use [persistWith].
+     */
     private suspend fun persist(header: VaultContainer.Header, keysFrom: OpenVault, data: VaultData) {
         val dek = keysFrom.dek.copyOf()
         val layerKey = keysFrom.layerKey.copyOf()
         try {
-            withContext(Dispatchers.IO) {
-                val portable = VaultContainer.seal(header, dek, data)
-                storage.writeVault(DeviceLayer.seal(layerKey, portable))
-            }
+            persistWith(header, dek, layerKey, data)
         } finally {
             dek.wipe()
             layerKey.wipe()
         }
     }
 
-    /** Checks the current password, then re-wraps the vault key under the new one. */
+    /**
+     * Encrypts and writes [data] with the given keys, which the caller copied before any suspension
+     * and wipes afterwards. `AesGcm` refuses an all-zero key, so a wiped key can never reach disk.
+     */
+    private suspend fun persistWith(header: VaultContainer.Header, dek: ByteArray, layerKey: ByteArray, data: VaultData) {
+        withContext(Dispatchers.IO) {
+            val portable = VaultContainer.seal(header, dek, data)
+            storage.writeVault(DeviceLayer.seal(layerKey, portable))
+        }
+    }
+
+    /**
+     * Checks the current password, then re-wraps the vault key under the new one. Both keys are
+     * copied before Argon2id runs and, if the vault locked meanwhile, nothing is written: the file
+     * is never sealed with the wiped keys of a vault that is no longer open.
+     */
     suspend fun changeMasterPassword(currentPassword: CharArray, newPassword: CharArray): OperationResult =
         writeMutex.withLock {
             try {
                 val current = open ?: return@withLock OperationResult.Failure("La bóveda está bloqueada")
+                val lockCountAtStart = lockCount
                 val dek = current.dek.copyOf()
-                val newHeader = try {
-                    withContext(Dispatchers.Default) {
+                val layerKey = current.layerKey.copyOf()
+                try {
+                    val newHeader = withContext(Dispatchers.Default) {
                         if (!VaultContainer.verifyPassword(current.header, currentPassword)) {
                             null
                         } else {
                             VaultContainer.changePassword(dek, newPassword)
                         }
+                    } ?: return@withLock OperationResult.WrongPassword
+                    if (open !== current || lockCount != lockCountAtStart) {
+                        return@withLock OperationResult.Failure(
+                            "Se bloqueó mientras se cambiaba la contraseña. No se ha escrito nada.",
+                        )
+                    }
+                    persistWith(newHeader, dek, layerKey, current.data)
+                    if (open === current) {
+                        val updated = OpenVault(
+                            newHeader,
+                            dek.copyOf(),
+                            layerKey.copyOf(),
+                            current.data,
+                            current.biometricEnabled,
+                            current.otpOnDevice,
+                        )
+                        current.wipe()
+                        open = updated
+                        publish(updated)
                     }
                 } finally {
                     dek.wipe()
-                } ?: return@withLock OperationResult.WrongPassword
-                persist(newHeader, current, current.data)
-                if (open === current) {
-                    val updated = OpenVault(
-                        newHeader,
-                        current.dek.copyOf(),
-                        current.layerKey.copyOf(),
-                        current.data,
-                        current.biometricEnabled,
-                        current.otpOnDevice,
-                    )
-                    current.wipe()
-                    open = updated
-                    publish(updated)
+                    layerKey.wipe()
                 }
                 OperationResult.Success
             } catch (e: CancellationException) {
@@ -747,6 +772,8 @@ class VaultSession private constructor(
         is VaultException -> "Error de la bóveda."
         is IOException -> "No se pudo leer o escribir el archivo."
         is GeneralSecurityException, is ProviderException -> "El almacén de claves del sistema rechazó la operación."
+        // AesGcm refused a wiped (all-zero) key before sealing anything: the file is untouched.
+        is IllegalArgumentException -> "Error interno: no se ha escrito nada"
         else -> "Error inesperado."
     }
 

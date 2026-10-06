@@ -2,6 +2,7 @@ package io.github.jls97.boveda.core.vault
 
 import io.github.jls97.boveda.core.crypto.KdfParams
 import io.github.jls97.boveda.core.crypto.randomBytes
+import io.github.jls97.boveda.core.crypto.wipe
 import io.github.jls97.boveda.core.otp.OtpCrypto
 import io.github.jls97.boveda.core.otp.OtpParams
 import io.github.jls97.boveda.core.otp.OtpSecret
@@ -129,6 +130,26 @@ class VaultTest {
 
         val byKey = VaultContainer.openWithKey(blob, created.dek)
         assertEquals(sampleData, byKey.data)
+    }
+
+    @Test
+    fun containerSealsWithARealDekButNotWithAWipedOne() {
+        val created = VaultContainer.create("contraseña maestra".toCharArray(), sampleData, testParams)
+        val blob = VaultContainer.seal(created.header, created.dek, created.data)
+        assertEquals(sampleData, VaultContainer.openWithKey(blob, created.dek).data)
+
+        // After lock() the DEK is all zeros: sealing must fail before anything reaches the disk.
+        created.dek.wipe()
+        try {
+            VaultContainer.seal(created.header, created.dek, created.data)
+            fail("The container sealed the vault with a wiped DEK")
+        } catch (expected: IllegalArgumentException) {
+        }
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun deviceLayerRefusesAWipedKey() {
+        DeviceLayer.seal(ByteArray(32), "portable".toByteArray())
     }
 
     @Test
