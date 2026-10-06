@@ -2,6 +2,7 @@ package io.github.jls97.boveda.session
 
 import android.content.Context
 import android.os.SystemClock
+import io.github.jls97.boveda.core.crypto.KdfParams
 import io.github.jls97.boveda.core.crypto.wipe
 import io.github.jls97.boveda.core.otp.OtpCrypto
 import io.github.jls97.boveda.core.otp.OtpSecret
@@ -9,6 +10,7 @@ import io.github.jls97.boveda.core.otp.WrongRecoveryCodeException
 import io.github.jls97.boveda.core.vault.CorruptedVaultException
 import io.github.jls97.boveda.core.vault.DeviceBindingException
 import io.github.jls97.boveda.core.vault.DeviceLayer
+import io.github.jls97.boveda.core.vault.KdfMemoryException
 import io.github.jls97.boveda.core.vault.UnsupportedVaultException
 import io.github.jls97.boveda.core.vault.VaultContainer
 import io.github.jls97.boveda.core.vault.VaultData
@@ -315,6 +317,9 @@ class VaultSession private constructor(
                     openStoredVault { portable -> VaultContainer.open(portable, password) }
                 } catch (e: WrongPasswordException) {
                     null
+                } catch (e: OutOfMemoryError) {
+                    // Argon2id ran out of heap despite the check: report it instead of dying.
+                    throw KdfMemoryException("Key derivation ran out of memory")
                 }
             }
             if (newVault == null) {
@@ -372,11 +377,26 @@ class VaultSession private constructor(
             if (blockedUntil > 0) return@withLock OperationResult.Throttled(blockedUntil)
             val lockCountAtStart = lockCount
             val newVault = withContext(Dispatchers.Default) {
-                val restored = try {
+                val opened = try {
                     VaultContainer.open(backup, password)
                 } catch (e: WrongPasswordException) {
                     null
+                } catch (e: OutOfMemoryError) {
+                    // Argon2id ran out of heap despite the check: report it instead of dying.
+                    throw KdfMemoryException("Key derivation ran out of memory")
                 } ?: return@withContext null
+                // A backup with cheaper Argon2 costs than the app's own would otherwise turn this
+                // vault, and every backup made from it, into an easier offline target for good.
+                // The password is at hand, so the DEK is wrapped again under the default costs.
+                val restored = if (opened.header.kdfParams.isWeakerThan(KdfParams.DEFAULT)) {
+                    try {
+                        VaultContainer.changePassword(password, opened.data)
+                    } finally {
+                        opened.dek.wipe()
+                    }
+                } else {
+                    opened
+                }
                 try {
                     val layerKey = deviceKeys.loadOrCreate()
                     try {
@@ -935,7 +955,10 @@ class VaultSession private constructor(
             "La bóveda no se puede abrir en este teléfono: su clave de hardware no está disponible. " +
                 "Restaura una copia de seguridad."
         is CorruptedVaultException -> "El archivo está dañado o ha sido modificado."
-        is UnsupportedVaultException -> "Formato de bóveda no compatible."
+        is KdfMemoryException ->
+            "Este archivo pide más memoria de la que permite el teléfono para comprobar la contraseña. " +
+                "No se ha escrito nada."
+        is UnsupportedVaultException -> "Formato de bóveda no compatible o archivo modificado."
         is VaultException -> "Error de la bóveda."
         is IOException -> "No se pudo leer o escribir el archivo."
         is GeneralSecurityException, is ProviderException -> "El almacén de claves del sistema rechazó la operación."

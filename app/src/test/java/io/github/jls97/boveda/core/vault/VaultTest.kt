@@ -118,6 +118,158 @@ class VaultTest {
         VaultCodec.decode(VaultCodec.encode(sampleData) + byteArrayOf(0))
     }
 
+    /** Builds a payload by hand, as a hostile file would: no settings, then one record per entry. */
+    private fun rawPayload(settings: Map<Int, Int> = emptyMap(), entries: List<Map<Int, String>> = emptyList()): ByteArray {
+        val writer = ByteWriter(64)
+        writer.putU16(1)
+        writer.putU16(settings.size)
+        for ((tag, value) in settings) writer.putIntField(tag, value)
+        writer.putI32(entries.size)
+        for (fields in entries) {
+            writer.putU16(fields.size)
+            for ((tag, value) in fields) writer.putStringField(tag, value)
+        }
+        return writer.toByteArray()
+    }
+
+    private val entryId = 1
+    private val autoLockTag = 1
+    private val clipboardClearTag = 2
+
+    @Test
+    fun codecRejectsDuplicateEntryIds() {
+        val payload = rawPayload(entries = listOf(mapOf(entryId to "a1"), mapOf(entryId to "a1")))
+        try {
+            VaultCodec.decode(payload)
+            fail("Two entries with the same id were accepted")
+        } catch (expected: CorruptedVaultException) {
+        }
+        // The same ids on different entries are fine.
+        assertEquals(2, VaultCodec.decode(rawPayload(entries = listOf(mapOf(entryId to "a1"), mapOf(entryId to "a2")))).entries.size)
+        // Nor does the app ever write such a file.
+        val twin = sampleData.entries[1].copy(id = sampleData.entries[0].id)
+        try {
+            VaultCodec.encode(sampleData.copy(entries = sampleData.entries + twin))
+            fail("Two entries with the same id were encoded")
+        } catch (expected: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun codecRejectsEmptyEntryIds() {
+        try {
+            VaultCodec.decode(rawPayload(entries = listOf(mapOf(entryId to ""))))
+            fail("An entry with an empty id was accepted")
+        } catch (expected: CorruptedVaultException) {
+        }
+        try {
+            VaultCodec.encode(VaultData(entries = listOf(sampleData.entries[1].copy(id = ""))))
+            fail("An entry with an empty id was encoded")
+        } catch (expected: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun codecEnforcesTheFieldLimitsWhenReadingAndWriting() {
+        val limits = mapOf(
+            2 to VaultCodec.MAX_TITLE_BYTES,
+            3 to VaultCodec.MAX_USERNAME_BYTES,
+            4 to VaultCodec.MAX_PASSWORD_BYTES,
+            5 to VaultCodec.MAX_URL_BYTES,
+            6 to VaultCodec.MAX_NOTES_BYTES,
+            9 to VaultCodec.MAX_AUTOFILL_TARGETS_BYTES,
+        )
+        assertEquals(mapOf(2 to 1_024, 3 to 1_024, 4 to 4_096, 5 to 2_048, 6 to 65_536, 9 to 16_384), limits)
+        for ((tag, limit) in limits) {
+            val atLimit = rawPayload(entries = listOf(mapOf(entryId to "a1", tag to "x".repeat(limit))))
+            assertEquals(1, VaultCodec.decode(atLimit).entries.size)
+            try {
+                VaultCodec.decode(rawPayload(entries = listOf(mapOf(entryId to "a1", tag to "x".repeat(limit + 1)))))
+                fail("A field of tag $tag with ${limit + 1} bytes was accepted")
+            } catch (expected: CorruptedVaultException) {
+            }
+        }
+        // Multi-byte characters count in UTF-8 bytes, not in chars.
+        try {
+            VaultCodec.decode(rawPayload(entries = listOf(mapOf(entryId to "a1", 2 to "ñ".repeat(VaultCodec.MAX_TITLE_BYTES / 2 + 1)))))
+            fail("A title above the limit in UTF-8 bytes was accepted")
+        } catch (expected: CorruptedVaultException) {
+        }
+        try {
+            VaultCodec.decode(rawPayload(entries = listOf(mapOf(entryId to "i".repeat(VaultCodec.MAX_ID_BYTES + 1)))))
+            fail("An id above the limit was accepted")
+        } catch (expected: CorruptedVaultException) {
+        }
+
+        val base = sampleData.entries[0]
+        val tooLong = listOf(
+            base.copy(title = "t".repeat(VaultCodec.MAX_TITLE_BYTES + 1)),
+            base.copy(username = "u".repeat(VaultCodec.MAX_USERNAME_BYTES + 1)),
+            base.copy(password = "p".repeat(VaultCodec.MAX_PASSWORD_BYTES + 1)),
+            base.copy(url = "u".repeat(VaultCodec.MAX_URL_BYTES + 1)),
+            base.copy(notes = "n".repeat(VaultCodec.MAX_NOTES_BYTES + 1)),
+            base.copy(autofillTargets = List(VaultCodec.MAX_AUTOFILL_TARGETS_BYTES / 10 + 1) { "web:a$it.es" }),
+            base.copy(id = "i".repeat(VaultCodec.MAX_ID_BYTES + 1)),
+        )
+        for (entry in tooLong) {
+            try {
+                VaultCodec.encode(VaultData(entries = listOf(entry)))
+                fail("An oversized field was encoded")
+            } catch (expected: IllegalArgumentException) {
+            }
+        }
+        val atLimits = base.copy(
+            title = "t".repeat(VaultCodec.MAX_TITLE_BYTES),
+            notes = "n".repeat(VaultCodec.MAX_NOTES_BYTES),
+            password = "p".repeat(VaultCodec.MAX_PASSWORD_BYTES),
+        )
+        assertEquals(atLimits, VaultCodec.decode(VaultCodec.encode(VaultData(entries = listOf(atLimits)))).entries[0])
+    }
+
+    @Test
+    fun codecNormalizesSettingsToTheAllowedChoices() {
+        fun decoded(autoLock: Int, clipboard: Int): VaultSettings =
+            VaultCodec.decode(rawPayload(settings = mapOf(autoLockTag to autoLock, clipboardClearTag to clipboard))).settings
+
+        // A negative auto-lock would never fire; a huge clipboard delay would never wipe.
+        assertEquals(VaultSettings(autoLockSeconds = 0, clipboardClearSeconds = 15), decoded(-1, -5))
+        assertEquals(VaultSettings(autoLockSeconds = 900, clipboardClearSeconds = 120), decoded(1_000_000, Int.MAX_VALUE))
+        assertEquals(VaultSettings(autoLockSeconds = 0, clipboardClearSeconds = 15), decoded(Int.MIN_VALUE, Int.MIN_VALUE))
+        assertEquals(VaultSettings(autoLockSeconds = 300, clipboardClearSeconds = 60), decoded(299, 70))
+        // Values that are choices already stay as they are.
+        for (autoLock in VaultSettings.AUTO_LOCK_CHOICES) {
+            for (clipboard in VaultSettings.CLIPBOARD_CLEAR_CHOICES) {
+                assertEquals(VaultSettings(autoLock, clipboard), decoded(autoLock, clipboard))
+            }
+        }
+        val normalized = VaultCodec.decode(rawPayload(settings = mapOf(autoLockTag to -1))).settings
+        assertTrue(normalized.autoLockSeconds in VaultSettings.AUTO_LOCK_CHOICES)
+        assertTrue(normalized.clipboardClearSeconds in VaultSettings.CLIPBOARD_CLEAR_CHOICES)
+    }
+
+    @Test
+    fun byteWriterGrowsFromAnEmptyBufferAndRejectsOverflow() {
+        val writer = ByteWriter(0)
+        writer.putU8(1)
+        writer.putBytes(ByteArray(100) { 2 })
+        writer.putI64(3)
+        val written = writer.toByteArray()
+        assertEquals(109, written.size)
+        assertEquals(1, written[0].toInt())
+        assertEquals(3, written[108].toInt())
+
+        for (extra in listOf(Int.MAX_VALUE, Int.MAX_VALUE - 8, -1)) {
+            try {
+                writer.ensureCapacity(extra)
+                fail("A growth of $extra bytes was accepted")
+            } catch (expected: IllegalArgumentException) {
+            }
+        }
+        // The writer is still usable after refusing.
+        writer.putU8(4)
+        assertEquals(110, writer.toByteArray().size)
+    }
+
     @Test
     fun containerRoundTrip() {
         val created = VaultContainer.create("contraseña maestra".toCharArray(), sampleData, testParams)
@@ -190,6 +342,50 @@ class VaultTest {
         // memoryKiB lives right after magic, version and kdf id (bytes 6..9).
         blob[6] = 0x7F
         VaultContainer.open(blob, "clave".toCharArray())
+    }
+
+    @Test
+    fun containerRejectsKdfCostsAboveTheMemoryOfTheProcess() {
+        val created = VaultContainer.create("clave".toCharArray(), sampleData, testParams)
+        val blob = VaultContainer.seal(created.header, created.dek, created.data)
+        // The 64 KiB of testParams do not fit in half of a 64 KiB heap: refused before Argon2 runs.
+        try {
+            VaultContainer.open(blob, "clave".toCharArray(), maxHeapBytes = 64 * 1024L)
+            fail("A KDF above the memory of the process was run")
+        } catch (expected: KdfMemoryException) {
+            assertTrue(expected is UnsupportedVaultException)
+        }
+        assertEquals(sampleData, VaultContainer.open(blob, "clave".toCharArray(), maxHeapBytes = 128 * 1024L).data)
+
+        // The default costs (64 MiB) need a heap of at least 128 MiB; the hard cap holds regardless.
+        VaultContainer.ensureKdfFitsInMemory(KdfParams.DEFAULT, 128L * 1024 * 1024)
+        try {
+            VaultContainer.ensureKdfFitsInMemory(KdfParams.DEFAULT, 128L * 1024 * 1024 - 1)
+            fail("The default costs were accepted for a heap too small for them")
+        } catch (expected: KdfMemoryException) {
+        }
+        val cap = KdfParams(KdfParams.MAX_MEMORY_KIB, 1, 1)
+        VaultContainer.ensureKdfFitsInMemory(cap, Long.MAX_VALUE)
+    }
+
+    @Test
+    fun containerReportsADamagedHeaderAsDamagedNotAsWrongPassword() {
+        val created = VaultContainer.create("clave".toCharArray(), sampleData, testParams)
+        val blob = VaultContainer.seal(created.header, created.dek, created.data)
+        // Salt length lives after magic(4), version, kdf, memory(4), iterations(4) and parallelism.
+        val badSalt = blob.copyOf().also { it[15] = 8 }
+        try {
+            VaultContainer.open(badSalt, "clave".toCharArray())
+            fail("A header with an invalid salt length was accepted")
+        } catch (expected: CorruptedVaultException) {
+        }
+        // KDF parameters outside the range are not a wrong password either (iterations at bytes 10..13).
+        val badKdf = blob.copyOf().also { it[13] = 0 }
+        try {
+            VaultContainer.open(badKdf, "clave".toCharArray())
+            fail("A header with iterations out of range was accepted")
+        } catch (expected: UnsupportedVaultException) {
+        }
     }
 
     @Test(expected = CorruptedVaultException::class)

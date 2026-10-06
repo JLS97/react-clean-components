@@ -2,6 +2,7 @@ package io.github.jls97.boveda.core.vault
 
 import io.github.jls97.boveda.core.crypto.AesGcm
 import io.github.jls97.boveda.core.crypto.KdfParams
+import kotlin.math.abs
 
 /**
  * Serializes [VaultData] to the plaintext that gets encrypted. Every record is a list of
@@ -37,6 +38,20 @@ object VaultCodec {
 
     private const val MAX_SEALED_OTP_SIZE = 4_096
 
+    /**
+     * Most UTF-8 bytes each text field may hold. Generous for anything typed by hand, and small
+     * enough that a crafted backup cannot persist a value that freezes the interface or exhausts
+     * memory on every unlock. Checked when encoding too, so the app never writes what it would
+     * then refuse to read.
+     */
+    const val MAX_ID_BYTES = 128
+    const val MAX_TITLE_BYTES = 1_024
+    const val MAX_USERNAME_BYTES = 1_024
+    const val MAX_PASSWORD_BYTES = 4_096
+    const val MAX_URL_BYTES = 2_048
+    const val MAX_NOTES_BYTES = 65_536
+    const val MAX_AUTOFILL_TARGETS_BYTES = 16_384
+
     fun encode(data: VaultData): ByteArray {
         val writer = ByteWriter(4_096)
         try {
@@ -49,19 +64,21 @@ object VaultCodec {
             if (keyring != null) writer.putBytesField(VAULT_OTP_KEYRING, encodeKeyring(keyring))
 
             writer.putI32(data.entries.size)
+            val ids = HashSet<String>(data.entries.size * 2)
             for (entry in data.entries) {
+                require(entry.id.isNotEmpty() && ids.add(entry.id)) { "Entry ids must be unique and not empty" }
                 val otp = entry.otp
                 writer.putU16(if (otp == null) 9 else 10)
-                writer.putStringField(ENTRY_ID, entry.id)
-                writer.putStringField(ENTRY_TITLE, entry.title)
-                writer.putStringField(ENTRY_USERNAME, entry.username)
-                writer.putStringField(ENTRY_PASSWORD, entry.password)
-                writer.putStringField(ENTRY_URL, entry.url)
-                writer.putStringField(ENTRY_NOTES, entry.notes)
+                writer.putStringField(ENTRY_ID, entry.id, MAX_ID_BYTES)
+                writer.putStringField(ENTRY_TITLE, entry.title, MAX_TITLE_BYTES)
+                writer.putStringField(ENTRY_USERNAME, entry.username, MAX_USERNAME_BYTES)
+                writer.putStringField(ENTRY_PASSWORD, entry.password, MAX_PASSWORD_BYTES)
+                writer.putStringField(ENTRY_URL, entry.url, MAX_URL_BYTES)
+                writer.putStringField(ENTRY_NOTES, entry.notes, MAX_NOTES_BYTES)
                 writer.putLongField(ENTRY_CREATED_AT, entry.createdAt)
                 writer.putLongField(ENTRY_UPDATED_AT, entry.updatedAt)
                 // Package names and domains never contain line breaks.
-                writer.putStringField(ENTRY_AUTOFILL_TARGETS, entry.autofillTargets.joinToString("\n"))
+                writer.putStringField(ENTRY_AUTOFILL_TARGETS, entry.autofillTargets.joinToString("\n"), MAX_AUTOFILL_TARGETS_BYTES)
                 if (otp != null) writer.putBytesField(ENTRY_OTP, otp.bytes)
             }
             return writer.toByteArray()
@@ -79,8 +96,12 @@ object VaultCodec {
         var keyring: OtpKeyring? = null
         reader.readFields { tag, value ->
             when (tag) {
-                SETTING_AUTO_LOCK -> settings = settings.copy(autoLockSeconds = value.asInt())
-                SETTING_CLIPBOARD_CLEAR -> settings = settings.copy(clipboardClearSeconds = value.asInt())
+                // A value outside the choices (negative, huge) would disable the lock or the clipboard
+                // wipe: the file is not trusted on this, it only gets the closest choice.
+                SETTING_AUTO_LOCK ->
+                    settings = settings.copy(autoLockSeconds = nearestChoice(value.asInt(), VaultSettings.AUTO_LOCK_CHOICES))
+                SETTING_CLIPBOARD_CLEAR ->
+                    settings = settings.copy(clipboardClearSeconds = nearestChoice(value.asInt(), VaultSettings.CLIPBOARD_CLEAR_CHOICES))
                 VAULT_OTP_KEYRING -> keyring = decodeKeyring(value)
             }
         }
@@ -88,6 +109,7 @@ object VaultCodec {
         val count = reader.readI32()
         if (count !in 0..MAX_ENTRIES) throw CorruptedVaultException("Invalid entry count")
         val entries = ArrayList<VaultEntry>(count)
+        val ids = HashSet<String>(count * 2)
         repeat(count) {
             var id: String? = null
             var title = ""
@@ -101,15 +123,16 @@ object VaultCodec {
             var otp: SealedOtp? = null
             reader.readFields { tag, value ->
                 when (tag) {
-                    ENTRY_ID -> id = value.asString()
-                    ENTRY_TITLE -> title = value.asString()
-                    ENTRY_USERNAME -> username = value.asString()
-                    ENTRY_PASSWORD -> password = value.asString()
-                    ENTRY_URL -> url = value.asString()
-                    ENTRY_NOTES -> notes = value.asString()
+                    ENTRY_ID -> id = value.asBoundedString(MAX_ID_BYTES)
+                    ENTRY_TITLE -> title = value.asBoundedString(MAX_TITLE_BYTES)
+                    ENTRY_USERNAME -> username = value.asBoundedString(MAX_USERNAME_BYTES)
+                    ENTRY_PASSWORD -> password = value.asBoundedString(MAX_PASSWORD_BYTES)
+                    ENTRY_URL -> url = value.asBoundedString(MAX_URL_BYTES)
+                    ENTRY_NOTES -> notes = value.asBoundedString(MAX_NOTES_BYTES)
                     ENTRY_CREATED_AT -> createdAt = value.asLong()
                     ENTRY_UPDATED_AT -> updatedAt = value.asLong()
-                    ENTRY_AUTOFILL_TARGETS -> autofillTargets = value.asString().split('\n').filter { it.isNotEmpty() }
+                    ENTRY_AUTOFILL_TARGETS ->
+                        autofillTargets = value.asBoundedString(MAX_AUTOFILL_TARGETS_BYTES).split('\n').filter { it.isNotEmpty() }
                     ENTRY_OTP -> {
                         if (value.size !in AesGcm.OVERHEAD + 1..MAX_SEALED_OTP_SIZE) {
                             throw CorruptedVaultException("Invalid 2FA field")
@@ -118,8 +141,11 @@ object VaultCodec {
                     }
                 }
             }
+            val entryId = id ?: throw CorruptedVaultException("Entry without id")
+            // The lists key their rows by id: a repeated one would crash the interface on every unlock.
+            if (entryId.isEmpty() || !ids.add(entryId)) throw CorruptedVaultException("Empty or duplicate entry id")
             entries += VaultEntry(
-                id = id ?: throw CorruptedVaultException("Entry without id"),
+                id = entryId,
                 title = title,
                 username = username,
                 password = password,
@@ -134,6 +160,15 @@ object VaultCodec {
         if (reader.remaining != 0) throw CorruptedVaultException("Trailing data after entries")
         return VaultData(settings, entries, keyring)
     }
+
+    private fun ByteArray.asBoundedString(maxBytes: Int): String {
+        if (size > maxBytes) throw CorruptedVaultException("Field too long")
+        return asString()
+    }
+
+    /** The allowed value closest to [value], so a tampered setting can never weaken a control. */
+    private fun nearestChoice(value: Int, choices: List<Int>): Int =
+        choices.minBy { abs(it.toLong() - value) }
 
     private fun encodeKeyring(keyring: OtpKeyring): ByteArray {
         val writer = ByteWriter(256)

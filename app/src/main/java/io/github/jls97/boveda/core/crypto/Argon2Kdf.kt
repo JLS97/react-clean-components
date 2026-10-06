@@ -25,6 +25,15 @@ data class KdfParams(val memoryKiB: Int, val iterations: Int, val parallelism: I
                 iterations in 1..MAX_ITERATIONS &&
                 memoryKiB in 8 * parallelism..MAX_MEMORY_KIB
     }
+
+    /** Memory Argon2id claims with these parameters, in bytes. */
+    val memoryBytes: Long get() = memoryKiB * 1024L
+
+    /**
+     * True if a password protected with these parameters is cheaper to brute-force than one
+     * protected with [other]: less memory or fewer passes. More lanes do not make it cheaper.
+     */
+    fun isWeakerThan(other: KdfParams): Boolean = memoryKiB < other.memoryKiB || iterations < other.iterations
 }
 
 /** Derives the key-encryption key from the master password with Argon2id. */

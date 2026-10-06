@@ -13,6 +13,7 @@ import io.github.jls97.boveda.core.vault.CorruptedVaultException
 import io.github.jls97.boveda.core.vault.OtpKeyring
 import io.github.jls97.boveda.core.vault.SealedOtp
 import io.github.jls97.boveda.core.vault.UnsupportedVaultException
+import io.github.jls97.boveda.core.vault.VaultContainer
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.core.vault.VaultException
 import io.github.jls97.boveda.core.vault.asInt
@@ -81,6 +82,7 @@ object OtpCrypto {
      */
     fun unwrapWithRecoveryCode(keyring: OtpKeyring, recoveryCode: CharArray): ByteArray {
         val salt = keyring.salt
+        VaultContainer.ensureKdfFitsInMemory(keyring.kdfParams)
         val kek = Argon2Kdf.deriveKey(recoveryCode, salt, keyring.kdfParams)
         try {
             return AesGcm.open(kek, keyring.wrappedKey, recoveryAad(keyring.id, keyring.kdfParams, salt))

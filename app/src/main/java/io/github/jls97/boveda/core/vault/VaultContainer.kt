@@ -67,9 +67,12 @@ object VaultContainer {
      * @throws WrongPasswordException if the password is wrong or the header was altered.
      * @throws CorruptedVaultException if the file is damaged.
      * @throws UnsupportedVaultException if the file uses an unknown format or absurd KDF costs.
+     * @throws KdfMemoryException if the KDF needs more than half of [maxHeapBytes]: before running
+     *   Argon2id, so a crafted header cannot take the app down with an OutOfMemoryError.
      */
-    fun open(blob: ByteArray, password: CharArray): Opened {
+    fun open(blob: ByteArray, password: CharArray, maxHeapBytes: Long = Runtime.getRuntime().maxMemory()): Opened {
         val header = parseHeader(blob)
+        ensureKdfFitsInMemory(header.kdfParams, maxHeapBytes)
         val kek = Argon2Kdf.deriveKey(password, header.salt, header.kdfParams)
         val dek = try {
             AesGcm.open(kek, header.wrappedDek, header.kdfSection)
@@ -95,6 +98,7 @@ object VaultContainer {
 
     /** True if [password] unwraps this header's DEK. Slow: runs Argon2id. */
     fun verifyPassword(header: Header, password: CharArray): Boolean {
+        ensureKdfFitsInMemory(header.kdfParams)
         val kek = Argon2Kdf.deriveKey(password, header.salt, header.kdfParams)
         return try {
             AesGcm.open(kek, header.wrappedDek, header.kdfSection).wipe()
@@ -103,6 +107,20 @@ object VaultContainer {
             false
         } finally {
             kek.wipe()
+        }
+    }
+
+    /**
+     * Rejects KDF parameters read from a file whose memory does not fit comfortably in this process.
+     * Bouncy Castle keeps the whole Argon2 block array on the Java heap, so a header that stays
+     * within [KdfParams.MAX_MEMORY_KIB] can still exhaust the heap of a phone with a small one.
+     * Half of the heap leaves room for the rest of the app.
+     *
+     * @throws KdfMemoryException if the derivation would claim more than half of [maxHeapBytes].
+     */
+    fun ensureKdfFitsInMemory(params: KdfParams, maxHeapBytes: Long = Runtime.getRuntime().maxMemory()) {
+        if (params.memoryKiB > KdfParams.MAX_MEMORY_KIB || params.memoryBytes > maxHeapBytes / 2) {
+            throw KdfMemoryException("Key derivation needs ${params.memoryKiB} KiB, more than this process allows")
         }
     }
 

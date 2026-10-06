@@ -5,6 +5,7 @@ import org.bouncycastle.crypto.params.Argon2Parameters
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CryptoTest {
@@ -45,6 +46,20 @@ class CryptoTest {
         assertEquals(32, first.size)
         assertArrayEquals(first, second)
         assertFalse(first.contentEquals(otherSalt))
+    }
+
+    @Test
+    fun kdfParamsAreWeakerWithLessMemoryOrFewerPasses() {
+        val default = KdfParams.DEFAULT
+        assertFalse(default.isWeakerThan(default))
+        assertTrue(KdfParams(memoryKiB = 8, iterations = 1, parallelism = 1).isWeakerThan(default))
+        assertTrue(default.copy(memoryKiB = default.memoryKiB - 1).isWeakerThan(default))
+        assertTrue(default.copy(iterations = default.iterations - 1).isWeakerThan(default))
+        assertFalse(default.copy(memoryKiB = default.memoryKiB * 2).isWeakerThan(default))
+        assertFalse(default.copy(iterations = default.iterations + 1).isWeakerThan(default))
+        // More lanes are not a cheaper derivation on their own.
+        assertFalse(default.copy(parallelism = default.parallelism * 2).isWeakerThan(default))
+        assertEquals(64L * 1024 * 1024, default.memoryBytes)
     }
 
     @Test
