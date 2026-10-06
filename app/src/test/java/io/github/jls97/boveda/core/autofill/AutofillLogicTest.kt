@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import java.time.LocalDate
 import java.time.Period
@@ -23,6 +24,13 @@ class AutofillLogicTest {
             "media" to "465983f7791f2abeb43ea2cbdc7f21a8260b72bc08a55c839fc1a43bc741a81e",
             "networkstack" to "e1dbadce60dc080d15b58a014b0dcf9400e24de23fa00b287a5a982bfebda2ee",
         )
+    }
+
+    @Before
+    fun loadPublicSuffixList() {
+        if (!PublicSuffixes.isLoaded) {
+            javaClass.getResourceAsStream("/public_suffix_list.dat")!!.use { PublicSuffixes.load(it) }
+        }
     }
 
     private fun kind(
@@ -149,9 +157,75 @@ class AutofillLogicTest {
         assertNull(Domains.host("localhost"))
         assertNull(Domains.host(""))
         assertNull(Domains.host("Mi banco"))
+        assertEquals("banco.es", Domains.host("BANCO.ES."))
+        // Userinfo never passes for the host, and IPv6 literals aren't domains.
+        assertEquals("evil.com", Domains.host("https://user:pw@banco.es@evil.com/"))
+        assertNull(Domains.host("[::1]"))
+        assertNull(Domains.host("https://[::1]:8443/"))
+        assertNull(Domains.host("banco..es"))
+        assertNull(Domains.host("-banco.es"))
+        assertNull(Domains.host("banco-.es"))
+        assertNull(Domains.host("banco_es.com"))
         assertTrue(Domains.covers("banco.es", "online.banco.es"))
         assertFalse(Domains.covers("banco.es", "otrobanco.es"))
         assertFalse(Domains.covers("banco.es", "banco.es.evil.com"))
+    }
+
+    @Test
+    fun publicSuffixListIsLoadedFromTestResources() {
+        assertTrue(PublicSuffixes.isLoaded)
+        assertEquals("es", PublicSuffixes.publicSuffix("online.banco.es"))
+        assertEquals("banco.es", PublicSuffixes.registrableDomain("online.banco.es"))
+        assertTrue(PublicSuffixes.isPublicSuffix("co.uk"))
+        // Sección privada: hosts de contenido de usuario.
+        assertTrue(PublicSuffixes.isPublicSuffix("github.io"))
+        assertTrue(PublicSuffixes.isPublicSuffix("blogspot.com"))
+        assertEquals("usuario.github.io", PublicSuffixes.registrableDomain("www.usuario.github.io"))
+    }
+
+    @Test
+    fun sharedSuffixesCoverOnlyThemselves() {
+        // Un subdominio del sitio guardado se rellena: es la política documentada.
+        assertTrue(Domains.covers("banco.es", "online.banco.es"))
+        assertTrue(Domains.covers("banco.es", "abandonado.banco.es"))
+        assertTrue(Domains.covers("usuario.github.io", "app.usuario.github.io"))
+        // Un sufijo público guardado como url solo coincide con el host exacto.
+        assertTrue(Domains.covers("github.io", "github.io"))
+        assertFalse(Domains.covers("github.io", "atacante.github.io"))
+        assertFalse(Domains.covers("blogspot.com", "aviso-seguridad.blogspot.com"))
+        assertFalse(Domains.covers("co.uk", "banco.co.uk"))
+        // Direcciones IP: nunca por sufijo.
+        assertFalse(Domains.covers("1.1", "192.168.1.1"))
+        assertTrue(Domains.covers("192.168.1.1", "192.168.1.1"))
+
+        val github = entry("GitHub Pages", url = "https://github.io")
+        assertTrue(CredentialMatcher.isExactMatch(github, web("github.io")))
+        assertFalse(CredentialMatcher.isExactMatch(github, web("atacante.github.io")))
+        assertTrue(CredentialMatcher.isExactMatch(entry("Blog", url = "miblog.blogspot.com"), web("miblog.blogspot.com")))
+        assertFalse(CredentialMatcher.isExactMatch(entry("Blog", url = "blogspot.com"), web("miblog.blogspot.com")))
+    }
+
+    @Test
+    fun normalizesInternationalizedDomainsToPunycode() {
+        val homograph = "b\u0430nco.es" // «а» cirílica
+        assertEquals("xn--bnco-53d.es", Domains.host("https://www.$homograph/login"))
+        assertEquals("xn--bnco-53d.es", Domains.host("xn--bnco-53d.es"))
+        assertTrue(Domains.isIdn("xn--bnco-53d.es"))
+        assertFalse(Domains.isIdn("banco.es"))
+        assertFalse(Domains.covers("banco.es", "xn--bnco-53d.es"))
+        assertFalse(Domains.covers("xn--bnco-53d.es", "banco.es"))
+
+        val bank = entry("Banco", url = "https://www.banco.es", targets = listOf("web:banco.es"))
+        val lookAlike = web(homograph)
+        assertEquals("xn--bnco-53d.es", lookAlike.host)
+        assertTrue(lookAlike.isIdn)
+        assertFalse(web("banco.es").isIdn)
+        assertFalse(CredentialMatcher.isExactMatch(bank, lookAlike))
+        assertTrue(CredentialMatcher.suggestions(listOf(bank), lookAlike).isEmpty())
+        // Ambas grafías de una misma entrada IDN coinciden entre sí.
+        val idnEntry = entry("Banco IDN", url = "https://$homograph")
+        assertTrue(CredentialMatcher.isExactMatch(idnEntry, web("xn--bnco-53d.es")))
+        assertTrue(CredentialMatcher.isExactMatch(idnEntry, lookAlike))
     }
 
     private fun entry(title: String, url: String = "", targets: List<String> = emptyList()) =
@@ -181,10 +255,18 @@ class AutofillLogicTest {
             assertNull(target.key)
         }
 
-        // A trusted browser without a domain (its own screens) is just an app.
+        // A trusted browser without a domain (its own screens, about:blank, a data: page) is shown
+        // as an app but can't be linked: the link would reach every page without a domain.
         val chromeItself = TargetResolver.resolve("com.android.chrome", chrome, null)
         assertNull(chromeItself.host)
-        assertEquals("android:com.android.chrome@$chromeCertificate", chromeItself.key)
+        assertNull(chromeItself.claimedWebDomain)
+        assertTrue(chromeItself.trustedBrowser)
+        assertEquals("com.android.chrome", chromeItself.label)
+        assertNull(chromeItself.key)
+        assertEquals(entry("Chrome"), CredentialMatcher.remember(entry("Chrome"), chromeItself))
+        // An app that isn't a browser is still linkable without a domain.
+        assertFalse(TargetResolver.resolve("com.bank.app", bankApp, null).trustedBrowser)
+        assertEquals("android:com.bank.app@$bankCertificate", TargetResolver.resolve("com.bank.app", bankApp, null).key)
     }
 
     @Test

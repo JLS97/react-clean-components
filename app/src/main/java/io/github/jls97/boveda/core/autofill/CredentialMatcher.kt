@@ -1,27 +1,55 @@
 package io.github.jls97.boveda.core.autofill
 
 import io.github.jls97.boveda.core.vault.VaultEntry
+import java.net.IDN
 
 object Domains {
     /**
-     * Host of a URL or bare domain, lowercase and without `www.`: `https://www.Banco.es/login`
-     * and `banco.es` both give `banco.es`. Returns null for anything that isn't a domain.
+     * Host of a URL or bare domain, lowercase, in ASCII and without `www.`: `https://www.Banco.es/login`
+     * and `banco.es` both give `banco.es`. Internationalized names are converted to punycode
+     * (`bаnco.es` with a Cyrillic `а` becomes `xn--bnco-….es`), so a look-alike never reads as the
+     * real domain and both spellings compare equal. Returns null for anything that isn't a domain.
      */
     fun host(value: String): String? {
         val authority = value.trim().lowercase()
             .substringAfter("://")
             .takeWhile { it != '/' && it != '?' && it != '#' }
             .substringAfterLast('@')
-        val host = authority.substringBefore(':').trimEnd('.').removePrefix("www.")
-        val valid = host.contains('.') &&
-            !host.startsWith('.') &&
-            host.all { it.isLetterOrDigit() || it == '.' || it == '-' }
+        val raw = authority.substringBefore(':').trimEnd('.').removePrefix("www.")
+        val host = if (raw.all { it.code < 128 }) {
+            raw
+        } else {
+            runCatching { IDN.toASCII(raw, IDN.ALLOW_UNASSIGNED).lowercase() }.getOrNull() ?: return null
+        }
+        val labels = host.split('.')
+        val valid = labels.size >= 2 && labels.all { isValidLabel(it) }
         return if (valid) host else null
     }
 
-    /** `banco.es` covers `banco.es` and its subdomains, such as `online.banco.es`, never `otrobanco.es`. */
-    fun covers(savedHost: String, requestHost: String): Boolean =
-        requestHost == savedHost || requestHost.endsWith(".$savedHost")
+    /** DNS label: letters, digits and inner hyphens, 1 to 63 characters. */
+    private fun isValidLabel(label: String): Boolean =
+        label.length in 1..63 &&
+            !label.startsWith('-') &&
+            !label.endsWith('-') &&
+            label.all { it in 'a'..'z' || it in '0'..'9' || it == '-' }
+
+    /** True when some label of [host] is punycode (`xn--`): the real name has non-ASCII characters. */
+    fun isIdn(host: String): Boolean = host.split('.').any { it.startsWith(IDN_PREFIX) }
+
+    /**
+     * `banco.es` covers `banco.es` and its subdomains, such as `online.banco.es`, never `otrobanco.es`.
+     * A saved host that is a public suffix (`github.io`, `blogspot.com`, `co.uk`: anyone can own a
+     * name under it) covers nothing but itself, and IP addresses only match exactly. Without the
+     * Public Suffix List loaded every subdomain is covered, as before.
+     */
+    fun covers(savedHost: String, requestHost: String): Boolean {
+        if (requestHost == savedHost) return true
+        if (!requestHost.endsWith(".$savedHost")) return false
+        if (savedHost.all { it in '0'..'9' || it == '.' }) return false
+        return !PublicSuffixes.isLoaded || PublicSuffixes.registrableDomain(savedHost) != null
+    }
+
+    private const val IDN_PREFIX = "xn--"
 }
 
 /**
@@ -43,18 +71,24 @@ data class AutofillTarget(
     val claimedWebDomain: String? = null,
     /** The browser said the page isn't served over https: never linked, shown as a warning. */
     val unencrypted: Boolean = false,
+    /** The app is a trusted browser (verified certificate): without a domain it is never linked. */
+    val trustedBrowser: Boolean = false,
 ) {
     val host: String? get() = webDomain?.let { Domains.host(it) }
 
+    /** The domain has non-ASCII characters, shown in punycode: the screen warns about it. */
+    val isIdn: Boolean get() = host?.let { Domains.isIdn(it) } == true
+
     /**
      * How the target is remembered in [VaultEntry.autofillTargets], or null when it must not be:
-     * apps whose certificates are unknown, and apps that show web pages without being a trusted
-     * browser, because a link to them would reach every page they open.
+     * apps whose certificates are unknown, apps that show web pages without being a trusted
+     * browser, and trusted browsers that didn't say which page they show, because a link to them
+     * would reach every page they open.
      */
     val key: String?
         get() = when {
             host != null -> CredentialMatcher.WEB_PREFIX + host
-            claimedWebDomain != null || certificates == null -> null
+            claimedWebDomain != null || certificates == null || trustedBrowser -> null
             else -> CredentialMatcher.APP_PREFIX + packageName + CredentialMatcher.CERTIFICATE_SEPARATOR + certificates.current
         }
 
@@ -80,9 +114,15 @@ object TargetResolver {
         val trustedBrowser = certificates != null && TrustedBrowsers.isTrusted(packageName, certificates)
         val unencrypted = reported != null && isUnencrypted(webScheme)
         return if (reported != null && trustedBrowser && !unencrypted && Domains.host(reported) != null) {
-            AutofillTarget(packageName, certificates, webDomain = reported)
+            AutofillTarget(packageName, certificates, webDomain = reported, trustedBrowser = true)
         } else {
-            AutofillTarget(packageName, certificates, claimedWebDomain = reported?.take(MAX_CLAIM_LENGTH), unencrypted = unencrypted)
+            AutofillTarget(
+                packageName,
+                certificates,
+                claimedWebDomain = reported?.take(MAX_CLAIM_LENGTH),
+                unencrypted = unencrypted,
+                trustedBrowser = trustedBrowser,
+            )
         }
     }
 

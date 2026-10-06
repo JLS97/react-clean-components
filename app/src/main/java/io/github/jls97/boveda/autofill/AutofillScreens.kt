@@ -222,6 +222,7 @@ private fun PickEntryScreen(
                         if (target.host != null) "Web: ${target.label}" else "App: ${target.label}",
                         style = MaterialTheme.typography.titleMedium,
                     )
+                    idnWarning(target)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
                     Text(fillDescription, style = MaterialTheme.typography.bodyMedium)
                     if (exact.isEmpty()) {
                         Text(
@@ -333,6 +334,7 @@ private fun SaveEntryScreen(
                     "se guardará cifrada.",
                 style = MaterialTheme.typography.bodyMedium,
             )
+            idnWarning(pending.target)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
             unlinkableReason(pending.target)?.let { reason ->
                 Text(
                     "$reason Se guardará sin vincular: tendrás que elegirla a mano al rellenar.",
@@ -433,9 +435,21 @@ private fun unlinkableReason(target: AutofillTarget): String? {
             "Esta app muestra una página web («$claimed») pero no es un navegador reconocido, " +
                 "así que Bóveda no se fía de esa dirección."
         certificates == null -> "No se ha podido verificar la firma de esta app."
+        target.trustedBrowser ->
+            "El navegador no ha indicado qué web muestra, así que un vínculo a él alcanzaría " +
+                "cualquier página sin dirección que abra."
         else -> null
     }
 }
+
+/** Shown when the domain has non-ASCII characters: a look-alike of a real domain can hide there. */
+private fun idnWarning(target: AutofillTarget): String? =
+    if (target.isIdn) {
+        "Dominio internacionalizado: su nombre real tiene caracteres no latinos y se muestra en su " +
+            "forma ASCII («${target.host}»). Puede imitar a un dominio conocido: compruébalo con cuidado."
+    } else {
+        null
+    }
 
 /** Shown when no entry is linked to the app or site asking to be filled. */
 private fun fillWarning(target: AutofillTarget): String =
