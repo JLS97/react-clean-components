@@ -10,6 +10,7 @@ import io.github.jls97.boveda.data.writeFile
 import java.io.File
 import java.io.IOException
 import java.security.GeneralSecurityException
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 
 /**
@@ -17,18 +18,13 @@ import javax.crypto.Cipher
  * biometric for every single use. The system destroys that Keystore key when a fingerprint is
  * added or the screen lock is removed; the codes then come back with the recovery code.
  *
- * File: `"BVOK" | slot u8 | keyring id (16) | IV (12) | wrapped 2FA key (32 + 16)`. The keyring
- * id says which vault the copy belongs to, so a restored backup never uses a stale one. The slot
- * (1 or 2) says which of two Keystore aliases wraps the copy: they alternate, so enrolling a new
- * key (first code, recovery, or a new 2FA key with a new recovery code) never destroys the key the
- * current copy still needs until the new copy is written. Files written before the slots existed
- * carry a 1 there (their format version), which is slot 1.
+ * The file format is [OtpKeyFile]. The keyring id says which vault the copy belongs to, so a
+ * restored backup never uses a stale one. The two slots alternate, so enrolling a new key (first
+ * code, recovery, or a new 2FA key with a new recovery code) never destroys the key the current
+ * copy still needs until the new copy is written; the key of the other slot is dropped then, or on
+ * the next enrollment if that one never finished.
  */
 internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: File) {
-
-    private class Stored(val slot: Byte, val keyringId: ByteArray, val iv: ByteArray, val wrappedKey: ByteArray) {
-        val alias: String get() = aliasOf(slot)
-    }
 
     /** Slot of the key [enrollmentCipher] created, until [finishEnrollment] writes its copy. */
     @Volatile
@@ -46,8 +42,11 @@ internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: F
      * working meanwhile.
      */
     fun enrollmentCipher(): Cipher {
-        val slot: Byte = if (read()?.slot == SLOT_A) SLOT_B else SLOT_A
-        val key = keys.create(aliasOf(slot)) {
+        val slot = OtpKeyFile.otherSlot(read()?.slot)
+        val alias = OtpKeyFile.aliasOf(slot)
+        // Whatever is left in the free slot (an enrollment that never finished) is an orphan.
+        keys.delete(alias)
+        val key = keys.create(alias) {
             setUserAuthenticationRequired(true)
             setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
             setInvalidatedByBiometricEnrollment(true)
@@ -62,12 +61,12 @@ internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: F
         authorizedCipher.updateAAD(OtpCrypto.deviceAad(keyringId))
         val wrapped = authorizedCipher.doFinal(otpKey)
         val iv = authorizedCipher.iv
-        if (iv.size != KeystoreKeys.IV_SIZE || wrapped.size != WRAPPED_SIZE) {
+        if (iv.size != KeystoreKeys.IV_SIZE || wrapped.size != OtpKeyFile.WRAPPED_SIZE) {
             throw GeneralSecurityException("Unexpected Keystore output")
         }
-        writeFile(file, MAGIC + byteArrayOf(slot) + keyringId + iv + wrapped)
+        writeFile(file, OtpKeyFile.encode(slot, keyringId, iv, wrapped))
         enrollingSlot = null
-        keys.delete(aliasOf(if (slot == SLOT_A) SLOT_B else SLOT_A))
+        keys.delete(OtpKeyFile.aliasOf(OtpKeyFile.otherSlot(slot)))
     }
 
     /**
@@ -85,12 +84,17 @@ internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: F
         }
     }
 
-    /** The 2FA key. The caller wipes it. */
+    /** The 2FA key. The caller wipes it. A copy the key does not open is deleted: it is of no use. */
     fun unwrap(authorizedCipher: Cipher, keyringId: ByteArray): ByteArray {
         val stored = read() ?: throw IOException("The 2FA key of this phone is missing")
         if (!stored.keyringId.contentEquals(keyringId)) throw GeneralSecurityException("2FA key of another vault")
         authorizedCipher.updateAAD(OtpCrypto.deviceAad(keyringId))
-        val otpKey = authorizedCipher.doFinal(stored.wrappedKey)
+        val otpKey = try {
+            authorizedCipher.doFinal(stored.wrappedKey)
+        } catch (e: AEADBadTagException) {
+            disable()
+            throw e
+        }
         if (otpKey.size != OtpKeyring.KEY_SIZE) {
             otpKey.wipe()
             throw GeneralSecurityException("Invalid 2FA key")
@@ -99,38 +103,19 @@ internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: F
     }
 
     fun disable() {
-        keys.delete(aliasOf(SLOT_A))
-        keys.delete(aliasOf(SLOT_B))
+        enrollingSlot = null
+        keys.delete(OtpKeyFile.aliasOf(OtpKeyFile.SLOT_A))
+        keys.delete(OtpKeyFile.aliasOf(OtpKeyFile.SLOT_B))
         file.delete()
     }
 
-    private fun read(): Stored? {
+    private fun read(): OtpKeyFile.Parsed? {
         if (!file.exists()) return null
         val bytes = try {
             readFile(file)
         } catch (e: IOException) {
             return null
         }
-        val slot = bytes.getOrNull(MAGIC.size)
-        if (bytes.size != FILE_SIZE || !bytes.copyOfRange(0, MAGIC.size).contentEquals(MAGIC) ||
-            (slot != SLOT_A && slot != SLOT_B)
-        ) {
-            return null
-        }
-        var offset = MAGIC.size + 1
-        fun next(size: Int) = bytes.copyOfRange(offset, offset + size).also { offset += size }
-        return Stored(slot, next(OtpKeyring.ID_SIZE), next(KeystoreKeys.IV_SIZE), next(WRAPPED_SIZE))
-    }
-
-    private companion object {
-        /** Slot 1 keeps the alias of the first format, so copies written before the slots keep opening. */
-        const val SLOT_A: Byte = 1
-        const val SLOT_B: Byte = 2
-
-        fun aliasOf(slot: Byte): String = if (slot == SLOT_A) "boveda.otp.v1" else "boveda.otp.v1.b"
-
-        val MAGIC = byteArrayOf(0x42, 0x56, 0x4F, 0x4B) // "BVOK"
-        const val WRAPPED_SIZE = OtpKeyring.KEY_SIZE + 16
-        val FILE_SIZE = MAGIC.size + 1 + OtpKeyring.ID_SIZE + KeystoreKeys.IV_SIZE + WRAPPED_SIZE
+        return OtpKeyFile.parse(bytes)
     }
 }

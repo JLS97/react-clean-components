@@ -19,7 +19,9 @@ import io.github.jls97.boveda.core.vault.WrongPasswordException
 import io.github.jls97.boveda.data.VaultStorage
 import io.github.jls97.boveda.security.BiometricKeyManager
 import io.github.jls97.boveda.security.DeviceKeyManager
+import io.github.jls97.boveda.security.KeySecurityLevel
 import io.github.jls97.boveda.security.KeystoreKeys
+import io.github.jls97.boveda.security.KeystoreUnavailableException
 import io.github.jls97.boveda.security.OtpKeyManager
 import io.github.jls97.boveda.security.SecureClipboard
 import io.github.jls97.boveda.security.UnlockThrottle
@@ -40,6 +42,7 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.ProviderException
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 
 sealed interface VaultState {
@@ -58,6 +61,13 @@ sealed interface VaultState {
          * warns; nothing is blocked.
          */
         val integrityWarning: Boolean = false,
+        /**
+         * Where the Keystore key that binds the vault to this phone lives (StrongBox, TEE,
+         * Software or desconocido), as the system reports it. For the settings screen.
+         */
+        val deviceKeySecurityLevel: String = KeySecurityLevel.UNKNOWN.label,
+        /** Set when that key is software only: the vault is not bound to the phone's security chip. */
+        val deviceKeyWarning: String? = null,
     ) : VaultState
 }
 
@@ -114,6 +124,8 @@ class VaultSession private constructor(
         var otpOnDevice: Boolean,
         /** The file this vault was opened from was not the last one written on this phone. */
         val integrityWarning: Boolean = false,
+        /** Where the Keystore key that wraps [layerKey] lives. */
+        val deviceKeySecurityLevel: KeySecurityLevel = KeySecurityLevel.UNKNOWN,
     ) {
         fun wipe() {
             dek.wipe()
@@ -202,7 +214,14 @@ class VaultSession private constructor(
             current.otpOnDevice -> OtpAccess.READY
             else -> OtpAccess.LOCKED
         }
-        _state.value = VaultState.Unlocked(current.data, current.biometricEnabled, otpAccess, current.integrityWarning)
+        _state.value = VaultState.Unlocked(
+            current.data,
+            current.biometricEnabled,
+            otpAccess,
+            current.integrityWarning,
+            deviceKeySecurityLevel = current.deviceKeySecurityLevel.label,
+            deviceKeyWarning = SOFTWARE_KEY_WARNING.takeIf { current.deviceKeySecurityLevel == KeySecurityLevel.SOFTWARE },
+        )
     }
 
     private fun becomeUnlocked(newVault: OpenVault) {
@@ -235,7 +254,15 @@ class VaultSession private constructor(
                     biometricKeys.disable()
                     otpKeys.disable()
                     throttle.reset()
-                    OpenVault(created.header, created.dek, layerKey, created.data, biometricEnabled = false, otpOnDevice = false)
+                    OpenVault(
+                        created.header,
+                        created.dek,
+                        layerKey,
+                        created.data,
+                        biometricEnabled = false,
+                        otpOnDevice = false,
+                        deviceKeySecurityLevel = deviceKeys.securityLevel(),
+                    )
                 } catch (e: Throwable) {
                     layerKey.wipe()
                     throw e
@@ -339,6 +366,7 @@ class VaultSession private constructor(
                             biometricEnabled = false,
                             // An older backup of this same vault keeps working with the fingerprint.
                             otpOnDevice = otpOnDevice(restored.data),
+                            deviceKeySecurityLevel = deviceKeys.securityLevel(),
                         )
                     } catch (e: Throwable) {
                         layerKey.wipe()
@@ -378,6 +406,7 @@ class VaultSession private constructor(
                 biometricKeys.isEnabled(),
                 otpOnDevice(opened.data),
                 integrityWarning = !integrity.isLatest(sealed),
+                deviceKeySecurityLevel = deviceKeys.securityLevel(),
             )
         } catch (e: Throwable) {
             layerKey.wipe()
@@ -528,6 +557,7 @@ class VaultSession private constructor(
                             biometricEnabled = false,
                             otpOnDevice = current.otpOnDevice,
                             integrityWarning = current.integrityWarning,
+                            deviceKeySecurityLevel = current.deviceKeySecurityLevel,
                         )
                         current.wipe()
                         open = updated
@@ -692,6 +722,14 @@ class VaultSession private constructor(
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: AEADBadTagException) {
+            // The phone's copy did not belong to this key: the manager deleted it, so the codes
+            // now need the recovery code, and the screen must offer it instead of a generic error.
+            if (open === current && current.otpOnDevice) {
+                current.otpOnDevice = false
+                publish(current)
+            }
+            return null
         } catch (e: Exception) {
             return null
         }
@@ -863,6 +901,10 @@ class VaultSession private constructor(
     // endregion
 
     private fun describe(e: Exception): String = when (e) {
+        // The key is intact: the Keystore just did not answer. Restoring would be the one thing
+        // that destroys the current vault, so it is never suggested here.
+        is KeystoreUnavailableException ->
+            "El almacén de claves del teléfono no respondió. Vuelve a intentarlo o reinicia el teléfono."
         is DeviceBindingException ->
             "La bóveda no se puede abrir en este teléfono: su clave de hardware no está disponible. " +
                 "Restaura una copia de seguridad."
@@ -877,6 +919,10 @@ class VaultSession private constructor(
     }
 
     companion object {
+        private const val SOFTWARE_KEY_WARNING =
+            "La clave de este teléfono es solo de software: una copia de los archivos de la app " +
+                "sacada del teléfono podría abrirse en otro sitio con la contraseña maestra."
+
         fun create(context: Context, scope: CoroutineScope): VaultSession {
             val appContext = context.applicationContext
             val storage = VaultStorage(appContext)
