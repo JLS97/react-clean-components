@@ -79,7 +79,17 @@ internal fun AutofillApp(
             text = "Abre Bóveda y crea tu bóveda antes de usar el autorrelleno.",
             onClose = onClose,
         )
-        VaultState.Locked -> UnlockScreen(viewModel { LockViewModel(session) }, allowRestore = false)
+        VaultState.Locked -> UnlockScreen(
+            viewModel { LockViewModel(session) },
+            allowRestore = false,
+            // Who asked for the fill, shown under the title so a fake "unlock" screen drawn by the
+            // requesting app cannot pretend the request came from somewhere else (M-04).
+            requestContext = when (request) {
+                is AutofillRequest.Fill -> "Para: ${request.target.label}"
+                is AutofillRequest.FillOtp -> "Código 2FA para: ${request.target.label}"
+                is AutofillRequest.Save -> request.pending?.let { "Guardar para: ${it.target.label}" }
+            },
+        )
         is VaultState.Unlocked -> {
             val viewModel = viewModel { AutofillViewModel(session) }
             val context = LocalContext.current
