@@ -73,6 +73,10 @@ import java.util.Locale
 fun SettingsScreen(
     settings: VaultSettings,
     biometricEnabled: Boolean,
+    /** Dónde vive la clave de Keystore que ata la bóveda a este teléfono (StrongBox, TEE, Software…). */
+    deviceKeySecurityLevel: String,
+    /** Aviso cuando esa clave es solo de software; null si no hay nada que avisar. */
+    deviceKeyWarning: String?,
     entryCount: Int,
     otpAccess: OtpAccess,
     otpCount: Int,
@@ -232,6 +236,21 @@ fun SettingsScreen(
         ) {
             SectionTitle("Seguridad")
             if (!deviceSecure) InsecureDeviceWarning(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            // M-07: la alternancia StrongBox → TEE era silenciosa; ahora se ve qué protege la clave.
+            ListItem(
+                headlineContent = { Text("Clave de este teléfono") },
+                supportingContent = {
+                    Column {
+                        Text(
+                            "Protegida por $deviceKeySecurityLevel. Es la capa que impide abrir una copia de los " +
+                                "archivos de la app fuera de este teléfono.",
+                        )
+                        if (deviceKeyWarning != null) {
+                            Text(deviceKeyWarning, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                },
+            )
             ListItem(
                 headlineContent = { Text("Bloqueo automático") },
                 supportingContent = { Text(autoLockLabel(settings.autoLockSeconds) + ". Siempre al apagar la pantalla.") },

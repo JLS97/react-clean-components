@@ -115,6 +115,8 @@ fun VaultHost(
         Route.Settings -> SettingsScreen(
             settings = state.data.settings,
             biometricEnabled = state.biometricEnabled,
+            deviceKeySecurityLevel = state.deviceKeySecurityLevel,
+            deviceKeyWarning = state.deviceKeyWarning,
             entryCount = entries.size,
             otpAccess = state.otpAccess,
             otpCount = entries.count { it.otp != null },
