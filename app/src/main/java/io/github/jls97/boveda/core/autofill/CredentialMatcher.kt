@@ -119,7 +119,8 @@ object TargetResolver {
             AutofillTarget(
                 packageName,
                 certificates,
-                claimedWebDomain = reported?.take(MAX_CLAIM_LENGTH),
+                // Only ever displayed: strip what could reorder or hide the warning around it.
+                claimedWebDomain = reported?.let { ExternalText.sanitize(it) },
                 unencrypted = unencrypted,
                 trustedBrowser = trustedBrowser,
             )
@@ -131,8 +132,35 @@ object TargetResolver {
         val scheme = webScheme?.trim()?.removeSuffix(":")?.lowercase().orEmpty()
         return scheme.isNotEmpty() && scheme != "https"
     }
+}
 
-    private const val MAX_CLAIM_LENGTH = 100
+/**
+ * Text that comes from the app asking to be filled (a domain it claims, a typed user name) and
+ * is going to be shown to the user. Such text can carry right-to-left overrides, zero-width or
+ * control characters and line breaks that reorder, hide or fake part of a warning around it.
+ */
+object ExternalText {
+    const val MAX_LENGTH = 100
+
+    /**
+     * Drops control characters, Unicode format characters (bidirectional marks and embeddings
+     * `U+200E…U+202E`, isolates `U+2066…U+2069`, zero-width characters...) and line or paragraph
+     * separators, then cuts the result to [maxLength] characters without splitting a surrogate pair.
+     */
+    fun sanitize(value: String, maxLength: Int = MAX_LENGTH): String {
+        val clean = value.filterNot { isInvisible(it) }.take(maxLength)
+        return if (clean.lastOrNull()?.isHighSurrogate() == true) clean.dropLast(1) else clean
+    }
+
+    private fun isInvisible(c: Char): Boolean =
+        when (Character.getType(c)) {
+            Character.CONTROL.toInt(),
+            Character.FORMAT.toInt(),
+            Character.LINE_SEPARATOR.toInt(),
+            Character.PARAGRAPH_SEPARATOR.toInt(),
+            -> true
+            else -> false
+        }
 }
 
 /**
@@ -164,39 +192,79 @@ object CredentialMatcher {
     private fun appLinkMatches(link: String, target: AutofillTarget): Boolean {
         if (!link.startsWith(APP_PREFIX)) return false
         val accepted = target.certificates?.accepted ?: return false
-        val body = link.removePrefix(APP_PREFIX)
-        val packageName = body.substringBefore(CERTIFICATE_SEPARATOR)
-        val certificate = body.substringAfter(CERTIFICATE_SEPARATOR, missingDelimiterValue = "")
+        val (packageName, certificate) = splitAppLink(link) ?: return false
         return packageName == target.packageName && certificate.isNotEmpty() && certificate in accepted
     }
 
     fun exactMatches(entries: List<VaultEntry>, target: AutofillTarget): List<VaultEntry> =
         entries.filter { isExactMatch(it, target) }.sortedBy { it.title.lowercase() }
 
-    /** Entries whose name looks related (for example "Instagram" for `com.instagram.android`). */
+    /**
+     * Entries that may be meant for [target] although nothing links them to it yet: those with no
+     * anchor at all (no web address and no links, typically a first use) whose name looks related
+     * (for example "Instagram" for `com.instagram.android`), plus, for web sites, entries anchored
+     * elsewhere in the same registrable domain (`online.banco.es` for `app.banco.es`).
+     *
+     * An entry anchored to another domain or to another app is never suggested, however similar
+     * its name: `instagram-login.com` or `com.instagram.fake` are chosen by whoever asks, and a
+     * name match there is a phishing signal, not a hint. The same goes for entries linked to the
+     * same package under another signature (see [impersonationWarnings]).
+     */
     fun suggestions(entries: List<VaultEntry>, target: AutofillTarget): List<VaultEntry> {
         val parts = (target.host ?: target.packageName)
             .split('.', '-', '_')
             .map { it.lowercase() }
             .filter { it.length >= 3 && it !in GENERIC_WORDS }
-        if (parts.isEmpty()) return emptyList()
+        val registrable = target.host?.let { registrableDomain(it) }
         return entries
             .filter { entry ->
                 !isExactMatch(entry, target) &&
-                    words(entry.title).any { word ->
-                        parts.any { part -> part.contains(word) || (part.length >= 5 && word.contains(part)) }
+                    when {
+                        !isAnchored(entry) -> parts.isNotEmpty() && nameLooksRelated(entry, parts)
+                        registrable != null -> webHosts(entry).any { registrableDomain(it) == registrable }
+                        else -> false
                     }
             }
             .sortedBy { it.title.lowercase() }
     }
 
-    /** Name proposed for a new entry: the domain, or the meaningful part of a package name. */
-    fun suggestedTitle(target: AutofillTarget): String =
-        target.host
-            ?: target.packageName.split('.')
-                .lastOrNull { it.length >= 3 && it.lowercase() !in GENERIC_WORDS }
-                ?.replaceFirstChar { it.uppercase() }
-            ?: target.packageName
+    /**
+     * Entries linked to an app with the same package name as [target] but under a signature the
+     * system doesn't report for it: almost certainly a fake or re-signed app installed in place of
+     * the real one (Android allows one signer per package name). The strongest impersonation
+     * signal available, worth a warning of its own.
+     */
+    fun impersonationWarnings(entries: List<VaultEntry>, target: AutofillTarget): List<VaultEntry> {
+        if (target.host != null) return emptyList()
+        val accepted = target.certificates?.accepted.orEmpty()
+        return entries
+            .filter { entry ->
+                !isExactMatch(entry, target) &&
+                    entry.autofillTargets.any { link ->
+                        val (packageName, certificate) = splitAppLink(link) ?: return@any false
+                        packageName == target.packageName && certificate.isNotEmpty() && certificate !in accepted
+                    }
+            }
+            .sortedBy { it.title.lowercase() }
+    }
+
+    /**
+     * Name proposed for a new entry: the domain, or the meaningful part of a package name. A
+     * package whose meaningful part reads like an existing entry anchored to another app or site
+     * (`com.evil.instagram` next to an "Instagram" linked to the real app) gets its full name
+     * instead, so the fake never borrows the brand's title in the vault.
+     */
+    fun suggestedTitle(target: AutofillTarget, entries: List<VaultEntry> = emptyList()): String {
+        target.host?.let { return it }
+        val derived = target.packageName.split('.')
+            .lastOrNull { it.length >= 3 && it.lowercase() !in GENERIC_WORDS }
+            ?.replaceFirstChar { it.uppercase() }
+            ?: return target.packageName
+        val takenElsewhere = entries.any { entry ->
+            entry.title.equals(derived, ignoreCase = true) && isAnchored(entry) && !isExactMatch(entry, target)
+        }
+        return if (takenElsewhere) target.packageName else derived
+    }
 
     /**
      * The entry, remembering [target] so it is an exact match next time. Targets that must not be
@@ -209,4 +277,28 @@ object CredentialMatcher {
 
     private fun words(title: String): List<String> =
         title.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 4 && it !in GENERIC_WORDS }
+
+    private fun nameLooksRelated(entry: VaultEntry, parts: List<String>): Boolean =
+        words(entry.title).any { word ->
+            parts.any { part -> part.contains(word) || (part.length >= 5 && word.contains(part)) }
+        }
+
+    /** An entry with a web address or any link is already tied to some app or site. */
+    private fun isAnchored(entry: VaultEntry): Boolean =
+        entry.url.isNotBlank() || entry.autofillTargets.isNotEmpty()
+
+    /** Hosts the entry is anchored to on the web: its address and its `web:` links. */
+    private fun webHosts(entry: VaultEntry): List<String> =
+        listOfNotNull(Domains.host(entry.url)) +
+            entry.autofillTargets.filter { it.startsWith(WEB_PREFIX) }.mapNotNull { Domains.host(it.removePrefix(WEB_PREFIX)) }
+
+    /** eTLD+1 of [host]; the host itself when the Public Suffix List isn't loaded or the host is a suffix. */
+    private fun registrableDomain(host: String): String = PublicSuffixes.registrableDomain(host) ?: host
+
+    /** Package and certificate of an `android:<package>@<certificate>` link, or null for other links. */
+    private fun splitAppLink(link: String): Pair<String, String>? {
+        if (!link.startsWith(APP_PREFIX)) return null
+        val body = link.removePrefix(APP_PREFIX)
+        return body.substringBefore(CERTIFICATE_SEPARATOR) to body.substringAfter(CERTIFICATE_SEPARATOR, missingDelimiterValue = "")
+    }
 }

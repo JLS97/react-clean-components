@@ -50,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
+import io.github.jls97.boveda.core.autofill.ExternalText
 import io.github.jls97.boveda.core.autofill.TrustedBrowsers
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.security.BiometricPrompts
@@ -125,10 +126,11 @@ internal fun AutofillApp(
                                 val activity = context.findActivity()
                                 val cipher = viewModel.otpCipher()
                                 if (activity != null && cipher != null) {
+                                    // The destination is the last thing the user reads before authorizing.
                                     BiometricPrompts.authenticate(
                                         activity,
-                                        "Rellenar código 2FA",
-                                        chosen.title,
+                                        "Código 2FA de «${chosen.title}»",
+                                        "Para: ${request.target.label}",
                                         cipher,
                                         negativeLabel = "Cancelar",
                                     ) { authorized, error ->
@@ -182,9 +184,14 @@ private fun PickEntryScreen(
     var query by remember { mutableStateOf("") }
     // Off by default: linking is a deliberate decision, never a side effect of a hurried tap.
     var rememberChoice by remember { mutableStateOf(false) }
-    val canRemember = target.key != null
+    val linkable = target.key != null
     val exact = remember(entries, target) { CredentialMatcher.exactMatches(entries, target) }
-    val suggested = remember(entries, target) { CredentialMatcher.suggestions(entries, target) }
+    // Same package name as a linked app, another signature: never linkable, never suggested.
+    val impersonated = remember(entries, target) { CredentialMatcher.impersonationWarnings(entries, target) }
+    val canRemember = linkable && impersonated.isEmpty()
+    val suggested = remember(entries, target, impersonated) {
+        CredentialMatcher.suggestions(entries, target) - impersonated.toSet()
+    }
     val searchResults = remember(entries, query) {
         val needle = query.trim().lowercase()
         entries
@@ -198,7 +205,7 @@ private fun PickEntryScreen(
         (entries - exact.toSet() - suggested.toSet()).sortedBy { it.title.lowercase() }
     }
 
-    fun fill(entry: VaultEntry) = onPick(entry, rememberChoice)
+    fun fill(entry: VaultEntry) = onPick(entry, rememberChoice && canRemember)
 
     Scaffold(
         topBar = {
@@ -224,11 +231,18 @@ private fun PickEntryScreen(
                     )
                     idnWarning(target)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
                     Text(fillDescription, style = MaterialTheme.typography.bodyMedium)
-                    if (exact.isEmpty()) {
+                    if (impersonated.isNotEmpty()) {
+                        Text(
+                            impersonationWarning(impersonated),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    } else if (exact.isEmpty()) {
+                        // Always in the error color: an unlinked app or site is the realistic phishing case.
                         Text(
                             fillWarning(target),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = if (canRemember) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                     OutlinedTextField(
@@ -240,9 +254,13 @@ private fun PickEntryScreen(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
                     )
-                    if (canRemember) {
+                    if (linkable) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = rememberChoice, onCheckedChange = { rememberChoice = it })
+                            Checkbox(
+                                checked = rememberChoice && canRemember,
+                                onCheckedChange = { rememberChoice = it },
+                                enabled = canRemember,
+                            )
                             Text("Vincular la entrada que elija a ${target.label}")
                         }
                     }
@@ -305,10 +323,13 @@ private fun SaveEntryScreen(
     onCancel: () -> Unit,
 ) {
     val matches = remember(entries, pending) { CredentialMatcher.exactMatches(entries, pending.target) }
-    var title by remember { mutableStateOf(CredentialMatcher.suggestedTitle(pending.target)) }
-    var username by remember { mutableStateOf(pending.username) }
+    val impersonated = remember(entries, pending) { CredentialMatcher.impersonationWarnings(entries, pending.target) }
+    // The user name was typed in the other app: shown (and saved) without invisible characters.
+    val typedUsername = remember(pending) { ExternalText.sanitize(pending.username) }
+    var title by remember { mutableStateOf(CredentialMatcher.suggestedTitle(pending.target, entries)) }
+    var username by remember { mutableStateOf(typedUsername) }
     var replaceId by remember {
-        mutableStateOf(matches.firstOrNull { it.username.equals(pending.username, ignoreCase = true) }?.id)
+        mutableStateOf(matches.firstOrNull { it.username.equals(typedUsername, ignoreCase = true) }?.id)
     }
 
     Scaffold(
@@ -335,12 +356,20 @@ private fun SaveEntryScreen(
                 style = MaterialTheme.typography.bodyMedium,
             )
             idnWarning(pending.target)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-            unlinkableReason(pending.target)?.let { reason ->
+            if (impersonated.isNotEmpty()) {
                 Text(
-                    "$reason Se guardará sin vincular: tendrás que elegirla a mano al rellenar.",
+                    "${impersonationWarning(impersonated)} Se guardará sin vincular.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
+            } else {
+                unlinkableReason(pending.target)?.let { reason ->
+                    Text(
+                        "$reason Se guardará sin vincular: tendrás que elegirla a mano al rellenar.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
             if (matches.isNotEmpty()) {
                 Text("¿Dónde la guardo?", style = MaterialTheme.typography.titleSmall)
@@ -421,9 +450,12 @@ private fun fillDescription(request: AutofillRequest.Fill): String = when {
     else -> "Solo el usuario."
 }
 
-/** Why a target can't be linked to an entry, or null if it can. */
+/**
+ * Why a target can't be linked to an entry, or null if it can. The claimed domain was sanitized
+ * by TargetResolver; one left empty by that is named as such instead of echoing nothing.
+ */
 private fun unlinkableReason(target: AutofillTarget): String? {
-    val claimed = target.claimedWebDomain
+    val claimed = target.claimedWebDomain?.ifBlank { "dirección ilegible" }
     val certificates = target.certificates
     return when {
         target.unencrypted ->
@@ -450,6 +482,16 @@ private fun idnWarning(target: AutofillTarget): String? =
     } else {
         null
     }
+
+/**
+ * Shown when the app asking has the package name of an app linked to [entries] but another
+ * signature: Android allows one signer per package name, so this is almost certainly a fake.
+ */
+private fun impersonationWarning(entries: List<VaultEntry>): String {
+    val titles = entries.joinToString(", ") { "«${it.title.ifBlank { "(sin nombre)" }}»" }
+    return "Esta app tiene el mismo nombre que la vinculada a $titles pero OTRA firma digital: " +
+        "probablemente es falsa. No se podrá vincular."
+}
 
 /** Shown when no entry is linked to the app or site asking to be filled. */
 private fun fillWarning(target: AutofillTarget): String =

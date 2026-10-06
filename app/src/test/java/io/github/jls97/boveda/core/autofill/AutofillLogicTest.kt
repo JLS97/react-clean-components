@@ -336,10 +336,80 @@ class AutofillLogicTest {
 
     @Test
     fun suggestsRelatedEntries() {
+        // Only entries without any anchor (first use) are suggested by name.
         val instagram = entry("Instagram")
         val bank = entry("Banco Santander")
         assertEquals(listOf(instagram), CredentialMatcher.suggestions(listOf(bank, instagram), TargetResolver.resolve("com.instagram.android", bankApp, null)))
         assertEquals(listOf(bank), CredentialMatcher.suggestions(listOf(bank, instagram), web("www.bancosantander.es")))
+        assertTrue(CredentialMatcher.suggestions(listOf(bank, instagram), web("otracosa.com")).isEmpty())
+        assertTrue(CredentialMatcher.suggestions(listOf(bank, instagram), TargetResolver.resolve("com.otracosa.app", bankApp, null)).isEmpty())
+    }
+
+    @Test
+    fun neverSuggestsEntriesAnchoredToAnotherDomainOrApp() {
+        val instagramWeb = entry("Instagram", url = "https://www.instagram.com")
+        val instagramApp = entry("Instagram", targets = listOf("android:com.instagram.android@$bankCertificate"))
+        val paypal = entry("PayPal", targets = listOf("web:paypal.com"))
+        val entries = listOf(instagramWeb, instagramApp, paypal)
+
+        // Phishing domains and look-alike packages share words with the real entries: no hint.
+        for (phishing in listOf("instagram-login.com", "secure-paypal.net", "instagram.com.evil.net", "paypal.com-verify.es")) {
+            assertTrue(phishing, CredentialMatcher.suggestions(entries, web(phishing)).isEmpty())
+        }
+        for (fakePackage in listOf("com.instagram.fake", "com.instagram.lite.free", "com.evil.paypal", "www.instagram.com")) {
+            assertTrue(fakePackage, CredentialMatcher.suggestions(entries, TargetResolver.resolve(fakePackage, attacker, null)).isEmpty())
+        }
+        // A web entry is anchored to its domain: a related app isn't a suggestion either.
+        assertTrue(CredentialMatcher.suggestions(entries, TargetResolver.resolve("com.instagram.android", bankApp, null)).isEmpty())
+        // Same package name under another signature: handled by impersonationWarnings, never a hint.
+        assertTrue(CredentialMatcher.suggestions(entries, TargetResolver.resolve("com.instagram.android", attacker, null)).isEmpty())
+        // The real app and site still match exactly, which is a different list.
+        assertEquals(listOf(instagramApp), CredentialMatcher.exactMatches(entries, TargetResolver.resolve("com.instagram.android", bankApp, null)))
+        assertEquals(listOf(instagramWeb), CredentialMatcher.exactMatches(entries, web("instagram.com")))
+    }
+
+    @Test
+    fun suggestsEntriesOfTheSameRegistrableDomain() {
+        val online = entry("Mi banco", url = "https://online.banco.es")
+        val linked = entry("Tarjetas", targets = listOf("web:tarjetas.banco.es"))
+        val other = entry("Otro banco", url = "https://online.otrobanco.es")
+        val entries = listOf(other, online, linked)
+
+        // Another host of banco.es isn't covered by `online.banco.es`, but belongs to the same owner.
+        assertTrue(CredentialMatcher.exactMatches(entries, web("app.banco.es")).isEmpty())
+        assertEquals(listOf(online, linked), CredentialMatcher.suggestions(entries, web("app.banco.es")))
+        assertEquals(listOf(online, linked), CredentialMatcher.suggestions(entries, web("banco.es")))
+        // A different registrable domain never is, even when it ends the same way.
+        assertTrue(CredentialMatcher.suggestions(entries, web("banco.es.evil.com")).isEmpty())
+        assertTrue(CredentialMatcher.suggestions(entries, web("nobanco.es")).isEmpty())
+        // Under a public suffix every name has a different owner.
+        val pages = entry("Mi web", url = "https://blog.usuario.github.io")
+        assertTrue(CredentialMatcher.suggestions(listOf(pages), web("atacante.github.io")).isEmpty())
+        assertTrue(CredentialMatcher.suggestions(listOf(pages), web("github.io")).isEmpty())
+        assertEquals(listOf(pages), CredentialMatcher.suggestions(listOf(pages), web("fotos.usuario.github.io")))
+    }
+
+    @Test
+    fun warnsAboutSamePackageUnderAnotherSignature() {
+        val linked = entry("BBVA", targets = listOf("android:com.bbva.bbvacontigo@$bankCertificate"))
+        val unrelated = entry("Instagram", targets = listOf("android:com.instagram.android@$bankCertificate"))
+        val legacy = entry("Viejo", targets = listOf("android:com.bbva.bbvacontigo"))
+        val entries = listOf(unrelated, linked, legacy)
+
+        // Fake app with the bank's package name and its own key: flagged, and never a suggestion.
+        val fake = TargetResolver.resolve("com.bbva.bbvacontigo", attacker, null)
+        assertEquals(listOf(linked), CredentialMatcher.impersonationWarnings(entries, fake))
+        assertTrue(CredentialMatcher.suggestions(entries, fake).isEmpty())
+        // Unverifiable signature counts as another signature too.
+        assertEquals(listOf(linked), CredentialMatcher.impersonationWarnings(entries, TargetResolver.resolve("com.bbva.bbvacontigo", null, null)))
+
+        // The real app, also after a key rotation, is an exact match and nothing to warn about.
+        assertTrue(CredentialMatcher.impersonationWarnings(entries, TargetResolver.resolve("com.bbva.bbvacontigo", bankApp, null)).isEmpty())
+        val rotated = AppCertificates(current = "c".repeat(64), accepted = setOf(bankCertificate, "c".repeat(64)))
+        assertTrue(CredentialMatcher.impersonationWarnings(entries, TargetResolver.resolve("com.bbva.bbvacontigo", rotated, null)).isEmpty())
+        // Other packages and web sites don't trigger it.
+        assertTrue(CredentialMatcher.impersonationWarnings(entries, TargetResolver.resolve("com.bbva.bbvacontigo.fake", attacker, null)).isEmpty())
+        assertTrue(CredentialMatcher.impersonationWarnings(entries, web("bbva.es")).isEmpty())
     }
 
     @Test
@@ -347,6 +417,44 @@ class AutofillLogicTest {
         assertEquals("Instagram", CredentialMatcher.suggestedTitle(TargetResolver.resolve("com.instagram.android", bankApp, null)))
         assertEquals("Bancosantander", CredentialMatcher.suggestedTitle(TargetResolver.resolve("es.bancosantander.apps", bankApp, null)))
         assertEquals("banco.es", CredentialMatcher.suggestedTitle(web("www.banco.es")))
+    }
+
+    @Test
+    fun neverProposesTheTitleOfAnEntryAnchoredElsewhere() {
+        val real = entry("Instagram", targets = listOf("android:com.instagram.android@$bankCertificate"))
+        val site = entry("PayPal", url = "https://www.paypal.com")
+        val loose = entry("Twitter")
+        val entries = listOf(real, site, loose)
+
+        // A fake package whose last word is the brand gets its full name, never the brand.
+        assertEquals("com.evil.instagram", CredentialMatcher.suggestedTitle(TargetResolver.resolve("com.evil.instagram", attacker, null), entries))
+        assertEquals("app.login.paypal", CredentialMatcher.suggestedTitle(TargetResolver.resolve("app.login.paypal", attacker, null), entries))
+        // The real app (exact match) and entries without anchor keep the short name.
+        assertEquals("Instagram", CredentialMatcher.suggestedTitle(TargetResolver.resolve("com.instagram.android", bankApp, null), entries))
+        assertEquals("Twitter", CredentialMatcher.suggestedTitle(TargetResolver.resolve("com.twitter.android", attacker, null), entries))
+        assertEquals("Spotify", CredentialMatcher.suggestedTitle(TargetResolver.resolve("com.spotify.app", attacker, null), entries))
+    }
+
+    @Test
+    fun sanitizesTextComingFromOtherApps() {
+        // Bidirectional overrides, isolates, marks, zero-width and control characters, line breaks.
+        val hostile = "banco.es‮⁦⁧⁨⁩‎‏​‍﻿\u0000\u001B\n\r  ») verificada"
+        assertEquals("banco.es») verificada", ExternalText.sanitize(hostile))
+        assertEquals("a".repeat(100), ExternalText.sanitize("a".repeat(500)))
+        assertEquals("", ExternalText.sanitize("‮‮\n"))
+        // Ordinary text, accents and emoji survive; a surrogate pair is never cut in half.
+        assertEquals("María López 😀", ExternalText.sanitize("María López 😀"))
+        assertEquals("a".repeat(99), ExternalText.sanitize("a".repeat(99) + "😀"))
+
+        // The claimed domain reaches the screen already clean and bounded.
+        val claimed = TargetResolver.resolve("com.evil.app", attacker, "‮banco.es\n" + "x".repeat(200)).claimedWebDomain
+        assertEquals("banco.es" + "x".repeat(92), claimed)
+        assertEquals(100, claimed!!.length)
+        // A trusted browser's domain is validated, not trimmed: a long host can't be cut into another one.
+        val long = "a".repeat(45) + "." + "a".repeat(45) + ".banco.es.evil.com"
+        assertEquals(".banco.es", long.take(100).takeLast(9))
+        assertEquals(long, web(long).host)
+        assertNull(web("banco.es‮").host)
     }
 
     @Test
