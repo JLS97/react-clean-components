@@ -55,13 +55,6 @@ sealed interface Route {
     data object OtpRecover : Route
 }
 
-/**
- * Etiqueta neutra para todo lo que la interfaz copia al portapapeles (I-42): la `ClipDescription`
- * viaja con el clip y la leen las mismas apps que el contenido, así que no debe decir si lo copiado
- * es una contraseña o un código 2FA.
- */
-const val CLIP_LABEL = "Bóveda"
-
 /** What the edit form holds. `toString` hides the values. */
 data class EntryDraft(
     val id: String? = null,
@@ -112,10 +105,24 @@ class VaultViewModel(
     /** Último contenido publicado estando desbloqueada, para contar cambios entre publicaciones. */
     private var lastSeenData: VaultData? = null
 
+    /** El aviso de retroceso del archivo se muestra una vez por desbloqueo. */
+    private var integrityWarned = false
+
     init {
         viewModelScope.launch {
             session.state.collect { state ->
-                if (state is VaultState.Unlocked) trackChanges(state.data) else forgetEverything()
+                if (state is VaultState.Unlocked) {
+                    trackChanges(state.data)
+                    if (state.integrityWarning && !integrityWarned) {
+                        integrityWarned = true
+                        message(
+                            "El archivo de la bóveda no es el último que se guardó en este teléfono. Si no has " +
+                                "restaurado una copia, revisa tus entradas y vuelve a guardar una copia nueva.",
+                        )
+                    }
+                } else {
+                    forgetEverything()
+                }
             }
         }
     }
@@ -142,6 +149,7 @@ class VaultViewModel(
         generated = ""
         busy = false
         lastSeenData = null
+        integrityWarned = false
         if (pendingBackup != null) {
             discardPendingBackup()
             exportInterrupted = true
@@ -262,11 +270,13 @@ class VaultViewModel(
         }
     }
 
-    /** [label] solo se usa en el aviso al usuario; el clip lleva la etiqueta neutra [CLIP_LABEL] (I-42). */
+    /** [label] solo se usa en el aviso al usuario; el clip lleva siempre la etiqueta neutra «Bóveda» (I-42). */
     fun copy(label: String, value: String) {
         val seconds = settings.clipboardClearSeconds
-        session.clipboard.copy(CLIP_LABEL, value, seconds)
-        message("$label copiado. Se borrará del portapapeles en $seconds s.")
+        session.clipboard.copy(value, seconds)
+        // Con «Al salir de la app», el bloqueo borra el portapapeles antes de que venza el temporizador.
+        val until = if (settings.autoLockSeconds == 0) "al salir de la app" else "en $seconds s"
+        message("$label copiado. Se borrará del portapapeles $until.")
     }
 
     // endregion
@@ -335,15 +345,21 @@ class VaultViewModel(
             message(problem)
             return
         }
+        val hadBiometric = (session.state.value as? VaultState.Unlocked)?.biometricEnabled == true
         launchBusy {
             when (val result = session.changeMasterPassword(current.toCharArray(), newPassword.toCharArray())) {
                 OperationResult.Success -> {
                     onSuccess()
-                    suggestBackup("Has cambiado la contraseña maestra: las copias anteriores usan la antigua.")
+                    suggestBackup(
+                        "Contraseña maestra cambiada con una clave de cifrado nueva: las copias anteriores " +
+                            "siguen abriéndose con la contraseña antigua." +
+                            if (hadBiometric) " La huella se ha desactivado; vuelve a activarla si quieres." else "",
+                    )
                 }
                 OperationResult.WrongPassword -> message("La contraseña actual no es correcta.")
                 is OperationResult.Failure -> message(result.message)
                 is OperationResult.Throttled -> message("Espera antes de volver a intentarlo.")
+                else -> message("No se pudo cambiar la contraseña.")
             }
         }
     }
@@ -472,11 +488,17 @@ class VaultViewModel(
                 return@launchBusy
             }
             when (val result = session.restoreBackup(backup, password.toCharArray())) {
-                OperationResult.Success -> {
+                OperationResult.Success, is OperationResult.Restored -> {
                     backToList()
-                    message("Copia restaurada. La huella se ha desactivado; vuelve a activarla si quieres.")
+                    val passwordNote = if ((result as? OperationResult.Restored)?.masterPasswordChanged == true) {
+                        " La contraseña maestra es ahora la de la copia."
+                    } else {
+                        ""
+                    }
+                    message("Copia restaurada.$passwordNote La huella se ha desactivado; vuelve a activarla si quieres.")
                 }
                 OperationResult.WrongPassword -> message("La contraseña de la copia no es correcta.")
+                OperationResult.WrongCurrentPassword -> message("La contraseña maestra actual no es correcta.")
                 is OperationResult.Failure -> message(result.message)
                 is OperationResult.Throttled -> message("Espera antes de volver a intentarlo.")
             }

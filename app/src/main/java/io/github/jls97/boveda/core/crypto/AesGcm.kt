@@ -19,8 +19,9 @@ object AesGcm {
 
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
 
+    /** @throws IllegalArgumentException if [key] is not 32 bytes or is all zeros (a wiped key). */
     fun seal(key: ByteArray, plaintext: ByteArray, aad: ByteArray): ByteArray {
-        require(key.size == KEY_SIZE) { "AES-256 requires a 32-byte key" }
+        requireUsableKey(key)
         val nonce = randomBytes(NONCE_SIZE)
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_SIZE * 8, nonce))
@@ -28,9 +29,12 @@ object AesGcm {
         return nonce + cipher.doFinal(plaintext)
     }
 
-    /** @throws AuthenticationException if the key, the AAD or the sealed data do not match. */
+    /**
+     * @throws AuthenticationException if the key, the AAD or the sealed data do not match.
+     * @throws IllegalArgumentException if [key] is not 32 bytes or is all zeros (a wiped key).
+     */
     fun open(key: ByteArray, sealed: ByteArray, aad: ByteArray): ByteArray {
-        require(key.size == KEY_SIZE) { "AES-256 requires a 32-byte key" }
+        requireUsableKey(key)
         if (sealed.size < OVERHEAD) throw AuthenticationException()
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(
@@ -44,6 +48,15 @@ object AesGcm {
         } catch (e: AEADBadTagException) {
             throw AuthenticationException()
         }
+    }
+
+    /**
+     * A key of all zeros is what [wipe] leaves behind, never a real one: refusing it makes sure no
+     * code path can write or read anything with a key that was already erased.
+     */
+    private fun requireUsableKey(key: ByteArray) {
+        require(key.size == KEY_SIZE) { "AES-256 requires a 32-byte key" }
+        require(key.any { it != 0.toByte() }) { "Refusing an all-zero (wiped) key" }
     }
 }
 

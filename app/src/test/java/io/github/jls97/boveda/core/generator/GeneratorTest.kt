@@ -64,4 +64,48 @@ class GeneratorTest {
         val generated = PasswordGenerator.generate(GeneratorOptions(length = 24))
         assertEquals(StrengthLevel.VERY_STRONG, PasswordStrength.level(PasswordStrength.estimateBits(generated)))
     }
+
+    @Test
+    fun strengthRejectsLongSequencesAndRepeatedPatternsAsMasterPassword() {
+        // Long enough for the length rule, and among the first guesses of any pattern dictionary.
+        val patterns = listOf(
+            "aaaaaaaaaaaaaaaa",
+            "a".repeat(49),
+            "abcdefghijklmnop",
+            "abcdefghijklmnopqrstuvwxyz",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "zyxwvutsrqponmlkjihgfedcba",
+            "123456789012",
+            "0987654321098765",
+            "13579135791357913579",
+            "24680246802468024680",
+            "qwertyuiopasdfghjkl",
+            "poiuytrewqlkjhgfdsa",
+            "QwErTyUiOpAsDfGhJkL",
+            "zxcvbnmasdfghjklqwertyuiop",
+            "azertyuiopqsdfghjklm",
+            "1qaz2wsx3edc4rfv",
+            "abcabcabcabcabc",
+            "abcdabcdabcdabcd",
+            "xyzxyzxyzxyzxyzxyzxyzxyz",
+            "ab12ab12ab12ab12ab12",
+            "ñaññaññaññaññaññañ",
+        )
+        for (pattern in patterns) {
+            val bits = PasswordStrength.estimateBits(pattern)
+            assertTrue("$pattern scored $bits bits", PasswordStrength.level(bits) < StrengthLevel.FAIR)
+            assertFalse("$pattern was accepted as master password", PasswordStrength.isAcceptableMasterPassword(pattern))
+        }
+        // Real passphrases and generated passwords keep their score.
+        assertTrue(PasswordStrength.isAcceptableMasterPassword("tortuga-Violeta-lunes-73"))
+        assertTrue(PasswordStrength.isAcceptableMasterPassword("correcto caballo bateria grapa"))
+        assertTrue(PasswordStrength.level(PasswordStrength.estimateBits("Mi gato se llama Pelusa y come 3 veces")) >= StrengthLevel.STRONG)
+        repeat(100) {
+            val generated = PasswordGenerator.generate(GeneratorOptions(length = 16))
+            assertTrue(generated, PasswordStrength.isAcceptableMasterPassword(generated))
+        }
+        // A sequence costs more than its first step: "abc" is worth less than "abz".
+        assertTrue(PasswordStrength.estimateBits("abcdef") < PasswordStrength.estimateBits("abzdef"))
+        assertTrue(PasswordStrength.estimateBits("qwerty-") < PasswordStrength.estimateBits("qwzrty-"))
+    }
 }

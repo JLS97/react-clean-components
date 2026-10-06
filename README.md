@@ -13,7 +13,8 @@ depende de ningún servidor ni API externa.
 - Generador de contraseñas (8–128 caracteres, tipos de caracteres, evitar caracteres parecidos).
 - Copiar al portapapeles marcado como sensible y borrado automático (15 s – 2 min).
 - Desbloqueo con huella opcional, ligado a una clave de hardware.
-- Bloqueo automático por inactividad, al salir de la app y siempre al apagar la pantalla.
+- Bloqueo automático por inactividad (configurable, con la opción de bloquear al salir de la
+  app), siempre al apagar la pantalla y, con cualquier ajuste, tras 5 minutos en segundo plano.
 - Copias de seguridad cifradas (exportar e importar un archivo `.bvd`).
 - Cambio de contraseña maestra.
 - **Autorrelleno** en otras apps y en Chrome desde la barra de sugerencias del teclado, y oferta de
@@ -125,15 +126,24 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
   cualquier modificación del archivo se detecta.
 - **Huella.** Una copia de la DEK se cifra con una clave de Keystore que exige huella fuerte
   (clase 3) en cada uso y que el sistema destruye si se añade una huella nueva.
-- **Freno a los intentos.** Tras 5 contraseñas incorrectas, cada fallo bloquea el desbloqueo durante
-  un tiempo creciente (30 s … 16 min). Además, cada intento cuesta una ejecución completa de
-  Argon2id.
+- **Freno a los intentos.** Tras 5 contraseñas incorrectas, cada fallo bloquea la siguiente
+  comprobación de contraseña (desbloqueo, cambio de contraseña o restauración) durante un tiempo
+  creciente (30 s … 64 min). La espera se mide con el reloj monótono del sistema y el contador de
+  arranques: adelantar la fecha del teléfono no la acorta y reiniciar vuelve a imponerla entera.
+  Además, cada intento cuesta una ejecución completa de Argon2id. Es una medida de velocidad: la
+  seguridad real descansa en Argon2id y en la contraseña maestra.
 - **Sin fugas.** Sin permiso de Internet (el manifiesto lo elimina aunque una librería lo pida).
   Sin copias en la nube ni transferencias entre dispositivos. `FLAG_SECURE` (sin capturas ni
   vista previa en recientes). Oculta superposiciones de otras apps (tapjacking). Excluida del
-  autorrelleno de terceros. El portapapeles se marca como sensible y se borra solo.
+  autorrelleno de terceros. El portapapeles se marca como sensible y se borra solo pasado el
+  tiempo elegido, también si el sistema cierra la app (mejor esfuerzo: desde segundo plano
+  Android no deja comprobar si el clip sigue siendo el de Bóveda, así que puede borrar algo
+  copiado después).
 - **Memoria.** Las claves se borran al bloquear. Los textos descifrados se sueltan para que el
-  recolector de basura los elimine, pero la JVM no permite borrarlos de forma garantizada.
+  recolector de basura los elimine, pero la JVM no permite borrarlos de forma garantizada. El
+  bloqueo por apagado de pantalla y el de inactividad se ejecutan dentro del proceso: si Android
+  lo congela en segundo plano, se aplican en cuanto lo descongela (al volver a la app como muy
+  tarde), y mientras tanto las claves siguen en memoria.
 
 ### Cero nube, cero Internet
 

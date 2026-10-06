@@ -18,7 +18,6 @@ import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
-import io.github.jls97.boveda.ui.vault.CLIP_LABEL
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -96,6 +95,9 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
     private val clipboardSeconds: Int
         get() = (session.state.value as? VaultState.Unlocked)?.data?.settings?.clipboardClearSeconds
             ?: VaultSettings.DEFAULT_CLIPBOARD_CLEAR_SECONDS
+
+    private val locksOnLeaving: Boolean
+        get() = (session.state.value as? VaultState.Unlocked)?.data?.settings?.autoLockSeconds == 0
 
     // region Adding a code
 
@@ -201,13 +203,20 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
         }
     }
 
-    fun replaceRecoveryCode(authorized: Cipher, onDone: () -> Unit) {
+    /**
+     * New recovery code and new 2FA key: [authorized] opens the current key (from [unlockCipher])
+     * and [enrollment] (from [enrollmentCipher]) protects the new one on this phone.
+     */
+    fun replaceRecoveryCode(authorized: Cipher, enrollment: Cipher, onDone: () -> Unit) {
         val code = recoveryCode ?: return
         launchBusy {
-            when (val result = session.replaceOtpRecoveryCode(authorized, code)) {
+            when (val result = session.replaceOtpRecoveryCode(authorized, enrollment, code)) {
                 OperationResult.Success -> {
                     clearRecoveryCode()
-                    message("Código de recuperación cambiado. Las copias anteriores siguen necesitando el antiguo.")
+                    message(
+                        "Código de recuperación cambiado y códigos 2FA cifrados con una llave nueva. Haz una copia " +
+                            "nueva: las anteriores siguen usando el código antiguo.",
+                    )
                     onDone()
                 }
                 is OperationResult.Failure -> message(result.message)
@@ -317,8 +326,9 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
     private fun copyCode(secret: OtpSecret) {
         val now = System.currentTimeMillis()
         val seconds = clipboardSeconds
-        session.clipboard.copy(CLIP_LABEL, secret.code(now), seconds)
-        message("Código copiado: cambia en ${secret.secondsLeft(now)} s y se borrará del portapapeles en $seconds s.")
+        session.clipboard.copy(secret.code(now), seconds)
+        val until = if (locksOnLeaving) "al salir de la app" else "en $seconds s"
+        message("Código copiado: cambia en ${secret.secondsLeft(now)} s y se borrará del portapapeles $until.")
     }
 
     /** Hides the revealed code (only if it belongs to [entryId], when given) and wipes its secret. */

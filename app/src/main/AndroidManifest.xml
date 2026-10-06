@@ -57,6 +57,12 @@
             android:windowSoftInputMode="adjustResize"
             tools:targetApi="35" />
 
+        <!-- Clears the clipboard when the copy timer runs out even if the process died. Only
+             reached through Bóveda's own alarm; nobody else can send it anything. -->
+        <receiver
+            android:name=".security.ClipboardClearReceiver"
+            android:exported="false" />
+
         <!-- Only the system can bind to it (BIND_AUTOFILL_SERVICE). It works entirely on the phone. -->
         <service
             android:name=".autofill.BovedaAutofillService"

@@ -2,6 +2,7 @@ package io.github.jls97.boveda.session
 
 import android.content.Context
 import android.os.SystemClock
+import io.github.jls97.boveda.core.crypto.KdfParams
 import io.github.jls97.boveda.core.crypto.wipe
 import io.github.jls97.boveda.core.otp.OtpCrypto
 import io.github.jls97.boveda.core.otp.OtpSecret
@@ -9,6 +10,7 @@ import io.github.jls97.boveda.core.otp.WrongRecoveryCodeException
 import io.github.jls97.boveda.core.vault.CorruptedVaultException
 import io.github.jls97.boveda.core.vault.DeviceBindingException
 import io.github.jls97.boveda.core.vault.DeviceLayer
+import io.github.jls97.boveda.core.vault.KdfMemoryException
 import io.github.jls97.boveda.core.vault.UnsupportedVaultException
 import io.github.jls97.boveda.core.vault.VaultContainer
 import io.github.jls97.boveda.core.vault.VaultData
@@ -19,10 +21,13 @@ import io.github.jls97.boveda.core.vault.WrongPasswordException
 import io.github.jls97.boveda.data.VaultStorage
 import io.github.jls97.boveda.security.BiometricKeyManager
 import io.github.jls97.boveda.security.DeviceKeyManager
+import io.github.jls97.boveda.security.KeySecurityLevel
 import io.github.jls97.boveda.security.KeystoreKeys
+import io.github.jls97.boveda.security.KeystoreUnavailableException
 import io.github.jls97.boveda.security.OtpKeyManager
 import io.github.jls97.boveda.security.SecureClipboard
 import io.github.jls97.boveda.security.UnlockThrottle
+import io.github.jls97.boveda.security.VaultIntegrity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +44,7 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.ProviderException
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 
 sealed interface VaultState {
@@ -51,6 +57,19 @@ sealed interface VaultState {
         val data: VaultData,
         val biometricEnabled: Boolean,
         val otpAccess: OtpAccess = OtpAccess.NONE,
+        /**
+         * The file opened is not the last one saved on this phone (see
+         * [io.github.jls97.boveda.security.VaultIntegrity]): someone put an older copy back. The UI
+         * warns; nothing is blocked.
+         */
+        val integrityWarning: Boolean = false,
+        /**
+         * Where the Keystore key that binds the vault to this phone lives (StrongBox, TEE,
+         * Software or desconocido), as the system reports it. For the settings screen.
+         */
+        val deviceKeySecurityLevel: String = KeySecurityLevel.UNKNOWN.label,
+        /** Set when that key is software only: the vault is not bound to the phone's security chip. */
+        val deviceKeyWarning: String? = null,
     ) : VaultState
 }
 
@@ -72,7 +91,18 @@ enum class OtpAccess {
 sealed interface OperationResult {
     data object Success : OperationResult
 
+    /**
+     * A backup was restored ([VaultSession.restoreBackup]). [masterPasswordChanged] is set when a
+     * vault was replaced and its master password is not known to be the backup's: the UI must say
+     * that the master password is now the backup's. [hadUndo] is set when the replaced vault was
+     * kept for [VaultSession.undoRestore].
+     */
+    data class Restored(val masterPasswordChanged: Boolean, val hadUndo: Boolean) : OperationResult
+
     data object WrongPassword : OperationResult
+
+    /** The master password of the vault already on this phone (asked besides the backup's) is wrong. */
+    data object WrongCurrentPassword : OperationResult
 
     /** Too many wrong passwords: try again after [untilMillis] (epoch millis). */
     data class Throttled(val untilMillis: Long) : OperationResult
@@ -93,6 +123,7 @@ class VaultSession private constructor(
     private val biometricKeys: BiometricKeyManager,
     private val otpKeys: OtpKeyManager,
     private val throttle: UnlockThrottle,
+    private val integrity: VaultIntegrity,
     val clipboard: SecureClipboard,
     private val scope: CoroutineScope,
 ) {
@@ -104,6 +135,10 @@ class VaultSession private constructor(
         var biometricEnabled: Boolean,
         /** This phone holds a fingerprint-protected copy of the 2FA key of [data]. */
         var otpOnDevice: Boolean,
+        /** The file this vault was opened from was not the last one written on this phone. */
+        val integrityWarning: Boolean = false,
+        /** Where the Keystore key that wraps [layerKey] lives. */
+        val deviceKeySecurityLevel: KeySecurityLevel = KeySecurityLevel.UNKNOWN,
     ) {
         fun wipe() {
             dek.wipe()
@@ -124,7 +159,12 @@ class VaultSession private constructor(
     private var lockCount = 0
     private var lastInteraction = SystemClock.elapsedRealtime()
     private var autoLockJob: Job? = null
-    private var externalActivityExpected = false
+
+    /** Monotonic deadline of the last [expectExternalActivity]; 0 when none. */
+    private var externalActivityExpectedUntil = 0L
+
+    /** Monotonic instant of the last [onAppBackground] not yet followed by [onAppForeground]. */
+    private var backgroundSince: Long? = null
 
     // region Lifecycle and auto-lock
 
@@ -134,19 +174,32 @@ class VaultSession private constructor(
     }
 
     /**
-     * Call right before opening a system screen on purpose (the file picker for backups), so
-     * "lock when leaving the app" does not lock in the middle of the operation. The inactivity
-     * timeout and the screen-off lock still apply.
+     * Call right before opening a system screen on purpose (the file picker for backups, the
+     * autofill settings), so "lock when leaving the app" does not lock in the middle of the
+     * operation. The exception lasts [AutoLockPolicy.EXTERNAL_ACTIVITY_GRACE_MS] at most and,
+     * while it lasts, that same time applies as inactivity timeout even with "lock when leaving"
+     * ([AutoLockPolicy]): a picker abandoned with the Home button cannot leave the vault open
+     * without limit. The screen-off lock still applies.
      */
     fun expectExternalActivity() {
-        externalActivityExpected = true
+        externalActivityExpectedUntil = AutoLockPolicy.externalActivityDeadline(SystemClock.elapsedRealtime())
     }
 
+    private fun isExternalActivityExpected(): Boolean =
+        AutoLockPolicy.isExternalActivityExpected(externalActivityExpectedUntil, SystemClock.elapsedRealtime())
+
     fun onAppForeground() {
-        externalActivityExpected = false
+        externalActivityExpectedUntil = 0L
+        val since = backgroundSince
+        backgroundSince = null
         val current = open ?: return
-        val timeout = current.data.settings.autoLockSeconds
-        if (timeout > 0 && SystemClock.elapsedRealtime() - lastInteraction >= timeout * 1_000L) lock()
+        val shouldLock = AutoLockPolicy.shouldLockOnForeground(
+            current.data.settings.autoLockSeconds,
+            since,
+            lastInteraction,
+            SystemClock.elapsedRealtime(),
+        )
+        if (shouldLock) lock()
     }
 
     fun onAppResumed() {
@@ -154,8 +207,9 @@ class VaultSession private constructor(
     }
 
     fun onAppBackground() {
+        backgroundSince = SystemClock.elapsedRealtime()
         val current = open ?: return
-        if (current.data.settings.autoLockSeconds == 0 && !externalActivityExpected) lock()
+        if (AutoLockPolicy.shouldLockOnBackground(current.data.settings.autoLockSeconds, isExternalActivityExpected())) lock()
     }
 
     fun isBiometricEnabled(): Boolean = biometricKeys.isEnabled()
@@ -177,8 +231,15 @@ class VaultSession private constructor(
             while (isActive) {
                 delay(1_000)
                 val current = open ?: break
-                val timeout = current.data.settings.autoLockSeconds
-                if (timeout > 0 && SystemClock.elapsedRealtime() - lastInteraction >= timeout * 1_000L) {
+                // Against the monotonic clock, not the count of ticks: a frozen process (cached
+                // apps freezer, doze) misses ticks but not the time that went by.
+                val shouldLock = AutoLockPolicy.shouldLockForInactivity(
+                    current.data.settings.autoLockSeconds,
+                    isExternalActivityExpected(),
+                    lastInteraction,
+                    SystemClock.elapsedRealtime(),
+                )
+                if (shouldLock) {
                     lock()
                     break
                 }
@@ -192,7 +253,14 @@ class VaultSession private constructor(
             current.otpOnDevice -> OtpAccess.READY
             else -> OtpAccess.LOCKED
         }
-        _state.value = VaultState.Unlocked(current.data, current.biometricEnabled, otpAccess)
+        _state.value = VaultState.Unlocked(
+            current.data,
+            current.biometricEnabled,
+            otpAccess,
+            current.integrityWarning,
+            deviceKeySecurityLevel = current.deviceKeySecurityLevel.label,
+            deviceKeyWarning = SOFTWARE_KEY_WARNING.takeIf { current.deviceKeySecurityLevel == KeySecurityLevel.SOFTWARE },
+        )
     }
 
     private fun becomeUnlocked(newVault: OpenVault) {
@@ -212,12 +280,13 @@ class VaultSession private constructor(
         try {
             val lockCountAtStart = lockCount
             val newVault = withContext(Dispatchers.Default) {
-                val layerKey = deviceKeys.loadOrCreate()
+                // A key created now would not open the copy kept for undoRestore, if any.
+                val layerKey = deviceKeys.loadOrCreate(beforeCreate = storage::deletePreviousVault)
                 try {
                     val created = VaultContainer.create(password, VaultData())
                     try {
                         val portable = VaultContainer.seal(created.header, created.dek, created.data)
-                        storage.writeVault(DeviceLayer.seal(layerKey, portable))
+                        writeVault(DeviceLayer.seal(layerKey, portable))
                     } catch (e: Throwable) {
                         created.dek.wipe()
                         throw e
@@ -225,7 +294,15 @@ class VaultSession private constructor(
                     biometricKeys.disable()
                     otpKeys.disable()
                     throttle.reset()
-                    OpenVault(created.header, created.dek, layerKey, created.data, biometricEnabled = false, otpOnDevice = false)
+                    OpenVault(
+                        created.header,
+                        created.dek,
+                        layerKey,
+                        created.data,
+                        biometricEnabled = false,
+                        otpOnDevice = false,
+                        deviceKeySecurityLevel = deviceKeys.securityLevel(),
+                    )
                 } catch (e: Throwable) {
                     layerKey.wipe()
                     throw e
@@ -244,7 +321,7 @@ class VaultSession private constructor(
     /** Unlocks with the master password. The array is wiped. */
     suspend fun unlock(password: CharArray): OperationResult = writeMutex.withLock {
         try {
-            val blockedUntil = throttle.blockedUntil()
+            val blockedUntil = withContext(Dispatchers.IO) { throttle.blockedUntil() }
             if (blockedUntil > 0) return@withLock OperationResult.Throttled(blockedUntil)
             val lockCountAtStart = lockCount
             val newVault = withContext(Dispatchers.Default) {
@@ -252,6 +329,9 @@ class VaultSession private constructor(
                     openStoredVault { portable -> VaultContainer.open(portable, password) }
                 } catch (e: WrongPasswordException) {
                     null
+                } catch (e: OutOfMemoryError) {
+                    // Argon2id ran out of heap despite the check: report it instead of dying.
+                    throw KdfMemoryException("Key derivation ran out of memory")
                 }
             }
             if (newVault == null) {
@@ -299,33 +379,120 @@ class VaultSession private constructor(
     }
 
     /**
-     * Replaces the vault on this phone with a backup. Works locked or unlocked, like clearing the
-     * app's data in system settings would. The array is wiped.
+     * Replaces the vault on this phone with a backup. Works locked or unlocked. The vault.bin being
+     * replaced is kept as vault.prev.bin, sealed with the same layer key, so [undoRestore] can put
+     * it back until the next restore; the layer key is never rotated while the current vault is
+     * readable ([DeviceKeyManager.loadOrCreate]). Both arrays are wiped.
+     *
+     * Whether [currentPassword] is needed is decided by [RestorePolicy]. With a vault on this phone:
+     * - unlocked, it is required and checked against the open vault's header;
+     * - locked, it is checked if given (against the header of the file on disk) and may be omitted
+     *   only with [forceWithoutCurrent], the "I do not remember my password" path that the UI
+     *   enables after a strong confirmation (a typed word, a delay): it writes over a vault nobody
+     *   proved to own, so the wrong-password throttle is not cleared and the kept copy is the only
+     *   way back. A vault on disk that this phone can no longer open (permanent Keystore failure,
+     *   damaged file) has nothing left to protect, so the check is skipped for it; a Keystore that
+     *   merely did not answer fails the restore so that it can be retried.
+     * Without a vault on this phone nothing is checked. The throttle covers both checks: each
+     * password is an oracle of a master password.
+     *
+     * biometric.key wraps the DEK of the vault that leaves, so it is deleted; otp.key is kept only
+     * when it holds the 2FA key of the restored vault (an older backup of this same vault keeps
+     * working with the fingerprint) and deleted otherwise, so no orphan key of another vault stays
+     * on the phone.
+     *
+     * On success the result is [OperationResult.Restored], which says whether the master password
+     * is now a different one (the backup's) and whether the copy for [undoRestore] exists.
      */
-    suspend fun restoreBackup(backup: ByteArray, password: CharArray): OperationResult = writeMutex.withLock {
+    suspend fun restoreBackup(
+        backup: ByteArray,
+        password: CharArray,
+        currentPassword: CharArray?,
+        forceWithoutCurrent: Boolean = false,
+    ): OperationResult = writeMutex.withLock {
         try {
+            // Same throttle as unlock: checking the backup's password is also a password oracle.
+            val blockedUntil = withContext(Dispatchers.IO) { throttle.blockedUntil() }
+            if (blockedUntil > 0) return@withLock OperationResult.Throttled(blockedUntil)
+            val current = open
+            val vaultOnPhone = current != null || withContext(Dispatchers.IO) { storage.vaultExists() }
+            val decision = RestorePolicy.decide(
+                vaultOnPhone = vaultOnPhone,
+                unlocked = current != null,
+                currentPasswordGiven = currentPassword != null,
+                forceWithoutCurrent = forceWithoutCurrent,
+            )
+            if (decision == RestorePolicy.Decision.REFUSE) {
+                return@withLock OperationResult.Failure(
+                    if (current != null) CURRENT_PASSWORD_REQUIRED else CURRENT_PASSWORD_OR_CONFIRMATION_REQUIRED,
+                )
+            }
+            val masterPasswordChanged = RestorePolicy.masterPasswordChanges(
+                vaultOnPhone = vaultOnPhone,
+                currentPasswordGiven = currentPassword != null,
+                samePassword = currentPassword?.contentEquals(password) == true,
+            )
+            if (decision == RestorePolicy.Decision.VERIFY_CURRENT && currentPassword != null) {
+                val currentHeader = current?.header
+                val currentPasswordOk = withContext(Dispatchers.Default) {
+                    try {
+                        verifyCurrentPassword(currentHeader, currentPassword)
+                    } catch (e: OutOfMemoryError) {
+                        throw KdfMemoryException("Key derivation ran out of memory")
+                    }
+                }
+                if (!currentPasswordOk) {
+                    val until = withContext(Dispatchers.IO) { throttle.recordFailure() }
+                    return@withLock if (until > 0) OperationResult.Throttled(until) else OperationResult.WrongCurrentPassword
+                }
+            }
             val lockCountAtStart = lockCount
+            var hadUndo = false
             val newVault = withContext(Dispatchers.Default) {
-                val restored = try {
+                val opened = try {
                     VaultContainer.open(backup, password)
                 } catch (e: WrongPasswordException) {
                     null
+                } catch (e: OutOfMemoryError) {
+                    // Argon2id ran out of heap despite the check: report it instead of dying.
+                    throw KdfMemoryException("Key derivation ran out of memory")
                 } ?: return@withContext null
+                // A backup with cheaper Argon2 costs than the app's own would otherwise turn this
+                // vault, and every backup made from it, into an easier offline target for good.
+                // The password is at hand, so the DEK is wrapped again under the default costs.
+                val restored = if (opened.header.kdfParams.isWeakerThan(KdfParams.DEFAULT)) {
+                    try {
+                        VaultContainer.changePassword(password, opened.data)
+                    } finally {
+                        opened.dek.wipe()
+                    }
+                } else {
+                    opened
+                }
                 try {
-                    val layerKey = deviceKeys.loadOrCreate()
+                    // Only created when nothing opens with the old key, in which case the copy for
+                    // undoRestore would be unreadable too.
+                    var layerKeyRotated = false
+                    val layerKey = deviceKeys.loadOrCreate(beforeCreate = { layerKeyRotated = true })
                     try {
                         val portable = VaultContainer.seal(restored.header, restored.dek, restored.data)
-                        storage.writeVault(DeviceLayer.seal(layerKey, portable))
+                        val sealed = DeviceLayer.seal(layerKey, portable)
+                        hadUndo = keepPreviousVault(keep = vaultOnPhone && !layerKeyRotated)
+                        writeVault(sealed)
                         biometricKeys.disable()
-                        throttle.reset()
+                        // An older backup of this same vault keeps working with the fingerprint;
+                        // the 2FA key of any other vault would stay as an orphan.
+                        val otpOnDevice = otpOnDevice(restored.data)
+                        if (!otpOnDevice) otpKeys.disable()
+                        if (RestorePolicy.resetsThrottle(decision)) throttle.reset()
                         OpenVault(
                             restored.header,
                             restored.dek,
                             layerKey,
                             restored.data,
                             biometricEnabled = false,
-                            // An older backup of this same vault keeps working with the fingerprint.
-                            otpOnDevice = otpOnDevice(restored.data),
+                            otpOnDevice = otpOnDevice,
+                            deviceKeySecurityLevel = deviceKeys.securityLevel(),
                         )
                     } catch (e: Throwable) {
                         layerKey.wipe()
@@ -335,22 +502,125 @@ class VaultSession private constructor(
                     restored.dek.wipe()
                     throw e
                 }
-            } ?: return@withLock OperationResult.WrongPassword
-            finishUnlock(newVault, lockCountAtStart)
+            }
+            if (newVault == null) {
+                val until = withContext(Dispatchers.IO) { throttle.recordFailure() }
+                return@withLock if (until > 0) OperationResult.Throttled(until) else OperationResult.WrongPassword
+            }
+            when (val result = finishUnlock(newVault, lockCountAtStart)) {
+                OperationResult.Success -> OperationResult.Restored(masterPasswordChanged, hadUndo)
+                else -> result
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             OperationResult.Failure(describe(e))
         } finally {
             password.wipe()
+            currentPassword?.wipe()
         }
     }
+
+    /**
+     * [restoreBackup] without the current password and without forcing: it only succeeds when
+     * there is no vault on this phone yet (first run) and refuses otherwise.
+     */
+    suspend fun restoreBackup(backup: ByteArray, password: CharArray): OperationResult =
+        restoreBackup(backup, password, currentPassword = null, forceWithoutCurrent = false)
+
+    /**
+     * True if [password] is the master password of the vault on this phone: the open one
+     * ([header] given) or, locked, the file on disk. A file this phone can no longer open for
+     * good (device key gone, damaged file) has nothing to protect, so it counts as verified.
+     * Runs off the main thread: Argon2id.
+     */
+    private fun verifyCurrentPassword(header: VaultContainer.Header?, password: CharArray): Boolean {
+        if (header != null) return VaultContainer.verifyPassword(header, password)
+        val layerKey = try {
+            deviceKeys.load()
+        } catch (e: DeviceBindingException) {
+            null
+        } ?: return true
+        try {
+            val portable = try {
+                DeviceLayer.open(layerKey, storage.readVault())
+            } catch (e: DeviceBindingException) {
+                return true
+            } catch (e: CorruptedVaultException) {
+                return true
+            }
+            try {
+                val storedHeader = try {
+                    VaultContainer.parseHeader(portable)
+                } catch (e: CorruptedVaultException) {
+                    return true
+                } catch (e: UnsupportedVaultException) {
+                    return true
+                }
+                return VaultContainer.verifyPassword(storedHeader, password)
+            } finally {
+                portable.wipe()
+            }
+        } finally {
+            layerKey.wipe()
+        }
+    }
+
+    /**
+     * Keeps the vault.bin about to be replaced as vault.prev.bin for [undoRestore], or drops a
+     * stale copy when there is nothing to keep. Runs off the main thread.
+     */
+    private fun keepPreviousVault(keep: Boolean): Boolean {
+        if (!keep || !storage.vaultExists()) {
+            storage.deletePreviousVault()
+            return false
+        }
+        storage.writePreviousVault(storage.readVault())
+        return true
+    }
+
+    /** True while the vault.bin that the last [restoreBackup] replaced is still kept. */
+    fun canUndoRestore(): Boolean = storage.previousVaultExists()
+
+    /**
+     * Puts back the vault that the last [restoreBackup] replaced and keeps the restored one in its
+     * place, so calling it again undoes the undo: nothing is lost either way. The session locks
+     * (the keys in memory belong to the file that leaves) and the fingerprint is turned off
+     * (biometric.key wraps that file's DEK); the vault then opens with its own master password.
+     * This phone's 2FA key, if any, stays: the vault compares its id when it opens.
+     */
+    suspend fun undoRestore(): OperationResult = writeMutex.withLock {
+        try {
+            if (!storage.previousVaultExists()) {
+                return@withLock OperationResult.Failure("No hay ninguna restauración que deshacer.")
+            }
+            lock()
+            withContext(Dispatchers.IO) {
+                val previous = storage.readPreviousVault()
+                val replaced = if (storage.vaultExists()) storage.readVault() else null
+                biometricKeys.disable()
+                writeVault(previous)
+                if (replaced != null) storage.writePreviousVault(replaced) else storage.deletePreviousVault()
+            }
+            OperationResult.Success
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            OperationResult.Failure(describe(e))
+        } finally {
+            if (open == null) _state.value = if (storage.vaultExists()) VaultState.Locked else VaultState.NoVault
+        }
+    }
+
+    /** Drops the copy kept for [undoRestore], when the user asks for it. */
+    fun discardUndo() = storage.deletePreviousVault()
 
     /** Reads, unwraps the device layer and opens the vault file. Runs off the main thread. */
     private fun openStoredVault(openPortable: (ByteArray) -> VaultContainer.Opened): OpenVault {
         val layerKey = deviceKeys.load() ?: throw DeviceBindingException("Device key not found")
         try {
-            val portable = DeviceLayer.open(layerKey, storage.readVault())
+            val sealed = storage.readVault()
+            val portable = DeviceLayer.open(layerKey, sealed)
             val opened = openPortable(portable)
             return OpenVault(
                 opened.header,
@@ -359,6 +629,8 @@ class VaultSession private constructor(
                 opened.data,
                 biometricKeys.isEnabled(),
                 otpOnDevice(opened.data),
+                integrityWarning = !integrity.isLatest(sealed),
+                deviceKeySecurityLevel = deviceKeys.securityLevel(),
             )
         } catch (e: Throwable) {
             layerKey.wipe()
@@ -422,51 +694,102 @@ class VaultSession private constructor(
         OperationResult.Success
     }
 
-    /** Encrypts and writes [data] using private copies of the keys. */
+    /**
+     * Encrypts and writes [data] using private copies of the keys of [keysFrom]. Call it right after
+     * reading [open], with no suspension in between: the copies are taken here, so a [lock] that ran
+     * before this call would have left [keysFrom] wiped. Anything that suspends first (Argon2id,
+     * Keystore) must copy the keys itself beforehand and use [persistWith].
+     */
     private suspend fun persist(header: VaultContainer.Header, keysFrom: OpenVault, data: VaultData) {
         val dek = keysFrom.dek.copyOf()
         val layerKey = keysFrom.layerKey.copyOf()
         try {
-            withContext(Dispatchers.IO) {
-                val portable = VaultContainer.seal(header, dek, data)
-                storage.writeVault(DeviceLayer.seal(layerKey, portable))
-            }
+            persistWith(header, dek, layerKey, data)
         } finally {
             dek.wipe()
             layerKey.wipe()
         }
     }
 
-    /** Checks the current password, then re-wraps the vault key under the new one. */
+    /**
+     * Encrypts and writes [data] with the given keys, which the caller copied before any suspension
+     * and wipes afterwards. `AesGcm` refuses an all-zero key, so a wiped key can never reach disk.
+     */
+    private suspend fun persistWith(header: VaultContainer.Header, dek: ByteArray, layerKey: ByteArray, data: VaultData) {
+        withContext(Dispatchers.IO) {
+            val portable = VaultContainer.seal(header, dek, data)
+            writeVault(DeviceLayer.seal(layerKey, portable))
+        }
+    }
+
+    /** Every write of the vault file goes through here, so the integrity record always describes the file on disk. */
+    private fun writeVault(bytes: ByteArray) {
+        storage.writeVault(bytes)
+        integrity.recordWrite(bytes)
+    }
+
+    /**
+     * Checks the current password, then protects the vault with the new one under a new vault key
+     * (DEK): the contents are encrypted again, so an old backup opened with the old password gives
+     * no key for the copies made from now on. The fingerprint copy wrapped the old DEK, so it is
+     * turned off and the caller asks the user to enable it again. The layer key is copied before
+     * Argon2id runs and, if the vault locked meanwhile, nothing is written: the file is never
+     * sealed with the wiped keys of a vault that is no longer open.
+     */
     suspend fun changeMasterPassword(currentPassword: CharArray, newPassword: CharArray): OperationResult =
         writeMutex.withLock {
             try {
+                // Same throttle as unlock: with the vault open (e.g. by fingerprint) this dialog
+                // would otherwise be an unlimited oracle of the master password.
+                val blockedUntil = withContext(Dispatchers.IO) { throttle.blockedUntil() }
+                if (blockedUntil > 0) return@withLock OperationResult.Throttled(blockedUntil)
                 val current = open ?: return@withLock OperationResult.Failure("La bóveda está bloqueada")
-                val dek = current.dek.copyOf()
-                val newHeader = try {
-                    withContext(Dispatchers.Default) {
+                val lockCountAtStart = lockCount
+                val layerKey = current.layerKey.copyOf()
+                var rekeyed: VaultContainer.Opened? = null
+                try {
+                    rekeyed = withContext(Dispatchers.Default) {
                         if (!VaultContainer.verifyPassword(current.header, currentPassword)) {
                             null
                         } else {
-                            VaultContainer.changePassword(dek, newPassword)
+                            VaultContainer.changePassword(newPassword, current.data)
                         }
                     }
+                    if (rekeyed == null) {
+                        val until = withContext(Dispatchers.IO) { throttle.recordFailure() }
+                        return@withLock if (until > 0) OperationResult.Throttled(until) else OperationResult.WrongPassword
+                    }
+                    withContext(Dispatchers.IO) { throttle.reset() }
+                    if (open !== current || lockCount != lockCountAtStart) {
+                        return@withLock OperationResult.Failure(
+                            "Se bloqueó mientras se cambiaba la contraseña. No se ha escrito nada.",
+                        )
+                    }
+                    // biometric.key wraps the old DEK and would open nothing from now on. Off before
+                    // the file changes: if the write fails, the old password still works and the
+                    // fingerprint is simply off.
+                    withContext(Dispatchers.IO) { biometricKeys.disable() }
+                    current.biometricEnabled = false
+                    if (open === current) publish(current)
+                    persistWith(rekeyed.header, rekeyed.dek, layerKey, current.data)
+                    if (open === current) {
+                        val updated = OpenVault(
+                            rekeyed.header,
+                            rekeyed.dek.copyOf(),
+                            layerKey.copyOf(),
+                            current.data,
+                            biometricEnabled = false,
+                            otpOnDevice = current.otpOnDevice,
+                            integrityWarning = current.integrityWarning,
+                            deviceKeySecurityLevel = current.deviceKeySecurityLevel,
+                        )
+                        current.wipe()
+                        open = updated
+                        publish(updated)
+                    }
                 } finally {
-                    dek.wipe()
-                } ?: return@withLock OperationResult.WrongPassword
-                persist(newHeader, current, current.data)
-                if (open === current) {
-                    val updated = OpenVault(
-                        newHeader,
-                        current.dek.copyOf(),
-                        current.layerKey.copyOf(),
-                        current.data,
-                        current.biometricEnabled,
-                        current.otpOnDevice,
-                    )
-                    current.wipe()
-                    open = updated
-                    publish(updated)
+                    rekeyed?.let { it.dek.wipe() }
+                    layerKey.wipe()
                 }
                 OperationResult.Success
             } catch (e: CancellationException) {
@@ -623,6 +946,14 @@ class VaultSession private constructor(
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: AEADBadTagException) {
+            // The phone's copy did not belong to this key: the manager deleted it, so the codes
+            // now need the recovery code, and the screen must offer it instead of a generic error.
+            if (open === current && current.otpOnDevice) {
+                current.otpOnDevice = false
+                publish(current)
+            }
+            return null
         } catch (e: Exception) {
             return null
         }
@@ -684,16 +1015,71 @@ class VaultSession private constructor(
     }
 
     /**
-     * Replaces the recovery code: the 2FA key, opened with the fingerprint, is wrapped again under
-     * [newCode]. Backups made before still open with the old code. The caller wipes [newCode].
+     * Replaces the recovery code and, with it, the 2FA key: every sealed secret is opened with the
+     * current key (fingerprint in [authorizedCipher], from [otpUnlockCipher]) and sealed again
+     * under a new random key with a new keyring id. [newCode] wraps the new key inside the vault
+     * and the fingerprint key authorized in [enrollmentCipher] (from [otpEnrollmentCipher], asked
+     * before calling) wraps this phone's copy. Backups made before keep the old key and the old
+     * code, so neither opens the secrets of later copies. The caller wipes [newCode].
+     *
+     * The vault is written first: if this phone's copy then fails, the codes are recovered with
+     * the new code, which the user has just written down.
      */
-    suspend fun replaceOtpRecoveryCode(authorizedCipher: Cipher, newCode: CharArray): OperationResult = modify { data ->
-        val keyring = data.otpKeyring ?: throw IllegalStateException("2FA is not set up")
-        val otpKey = otpKeys.unwrap(authorizedCipher, keyring.id)
+    suspend fun replaceOtpRecoveryCode(
+        authorizedCipher: Cipher,
+        enrollmentCipher: Cipher,
+        newCode: CharArray,
+    ): OperationResult = writeMutex.withLock {
+        val current = open ?: return@withLock OperationResult.Failure("La bóveda está bloqueada")
+        val keyring = current.data.otpKeyring ?: return@withLock OperationResult.Failure("No hay códigos 2FA.")
+        val header = current.header
+        val data = current.data
+        val dek = current.dek.copyOf()
+        val layerKey = current.layerKey.copyOf()
+        val newKey = OtpCrypto.newKey()
+        val newId = OtpCrypto.newKeyringId()
         try {
-            data.copy(otpKeyring = OtpCrypto.createKeyring(otpKey, keyring.id, newCode))
+            val newData = withContext(Dispatchers.Default) {
+                val oldKey = otpKeys.unwrap(authorizedCipher, keyring.id)
+                val entries = try {
+                    OtpCrypto.reseal(data.entries, oldKey, keyring.id, newKey, newId)
+                } finally {
+                    oldKey.wipe()
+                }
+                val changed = data.copy(entries = entries, otpKeyring = OtpCrypto.createKeyring(newKey, newId, newCode))
+                val portable = VaultContainer.seal(header, dek, changed)
+                writeVault(DeviceLayer.seal(layerKey, portable))
+                changed
+            }
+            // From here the vault holds the new key, whatever happens to this phone's copy.
+            if (open === current) {
+                current.data = newData
+                current.otpOnDevice = false
+            }
+            try {
+                withContext(Dispatchers.Default) { otpKeys.finishEnrollment(enrollmentCipher, newId, newKey) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (open === current) publish(current)
+                return@withLock OperationResult.Failure(
+                    "Código cambiado, pero este móvil no pudo guardar la llave nueva. " +
+                        "Recupera los códigos 2FA con el código nuevo.",
+                )
+            }
+            if (open === current) {
+                current.otpOnDevice = true
+                publish(current)
+            }
+            OperationResult.Success
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            OperationResult.Failure(describe(e))
         } finally {
-            otpKey.wipe()
+            newKey.wipe()
+            dek.wipe()
+            layerKey.wipe()
         }
     }
 
@@ -714,7 +1100,7 @@ class VaultSession private constructor(
             val newData = withContext(Dispatchers.Default) {
                 val changed = change(data)
                 val portable = VaultContainer.seal(header, dek, changed)
-                storage.writeVault(DeviceLayer.seal(layerKey, portable))
+                writeVault(DeviceLayer.seal(layerKey, portable))
                 changed
             }
             if (otpOnDeviceAfter != null) current.otpOnDevice = otpOnDeviceAfter
@@ -786,18 +1172,36 @@ class VaultSession private constructor(
     // endregion
 
     private fun describe(e: Exception): String = when (e) {
+        // The key is intact: the Keystore just did not answer. Restoring would be the one thing
+        // that destroys the current vault, so it is never suggested here.
+        is KeystoreUnavailableException ->
+            "El almacén de claves del teléfono no respondió. Vuelve a intentarlo o reinicia el teléfono."
         is DeviceBindingException ->
             "La bóveda no se puede abrir en este teléfono: su clave de hardware no está disponible. " +
                 "Restaura una copia de seguridad."
         is CorruptedVaultException -> "El archivo está dañado o ha sido modificado."
-        is UnsupportedVaultException -> "Formato de bóveda no compatible."
+        is KdfMemoryException ->
+            "Este archivo pide más memoria de la que permite el teléfono para comprobar la contraseña. " +
+                "No se ha escrito nada."
+        is UnsupportedVaultException -> "Formato de bóveda no compatible o archivo modificado."
         is VaultException -> "Error de la bóveda."
         is IOException -> "No se pudo leer o escribir el archivo."
         is GeneralSecurityException, is ProviderException -> "El almacén de claves del sistema rechazó la operación."
+        // AesGcm refused a wiped (all-zero) key before sealing anything: the file is untouched.
+        is IllegalArgumentException -> "Error interno: no se ha escrito nada"
         else -> "Error inesperado."
     }
 
     companion object {
+        private const val CURRENT_PASSWORD_REQUIRED =
+            "Para sustituir la bóveda de este teléfono hace falta su contraseña maestra actual."
+        private const val CURRENT_PASSWORD_OR_CONFIRMATION_REQUIRED =
+            "Para sustituir la bóveda de este teléfono hace falta su contraseña maestra actual, " +
+                "o confirmar expresamente que se restaura sin ella."
+        private const val SOFTWARE_KEY_WARNING =
+            "La clave de este teléfono es solo de software: una copia de los archivos de la app " +
+                "sacada del teléfono podría abrirse en otro sitio con la contraseña maestra."
+
         fun create(context: Context, scope: CoroutineScope): VaultSession {
             val appContext = context.applicationContext
             val storage = VaultStorage(appContext)
@@ -808,6 +1212,7 @@ class VaultSession private constructor(
                 biometricKeys = BiometricKeyManager(keys, storage.biometricKeyFile),
                 otpKeys = OtpKeyManager(keys, storage.otpKeyFile),
                 throttle = UnlockThrottle(appContext),
+                integrity = VaultIntegrity(appContext),
                 clipboard = SecureClipboard(appContext, scope),
                 scope = scope,
             )
