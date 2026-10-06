@@ -153,7 +153,8 @@ Fuera del control de la app, conviene revisar en el teléfono:
   con la nube, desactívalo. La app marca lo copiado como sensible y lo borra, pero no puede
   impedir que otra app lo lea mientras está copiado. Con el autorrelleno no hace falta copiar.
 - **Teclado:** la contraseña maestra pasa por el teclado. Usa uno de confianza; los teclados sin
-  permiso de Internet son la opción más estricta.
+  permiso de Internet son la opción más estricta. En los campos de nombre, usuario y notas la app
+  pide al teclado que no aprenda ni sugiera lo escrito, pero depende de que el teclado lo respete.
 
 ### Lo que no puede proteger
 

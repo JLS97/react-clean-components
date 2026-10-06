@@ -56,6 +56,7 @@ import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
+import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.findActivity
 import io.github.jls97.boveda.ui.lock.LockViewModel
 import io.github.jls97.boveda.ui.lock.UnlockScreen
@@ -351,13 +352,12 @@ private fun SaveEntryScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            OutlinedTextField(
+            NoLearningTextField(
                 value = username,
                 onValueChange = { username = it },
-                label = { Text("Usuario o email") },
+                label = "Usuario o email",
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false),
-                modifier = Modifier.fillMaxWidth(),
             )
             viewModel.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Button(

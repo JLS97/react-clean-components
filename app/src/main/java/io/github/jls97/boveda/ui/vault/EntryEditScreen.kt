@@ -25,6 +25,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.jls97.boveda.ui.components.BackButton
+import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.StrengthMeter
 import io.github.jls97.boveda.ui.components.autofillTargetLabel
@@ -61,21 +62,20 @@ fun EntryEditScreen(
                 .padding(16.dp),
             verticalArrangement = ScreenPadding,
         ) {
-            OutlinedTextField(
+            // Nombre, usuario y notas: teclado sin aprendizaje para que lo escrito no acabe en su diccionario.
+            NoLearningTextField(
                 value = draft.title,
                 onValueChange = { onDraftChange(draft.copy(title = it)) },
-                label = { Text("Nombre (p. ej. Banco, Gmail)") },
+                label = "Nombre (p. ej. Banco, Gmail)",
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = false),
             )
-            OutlinedTextField(
+            NoLearningTextField(
                 value = draft.username,
                 onValueChange = { onDraftChange(draft.copy(username = it)) },
-                label = { Text("Usuario o email") },
+                label = "Usuario o email",
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false),
-                modifier = Modifier.fillMaxWidth(),
             )
             PasswordField(
                 value = draft.password,
@@ -94,12 +94,12 @@ fun EntryEditScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
+            NoLearningTextField(
                 value = draft.notes,
                 onValueChange = { onDraftChange(draft.copy(notes = it)) },
-                label = { Text("Notas") },
+                label = "Notas",
                 minLines = 3,
-                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
             )
             if (draft.autofillTargets.isNotEmpty()) {
                 Text("Autorrelleno vinculado a", style = MaterialTheme.typography.titleSmall)

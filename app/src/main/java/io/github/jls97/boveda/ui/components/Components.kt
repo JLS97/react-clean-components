@@ -5,6 +5,9 @@ import android.content.ContentResolver
 import android.content.Context
 import android.content.ContextWrapper
 import android.net.Uri
+import android.text.InputType
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,7 +18,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -30,8 +32,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.InterceptPlatformTextInput
+import androidx.compose.ui.platform.PlatformTextInputInterceptor
+import androidx.compose.ui.platform.PlatformTextInputMethodRequest
+import androidx.compose.ui.platform.PlatformTextInputSession
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -78,6 +85,59 @@ fun PasswordField(
         trailingIcon = {
             TextButton(onClick = { visible = !visible }) {
                 Text(if (visible) "Ocultar" else "Mostrar")
+            }
+        },
+    )
+}
+
+/**
+ * Campo de texto cuyo teclado no aprende ni sugiere lo escrito.
+ *
+ * Compose nunca pone IME_FLAG_NO_PERSONALIZED_LEARNING ni lo expone en KeyboardOptions, así que en
+ * un campo normal (nombre, usuario, notas) el teclado añade lo tecleado a su diccionario personal y
+ * puede sincronizarlo con la nube de su fabricante. Aquí se interceptan los EditorInfo que Compose
+ * entrega al IME y se añaden los flags que lo evitan; el resto del campo es un OutlinedTextField.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun NoLearningTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = false,
+    minLines: Int = 1,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    enabled: Boolean = true,
+) {
+    InterceptPlatformTextInput(interceptor = NoLearningInterceptor) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = modifier.fillMaxWidth(),
+            label = { Text(label) },
+            singleLine = singleLine,
+            minLines = minLines,
+            enabled = enabled,
+            keyboardOptions = keyboardOptions,
+        )
+    }
+}
+
+/** Añade a cada sesión del IME los flags de «sin aprendizaje» y «sin sugerencias». */
+@OptIn(ExperimentalComposeUiApi::class)
+private val NoLearningInterceptor = object : PlatformTextInputInterceptor {
+    override suspend fun interceptStartInputMethod(
+        request: PlatformTextInputMethodRequest,
+        nextHandler: PlatformTextInputSession,
+    ): Nothing = nextHandler.startInputMethod(
+        object : PlatformTextInputMethodRequest {
+            override fun createInputConnection(outAttributes: EditorInfo): InputConnection {
+                // Compose rellena outAttributes dentro de createInputConnection: los flags van después.
+                val connection = request.createInputConnection(outAttributes)
+                outAttributes.imeOptions = outAttributes.imeOptions or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+                outAttributes.inputType = outAttributes.inputType or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                return connection
             }
         },
     )
@@ -131,7 +191,7 @@ fun ConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    SecureAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(text) },
@@ -150,7 +210,7 @@ fun PasswordPromptDialog(
     onDismiss: () -> Unit,
 ) {
     var password by remember { mutableStateOf("") }
-    AlertDialog(
+    SecureAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
@@ -181,7 +241,7 @@ fun <T> ChoiceDialog(
     onSelect: (T) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    SecureAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {

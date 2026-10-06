@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -46,6 +45,7 @@ import io.github.jls97.boveda.ui.components.CreateLocalDocument
 import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
+import io.github.jls97.boveda.ui.components.SecureAlertDialog
 import io.github.jls97.boveda.ui.components.StrengthMeter
 import io.github.jls97.boveda.ui.components.autoLockLabel
 import io.github.jls97.boveda.ui.components.durationLabel
@@ -365,7 +365,7 @@ private fun ChangePasswordDialog(
     var current by remember { mutableStateOf("") }
     var newPassword by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
-    AlertDialog(
+    SecureAlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text("Cambiar contraseña maestra") },
         text = {
