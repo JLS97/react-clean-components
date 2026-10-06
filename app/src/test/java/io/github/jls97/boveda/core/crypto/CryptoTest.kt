@@ -6,6 +6,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class CryptoTest {
@@ -34,6 +35,52 @@ class CryptoTest {
             hex("0d 64 0d f5 8d 78 76 6c 08 c0 37 a3 4a 8b 53 c9 d0 1e f0 45 2d 75 b6 5e b5 25 20 e9 6b 01 e6 59"),
             tag,
         )
+    }
+
+    @Test
+    fun deriveKeyMatchesTheReferenceImplementationVector() {
+        // phc-winner-argon2, src/test.c: Argon2id v0x13, t=2, m=2^16 KiB, p=1, "password" / "somesalt".
+        // Runs through Argon2Kdf.deriveKey itself, so a wrong variant, version or parameter order fails here.
+        val key = Argon2Kdf.deriveKey("password".toCharArray(), "somesalt".toByteArray(), KdfParams(65_536, 2, 1))
+        assertArrayEquals(hex("09316115d5cf24ed5a15a31a3ba326e5cf32edc24702987c02b6566f61913cf7"), key)
+    }
+
+    @Test
+    fun deriveKeyMatchesAGeneratorConfiguredTheSameWay() {
+        // Any drift between the wrapper and Argon2id (variant, version, memory/iterations swapped,
+        // password encoding) shows up as a different key for the same inputs.
+        val params = KdfParams(memoryKiB = 128, iterations = 2, parallelism = 2)
+        val salt = ByteArray(16) { (it * 7).toByte() }
+        val password = "contraseña ñandú €"
+        val generator = Argon2BytesGenerator()
+        generator.init(
+            Argon2Parameters.Builder(Argon2Parameters.ARGON2_id)
+                .withVersion(Argon2Parameters.ARGON2_VERSION_13)
+                .withMemoryAsKB(params.memoryKiB)
+                .withIterations(params.iterations)
+                .withParallelism(params.parallelism)
+                .withSalt(salt)
+                .build(),
+        )
+        val expected = ByteArray(Argon2Kdf.KEY_SIZE)
+        generator.generateBytes(password.toByteArray(Charsets.UTF_8), expected)
+        assertArrayEquals(expected, Argon2Kdf.deriveKey(password.toCharArray(), salt, params))
+    }
+
+    @Test
+    fun kdfDefaultsAreTheDocumentedOnes() {
+        // RFC 9106, second recommended option. The file format depends on these staying put.
+        assertEquals(KdfParams(memoryKiB = 65_536, iterations = 3, parallelism = 4), KdfParams.DEFAULT)
+        assertEquals(32, Argon2Kdf.KEY_SIZE)
+    }
+
+    @Test
+    fun passwordEncodingIsUtf8() {
+        assertArrayEquals(hex("61"), Argon2Kdf.encodePassword("a".toCharArray()))
+        assertArrayEquals(hex("c3 b1"), Argon2Kdf.encodePassword("ñ".toCharArray()))
+        assertArrayEquals(hex("e2 82 ac"), Argon2Kdf.encodePassword("€".toCharArray()))
+        assertArrayEquals(hex("f0 9f 98 80"), Argon2Kdf.encodePassword("😀".toCharArray()))
+        assertArrayEquals(ByteArray(0), Argon2Kdf.encodePassword(CharArray(0)))
     }
 
     @Test
@@ -76,6 +123,52 @@ class CryptoTest {
         val sealed = AesGcm.seal(key, "secreto".toByteArray(), aad)
         assertEquals(AesGcm.OVERHEAD + 7, sealed.size)
         assertArrayEquals("secreto".toByteArray(), AesGcm.open(key, sealed, aad))
+    }
+
+    @Test
+    fun aesGcmMatchesTheGcmSpecificationTestVectors() {
+        // McGrew & Viega, "The Galois/Counter Mode of Operation (GCM)", AES-256 test cases 15 and 16
+        // (the NIST GCM vectors). The sealed form is nonce || ciphertext || tag with a 128-bit tag.
+        val key = hex("feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308")
+        val nonce = hex("cafebabefacedbaddecaf888")
+        val plaintext = hex(
+            "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a72" +
+                "1c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255",
+        )
+        val ciphertext = hex(
+            "522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa" +
+                "8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662898015ad",
+        )
+        // Test case 15: no AAD.
+        val sealed15 = nonce + ciphertext + hex("b094dac5d93471bdec1a502270e3cc6c")
+        assertArrayEquals(plaintext, AesGcm.open(key, sealed15, ByteArray(0)))
+        // Test case 16: 60 bytes of plaintext and 20 bytes of AAD, which must be authenticated.
+        val aad = hex("feedfacedeadbeeffeedfacedeadbeefabaddad2")
+        val sealed16 = nonce + ciphertext.copyOf(60) + hex("76fc6ece0f4e1768cddf8853bb2d551b")
+        assertArrayEquals(plaintext.copyOf(60), AesGcm.open(key, sealed16, aad))
+        try {
+            AesGcm.open(key, sealed16, ByteArray(0))
+            fail("The AAD of the test vector was not authenticated")
+        } catch (expected: AuthenticationException) {
+        }
+        // A tag of fewer than 128 bits would be rejected: the whole tag is part of the format.
+        try {
+            AesGcm.open(key, sealed16.copyOf(sealed16.size - 4), aad)
+            fail("A truncated tag was accepted")
+        } catch (expected: AuthenticationException) {
+        }
+    }
+
+    @Test
+    fun aesGcmSealedSizeIsNoncePlusPlaintextPlusTag() {
+        val key = randomBytes(AesGcm.KEY_SIZE)
+        assertEquals(12, AesGcm.NONCE_SIZE)
+        assertEquals(16, AesGcm.TAG_SIZE)
+        for (size in listOf(0, 1, 15, 16, 17, 1_000)) {
+            val sealed = AesGcm.seal(key, ByteArray(size) { 5 }, "aad".toByteArray())
+            assertEquals(12 + size + 16, sealed.size)
+            assertArrayEquals(ByteArray(size) { 5 }, AesGcm.open(key, sealed, "aad".toByteArray()))
+        }
     }
 
     @Test

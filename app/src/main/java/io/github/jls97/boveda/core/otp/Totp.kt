@@ -4,10 +4,15 @@ import io.github.jls97.boveda.core.crypto.wipe
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-enum class OtpAlgorithm(val macName: String, val label: String) {
-    SHA1("HmacSHA1", "SHA-1"),
-    SHA256("HmacSHA256", "SHA-256"),
-    SHA512("HmacSHA512", "SHA-512"),
+/**
+ * HMAC used to compute the codes. [id] is what gets persisted inside every sealed 2FA secret, so
+ * it is explicit and stable: adding, removing or reordering constants must never change the
+ * meaning of a record that is already stored. Never reuse an id.
+ */
+enum class OtpAlgorithm(val id: Int, val macName: String, val label: String) {
+    SHA1(1, "HmacSHA1", "SHA-1"),
+    SHA256(2, "HmacSHA256", "SHA-256"),
+    SHA512(3, "HmacSHA512", "SHA-512"),
     ;
 
     companion object {
@@ -16,6 +21,9 @@ enum class OtpAlgorithm(val macName: String, val label: String) {
             val normalized = name.replace("-", "").trim()
             return entries.firstOrNull { it.name.equals(normalized, ignoreCase = true) }
         }
+
+        /** The algorithm persisted with [id], or null if no version of the app has defined it. */
+        fun fromId(id: Int): OtpAlgorithm? = entries.firstOrNull { it.id == id }
     }
 }
 

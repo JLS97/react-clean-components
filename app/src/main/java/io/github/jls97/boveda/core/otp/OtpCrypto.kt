@@ -101,7 +101,7 @@ object OtpCrypto {
             writer.putU16(RECORD_VERSION)
             writer.putU16(6)
             writer.putBytesField(FIELD_KEY, key)
-            writer.putIntField(FIELD_ALGORITHM, secret.params.algorithm.ordinal + 1)
+            writer.putIntField(FIELD_ALGORITHM, secret.params.algorithm.id)
             writer.putIntField(FIELD_DIGITS, secret.params.digits)
             writer.putIntField(FIELD_PERIOD, secret.params.period)
             writer.putStringField(FIELD_ISSUER, secret.issuer)
@@ -145,7 +145,7 @@ object OtpCrypto {
                         key?.wipe()
                         key = value.copyOf()
                     }
-                    FIELD_ALGORITHM -> algorithm = OtpAlgorithm.entries.getOrNull(value.asInt() - 1)
+                    FIELD_ALGORITHM -> algorithm = OtpAlgorithm.fromId(value.asInt())
                         ?: throw UnsupportedVaultException("Unsupported 2FA algorithm")
                     FIELD_DIGITS -> digits = value.asInt()
                     FIELD_PERIOD -> period = value.asInt()
@@ -190,7 +190,8 @@ object OtpCrypto {
         }
     }
 
-    private fun secretAad(keyringId: ByteArray, entryId: String): ByteArray =
+    /** Internal so the tests can seal hand-made records and check how [open] rejects them. */
+    internal fun secretAad(keyringId: ByteArray, entryId: String): ByteArray =
         SECRET_AAD + keyringId + entryId.toByteArray(Charsets.UTF_8)
 
     private fun recoveryAad(keyringId: ByteArray, params: KdfParams, salt: ByteArray): ByteArray {
@@ -229,6 +230,11 @@ object RecoveryCode {
         var count = 0
         for (char in input) {
             if (char == ' ' || char == '-') continue
+            // Only ASCII: look-alikes such as the dotless i would otherwise pass as I through uppercaseChar().
+            if (char.code > 127) {
+                symbols.wipe()
+                return null
+            }
             val symbol = when (val upper = char.uppercaseChar()) {
                 'O' -> '0'
                 'I', 'L' -> '1'

@@ -9,14 +9,31 @@ import kotlin.math.abs
  * tagged fields (`tag u16, length u32, value`), so newer versions can add fields and older
  * readers skip the tags they don't know. The first record holds what applies to the whole vault:
  * the settings and, once 2FA is in use, its keyring.
+ *
+ * Compatibility policy. [PAYLOAD_VERSION] only changes when the layout itself changes, which no
+ * older reader can cope with. New optional fields keep the payload version and raise
+ * [MIN_READER_VERSION] instead: a reader that understands less than that refuses the vault, so
+ * it can never open it, drop the fields it doesn't know and save the mutilated result over the
+ * good one. Fields that an older reader may safely ignore are added without raising it.
  */
 object VaultCodec {
     private const val PAYLOAD_VERSION = 1
     private const val MAX_ENTRIES = 100_000
 
+    /** Highest [MIN_READER_VERSION] this codec understands. Raise it with every field it learns to keep. */
+    const val READER_VERSION = 1
+
+    /**
+     * Lowest reader that keeps every field this codec writes, stored in the settings record. It
+     * is 1 today, so every existing vault keeps opening; it must only grow when a new field would
+     * be lost by a reader that doesn't know it.
+     */
+    const val MIN_READER_VERSION = 1
+
     private const val SETTING_AUTO_LOCK = 1
     private const val SETTING_CLIPBOARD_CLEAR = 2
     private const val VAULT_OTP_KEYRING = 3
+    private const val SETTING_MIN_READER_VERSION = 4
 
     private const val ENTRY_ID = 1
     private const val ENTRY_TITLE = 2
@@ -58,7 +75,9 @@ object VaultCodec {
             writer.putU16(PAYLOAD_VERSION)
 
             val keyring = data.otpKeyring
-            writer.putU16(if (keyring == null) 2 else 3)
+            writer.putU16(if (keyring == null) 3 else 4)
+            // First, so a reader too old for this vault stops before it parses anything else.
+            writer.putIntField(SETTING_MIN_READER_VERSION, MIN_READER_VERSION)
             writer.putIntField(SETTING_AUTO_LOCK, data.settings.autoLockSeconds)
             writer.putIntField(SETTING_CLIPBOARD_CLEAR, data.settings.clipboardClearSeconds)
             if (keyring != null) writer.putBytesField(VAULT_OTP_KEYRING, encodeKeyring(keyring))
@@ -96,6 +115,13 @@ object VaultCodec {
         var keyring: OtpKeyring? = null
         reader.readFields { tag, value ->
             when (tag) {
+                // Vaults from before this field carry no tag, which is version 1.
+                SETTING_MIN_READER_VERSION -> {
+                    val required = value.asInt()
+                    if (required > READER_VERSION) {
+                        throw UnsupportedVaultException("Vault needs reader version $required, this one is $READER_VERSION")
+                    }
+                }
                 // A value outside the choices (negative, huge) would disable the lock or the clipboard
                 // wipe: the file is not trusted on this, it only gets the closest choice.
                 SETTING_AUTO_LOCK ->

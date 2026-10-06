@@ -42,13 +42,16 @@ class VaultTest {
         assertEquals(VaultData(), VaultCodec.decode(VaultCodec.encode(VaultData())))
     }
 
+    // Settings record: version(2) + fieldCount(2) + 3 int fields (2 + 4 + 4 each): reader version,
+    // auto-lock and clipboard. Then entry count(4), so the first entry's field count sits at byte 38.
+    private val settingsEnd = 2 + 2 + 3 * 10
+    private val firstEntryFieldCountOffset = settingsEnd + 4 + 1
+
     @Test
     fun codecSkipsUnknownFields() {
         val encoded = VaultCodec.encode(VaultData(entries = listOf(sampleData.entries[1])))
-        // Settings record: version(2) + fieldCount(2) + 2 int fields (2 + 4 + 4 each).
-        val settingsEnd = 2 + 2 + 2 * 10
         val withExtraField = encoded.copyOf().also {
-            it[3] = 3 // declare one more settings field
+            it[3] = 4 // declare one more settings field
         }
         val unknownField = byteArrayOf(0x7F, 0x7F, 0, 0, 0, 2, 9, 9)
         val patched = withExtraField.copyOfRange(0, settingsEnd) + unknownField +
@@ -77,12 +80,20 @@ class VaultTest {
 
     @Test
     fun codecReadsPhaseOneEntriesWithoutAutofillTargets() {
-        // Phase 1 wrote 8 fields per entry. Rebuild that layout by dropping the (empty) 9th field:
-        // version(2) + settings(2 + 2 * 10) + entry count(4) puts the entry's field count at byte 28.
+        // Phase 1 wrote 8 fields per entry. Rebuild that layout by dropping the (empty) 9th field.
         val entry = sampleData.entries[1]
         val current = VaultCodec.encode(VaultData(entries = listOf(entry)))
-        val phaseOne = current.copyOf(current.size - 6).also { it[29] = 8 }
+        val phaseOne = current.copyOf(current.size - 6).also { it[firstEntryFieldCountOffset] = 8 }
         assertEquals(VaultData(entries = listOf(entry)), VaultCodec.decode(phaseOne))
+    }
+
+    @Test
+    fun codecReadsVaultsWrittenBeforeTheReaderVersionField() {
+        // Phase 1 to 3 settings records had only the two settings and no reader version: still version 1.
+        val payload = rawPayload(settings = mapOf(autoLockTag to 300, clipboardClearTag to 15), entries = listOf(mapOf(entryId to "a1")))
+        val decoded = VaultCodec.decode(payload)
+        assertEquals(VaultSettings(autoLockSeconds = 300, clipboardClearSeconds = 15), decoded.settings)
+        assertEquals(listOf("a1"), decoded.entries.map { it.id })
     }
 
     @Test
@@ -101,10 +112,34 @@ class VaultTest {
 
     @Test
     fun codecWritesTheSameBytesWhenNo2faIsUsed() {
-        // Vaults without 2FA keep the phase 1 and 2 layout: 2 settings fields and 9 per entry.
+        // Vaults without 2FA keep the phase 1 and 2 entry layout (9 fields per entry) and the
+        // settings record only gains the reader version: 3 fields.
         val encoded = VaultCodec.encode(VaultData(entries = listOf(sampleData.entries[1])))
-        assertEquals(2, encoded[3].toInt())
-        assertEquals(9, encoded[29].toInt())
+        assertEquals(3, encoded[3].toInt())
+        assertEquals(9, encoded[firstEntryFieldCountOffset].toInt())
+    }
+
+    @Test
+    fun codecWritesTheMinimumReaderVersionFirstAndRejectsHigherOnes() {
+        assertEquals(1, VaultCodec.MIN_READER_VERSION)
+        assertEquals(1, VaultCodec.READER_VERSION)
+        assertTrue(VaultCodec.MIN_READER_VERSION <= VaultCodec.READER_VERSION)
+        // tag 4 (u16), length 4 (u32), value 1 (i32), right after the payload version and field count.
+        val encoded = VaultCodec.encode(VaultData())
+        assertArrayEquals(byteArrayOf(0, 1, 0, 3, 0, 4, 0, 0, 0, 4, 0, 0, 0, 1), encoded.copyOf(14))
+
+        val minReaderTag = 4
+        assertEquals(VaultData(), VaultCodec.decode(rawPayload(settings = mapOf(minReaderTag to 1))))
+        assertEquals(VaultData(), VaultCodec.decode(rawPayload(settings = mapOf(minReaderTag to 0))))
+        // A vault that a newer app marked as needing a newer reader is refused whole, so this
+        // reader can never save it back without the fields it doesn't know.
+        for (required in listOf(2, 100, Int.MAX_VALUE)) {
+            try {
+                VaultCodec.decode(rawPayload(settings = mapOf(minReaderTag to required, autoLockTag to 60)))
+                fail("A vault needing reader version $required was opened")
+            } catch (expected: UnsupportedVaultException) {
+            }
+        }
     }
 
     @Test(expected = CorruptedVaultException::class)
@@ -245,6 +280,248 @@ class VaultTest {
         val normalized = VaultCodec.decode(rawPayload(settings = mapOf(autoLockTag to -1))).settings
         assertTrue(normalized.autoLockSeconds in VaultSettings.AUTO_LOCK_CHOICES)
         assertTrue(normalized.clipboardClearSeconds in VaultSettings.CLIPBOARD_CLEAR_CHOICES)
+    }
+
+    private fun i32(value: Int): ByteArray = ByteWriter(4).apply { putI32(value) }.toByteArray()
+
+    /** One record: a declared field count (by default the real one) and `tag, length, value` triples. */
+    private fun rawRecord(vararg fields: Pair<Int, ByteArray>, declaredCount: Int = fields.size, lengthOverride: Int? = null): ByteArray {
+        val writer = ByteWriter(64)
+        writer.putU16(declaredCount)
+        for ((tag, value) in fields) {
+            writer.putU16(tag)
+            writer.putI32(lengthOverride ?: value.size)
+            writer.putBytes(value)
+        }
+        return writer.toByteArray()
+    }
+
+    /** A payload from raw records, so every byte of the layout is under the test's control. */
+    private fun rawBytes(version: Int = 1, settings: ByteArray = rawRecord(), entryCount: Int, entries: List<ByteArray>): ByteArray {
+        val writer = ByteWriter(64)
+        writer.putU16(version)
+        writer.putBytes(settings)
+        writer.putI32(entryCount)
+        for (entry in entries) writer.putBytes(entry)
+        return writer.toByteArray()
+    }
+
+    private val entryOtpTag = 10
+    private val keyringTag = 3
+
+    private inline fun <reified T : VaultException> expect(what: String, block: () -> Unit) {
+        try {
+            block()
+            fail("$what was accepted")
+        } catch (e: VaultException) {
+            if (e !is T) fail("$what: expected ${T::class.simpleName}, got ${e::class.simpleName}")
+        }
+    }
+
+    @Test
+    fun codecRejectsHostilePayloads() {
+        val entry = rawRecord(entryId to "a1".toByteArray())
+        // Sanity: the builder produces what the codec reads.
+        assertEquals(listOf("a1"), VaultCodec.decode(rawBytes(entryCount = 1, entries = listOf(entry))).entries.map { it.id })
+
+        expect<UnsupportedVaultException>("a payload of a future version") { VaultCodec.decode(rawBytes(version = 2, entryCount = 0, entries = emptyList())) }
+        expect<UnsupportedVaultException>("a payload of version 0") { VaultCodec.decode(rawBytes(version = 0, entryCount = 0, entries = emptyList())) }
+        expect<CorruptedVaultException>("a negative entry count") { VaultCodec.decode(rawBytes(entryCount = -1, entries = emptyList())) }
+        expect<CorruptedVaultException>("100 001 entries") { VaultCodec.decode(rawBytes(entryCount = 100_001, entries = emptyList())) }
+        expect<CorruptedVaultException>("more entries than records") { VaultCodec.decode(rawBytes(entryCount = 2, entries = listOf(entry))) }
+        expect<CorruptedVaultException>("1 025 fields") {
+            VaultCodec.decode(rawBytes(settings = rawRecord(declaredCount = 1_025), entryCount = 0, entries = emptyList()))
+        }
+        expect<CorruptedVaultException>("a field length of 0xFFFFFFFF") {
+            VaultCodec.decode(rawBytes(settings = rawRecord(autoLockTag to i32(60), lengthOverride = -1), entryCount = 0, entries = emptyList()))
+        }
+        expect<CorruptedVaultException>("a field longer than what remains") {
+            VaultCodec.decode(rawBytes(entryCount = 1, entries = listOf(rawRecord(entryId to "a1".toByteArray(), lengthOverride = 3 + 4 + 1))))
+        }
+        expect<CorruptedVaultException>("an int field of 3 bytes") {
+            VaultCodec.decode(rawBytes(settings = rawRecord(autoLockTag to byteArrayOf(0, 0, 60)), entryCount = 0, entries = emptyList()))
+        }
+        expect<CorruptedVaultException>("a long field of 4 bytes") {
+            VaultCodec.decode(rawBytes(entryCount = 1, entries = listOf(rawRecord(entryId to "a1".toByteArray(), 7 to i32(1)))))
+        }
+        expect<CorruptedVaultException>("an entry without id") {
+            VaultCodec.decode(rawBytes(entryCount = 1, entries = listOf(rawRecord(2 to "Banco".toByteArray()))))
+        }
+        expect<CorruptedVaultException>("an empty payload") { VaultCodec.decode(ByteArray(0)) }
+        expect<CorruptedVaultException>("a payload cut inside the entry count") { VaultCodec.decode(rawBytes(entryCount = 0, entries = emptyList()).copyOf(5)) }
+
+        // A sealed 2FA secret is at least a nonce, a tag and one byte, and never above 4 096 bytes.
+        fun withOtp(size: Int) = rawBytes(entryCount = 1, entries = listOf(rawRecord(entryId to "a1".toByteArray(), entryOtpTag to ByteArray(size) { 1 })))
+        expect<CorruptedVaultException>("a 2FA field of 28 bytes") { VaultCodec.decode(withOtp(28)) }
+        expect<CorruptedVaultException>("a 2FA field of 4 097 bytes") { VaultCodec.decode(withOtp(4_097)) }
+        assertEquals(29, VaultCodec.decode(withOtp(29)).entries[0].otp!!.bytes.size)
+        assertEquals(4_096, VaultCodec.decode(withOtp(4_096)).entries[0].otp!!.bytes.size)
+    }
+
+    @Test
+    fun codecRejectsHostileKeyrings() {
+        val good = mapOf(
+            1 to ByteArray(16) { 1 }, 2 to i32(64), 3 to i32(1), 4 to i32(1),
+            5 to ByteArray(32) { 2 }, 6 to ByteArray(OtpKeyring.KEY_SIZE + 28) { 3 },
+        )
+        fun payload(keyring: ByteArray) = rawBytes(settings = rawRecord(keyringTag to keyring), entryCount = 0, entries = emptyList())
+        fun keyringWith(vararg changes: Pair<Int, ByteArray>): ByteArray =
+            rawRecord(*(good + changes).entries.map { it.key to it.value }.toTypedArray())
+
+        val decoded = VaultCodec.decode(payload(keyringWith())).otpKeyring!!
+        assertEquals(OtpKeyring(ByteArray(16) { 1 }, KdfParams(64, 1, 1), ByteArray(32) { 2 }, ByteArray(60) { 3 }), decoded)
+        assertEquals(16, VaultCodec.decode(payload(keyringWith(5 to ByteArray(16)))).otpKeyring!!.salt.size)
+        assertEquals(64, VaultCodec.decode(payload(keyringWith(5 to ByteArray(64)))).otpKeyring!!.salt.size)
+
+        expect<CorruptedVaultException>("a keyring salt of 15 bytes") { VaultCodec.decode(payload(keyringWith(5 to ByteArray(15)))) }
+        expect<CorruptedVaultException>("a keyring salt of 65 bytes") { VaultCodec.decode(payload(keyringWith(5 to ByteArray(65)))) }
+        expect<CorruptedVaultException>("a keyring id of 17 bytes") { VaultCodec.decode(payload(keyringWith(1 to ByteArray(17)))) }
+        expect<CorruptedVaultException>("a wrapped 2FA key of 59 bytes") { VaultCodec.decode(payload(keyringWith(6 to ByteArray(59)))) }
+        expect<CorruptedVaultException>("a keyring without wrapped key") { VaultCodec.decode(payload(rawRecord(*(good - 6).map { it.key to it.value }.toTypedArray()))) }
+        expect<CorruptedVaultException>("trailing data in the keyring") { VaultCodec.decode(payload(keyringWith() + byteArrayOf(0))) }
+        expect<UnsupportedVaultException>("keyring memory of 4 KiB") { VaultCodec.decode(payload(keyringWith(2 to i32(4)))) }
+        expect<UnsupportedVaultException>("keyring memory above the cap") { VaultCodec.decode(payload(keyringWith(2 to i32(KdfParams.MAX_MEMORY_KIB + 1)))) }
+        expect<UnsupportedVaultException>("keyring with 0 iterations") { VaultCodec.decode(payload(keyringWith(3 to i32(0)))) }
+        expect<UnsupportedVaultException>("keyring with 17 iterations") { VaultCodec.decode(payload(keyringWith(3 to i32(17)))) }
+        expect<UnsupportedVaultException>("keyring with 0 lanes") { VaultCodec.decode(payload(keyringWith(4 to i32(0)))) }
+        expect<UnsupportedVaultException>("keyring with 17 lanes") { VaultCodec.decode(payload(keyringWith(4 to i32(17)))) }
+        expect<CorruptedVaultException>("a keyring record cut short") { VaultCodec.decode(payload(keyringWith().copyOf(10))) }
+    }
+
+    /** Writes a header field by field, as a hostile file would, so no test depends on offsets. */
+    private fun rawHeader(
+        version: Int = 1,
+        kdf: Int = 1,
+        memoryKiB: Int = testParams.memoryKiB,
+        iterations: Int = testParams.iterations,
+        parallelism: Int = testParams.parallelism,
+        salt: ByteArray = ByteArray(32) { 1 },
+        saltLength: Int = salt.size,
+        wrappedDek: ByteArray = ByteArray(32 + 28) { 2 }, // DEK plus nonce and tag
+        wrappedLength: Int = wrappedDek.size,
+        body: ByteArray = ByteArray(28) { 3 },
+    ): ByteArray {
+        val writer = ByteWriter(128)
+        writer.putBytes("BOVD".toByteArray())
+        writer.putU8(version)
+        writer.putU8(kdf)
+        writer.putI32(memoryKiB)
+        writer.putI32(iterations)
+        writer.putU8(parallelism)
+        writer.putU8(saltLength)
+        writer.putBytes(salt)
+        writer.putU8(wrappedLength)
+        writer.putBytes(wrappedDek)
+        writer.putBytes(body)
+        return writer.toByteArray()
+    }
+
+    @Test
+    fun containerRejectsHostileHeaders() {
+        // Sanity: the builder produces a header the container parses, with every length at its limit.
+        assertEquals(testParams, VaultContainer.parseHeader(rawHeader()).kdfParams)
+        VaultContainer.parseHeader(rawHeader(salt = ByteArray(16)))
+        VaultContainer.parseHeader(rawHeader(salt = ByteArray(64)))
+
+        expect<UnsupportedVaultException>("a vault of a future format version") { VaultContainer.parseHeader(rawHeader(version = 2)) }
+        expect<UnsupportedVaultException>("a vault of format version 0") { VaultContainer.parseHeader(rawHeader(version = 0)) }
+        expect<UnsupportedVaultException>("an unknown key derivation") { VaultContainer.parseHeader(rawHeader(kdf = 2)) }
+        expect<UnsupportedVaultException>("key derivation 0") { VaultContainer.parseHeader(rawHeader(kdf = 0)) }
+        expect<CorruptedVaultException>("a salt of 15 bytes") { VaultContainer.parseHeader(rawHeader(salt = ByteArray(15))) }
+        expect<CorruptedVaultException>("a salt of 65 bytes") { VaultContainer.parseHeader(rawHeader(salt = ByteArray(65))) }
+        expect<CorruptedVaultException>("a salt length of 0") { VaultContainer.parseHeader(rawHeader(saltLength = 0)) }
+        // The wrapped DEK is exactly 60 bytes: 32 of key, 12 of nonce and 16 of tag.
+        expect<CorruptedVaultException>("a wrapped DEK of 59 bytes") { VaultContainer.parseHeader(rawHeader(wrappedDek = ByteArray(59))) }
+        expect<CorruptedVaultException>("a wrapped DEK of 61 bytes") { VaultContainer.parseHeader(rawHeader(wrappedDek = ByteArray(61))) }
+        expect<CorruptedVaultException>("a wrapped DEK of 48 bytes") { VaultContainer.parseHeader(rawHeader(wrappedDek = ByteArray(48))) }
+        expect<CorruptedVaultException>("a wrapped DEK of 32 bytes") { VaultContainer.parseHeader(rawHeader(wrappedDek = ByteArray(32))) }
+        expect<CorruptedVaultException>("a wrapped DEK length of 255") { VaultContainer.parseHeader(rawHeader(wrappedLength = 255)) }
+        expect<CorruptedVaultException>("a wrapped DEK length of 0") { VaultContainer.parseHeader(rawHeader(wrappedLength = 0)) }
+        expect<CorruptedVaultException>("a body of 27 bytes") { VaultContainer.parseHeader(rawHeader(body = ByteArray(27))) }
+        expect<CorruptedVaultException>("a header cut inside the salt") { VaultContainer.parseHeader(rawHeader().copyOf(20)) }
+        expect<CorruptedVaultException>("a wrong magic") { VaultContainer.parseHeader(rawHeader().also { it[0] = 'X'.code.toByte() }) }
+        expect<UnsupportedVaultException>("memory of 7 KiB") { VaultContainer.parseHeader(rawHeader(memoryKiB = 7)) }
+        expect<UnsupportedVaultException>("memory above the cap") { VaultContainer.parseHeader(rawHeader(memoryKiB = KdfParams.MAX_MEMORY_KIB + 1)) }
+        expect<UnsupportedVaultException>("0 iterations") { VaultContainer.parseHeader(rawHeader(iterations = 0)) }
+        expect<UnsupportedVaultException>("17 iterations") { VaultContainer.parseHeader(rawHeader(iterations = 17)) }
+        expect<UnsupportedVaultException>("0 lanes") { VaultContainer.parseHeader(rawHeader(parallelism = 0)) }
+        expect<UnsupportedVaultException>("17 lanes") { VaultContainer.parseHeader(rawHeader(parallelism = 17)) }
+        expect<UnsupportedVaultException>("less memory than 8 KiB per lane") { VaultContainer.parseHeader(rawHeader(memoryKiB = 64, parallelism = 9)) }
+
+        // open() goes through the same validation before touching the password.
+        expect<UnsupportedVaultException>("a future format on open") { VaultContainer.open(rawHeader(version = 2), "clave".toCharArray()) }
+        expect<CorruptedVaultException>("a short salt on open") { VaultContainer.open(rawHeader(salt = ByteArray(15)), "clave".toCharArray()) }
+        expect<CorruptedVaultException>("a short salt on openWithKey") { VaultContainer.openWithKey(rawHeader(salt = ByteArray(15)), randomBytes(32)) }
+    }
+
+    @Test
+    fun bodyTransplantBetweenVaultsIsRejected() {
+        // Two vaults with the same password: the body of one pasted under the header of the other
+        // must fail, because the AAD of the body is the whole header.
+        val first = VaultContainer.create("misma clave".toCharArray(), sampleData, testParams)
+        val second = VaultContainer.create("misma clave".toCharArray(), VaultData(), testParams)
+        val firstBlob = VaultContainer.seal(first.header, first.dek, first.data)
+        val secondBlob = VaultContainer.seal(second.header, second.dek, second.data)
+        val transplanted = first.header.encoded + secondBlob.copyOfRange(second.header.encoded.size, secondBlob.size)
+        expect<CorruptedVaultException>("a body from another vault") { VaultContainer.open(transplanted, "misma clave".toCharArray()) }
+        expect<CorruptedVaultException>("a body from another vault, by key") { VaultContainer.openWithKey(transplanted, first.dek) }
+        expect<CorruptedVaultException>("a body from another vault, with its own key") { VaultContainer.openWithKey(transplanted, second.dek) }
+        // The originals still open: nothing else was touched.
+        assertEquals(sampleData, VaultContainer.open(firstBlob, "misma clave".toCharArray()).data)
+    }
+
+    @Test
+    fun wrappedDekSwapIsRejected() {
+        val first = VaultContainer.create("misma clave".toCharArray(), sampleData, testParams)
+        val second = VaultContainer.create("misma clave".toCharArray(), sampleData, testParams)
+        val secondBlob = VaultContainer.seal(second.header, second.dek, second.data)
+        val headerSize = second.header.encoded.size
+        val wrappedSize = 32 + 28
+        // The wrapped DEK is the tail of the header: replace it with the other vault's.
+        val swapped = secondBlob.copyOf().also {
+            first.header.encoded.copyInto(it, headerSize - wrappedSize, headerSize - wrappedSize)
+        }
+        assertFalse(swapped.contentEquals(secondBlob))
+        expect<WrongPasswordException>("a wrapped DEK from another vault") { VaultContainer.open(swapped, "misma clave".toCharArray()) }
+    }
+
+    @Test
+    fun openWithKeyRejectsForeignDekAndLeavesItIntact() {
+        val vault = VaultContainer.create("clave".toCharArray(), sampleData, testParams)
+        val blob = VaultContainer.seal(vault.header, vault.dek, vault.data)
+        val foreign = randomBytes(32)
+        val copy = foreign.copyOf()
+        expect<CorruptedVaultException>("a foreign DEK") { VaultContainer.openWithKey(blob, foreign) }
+        // The caller's copy (the Keystore-wrapped one) is not wiped by the failed attempt.
+        assertArrayEquals(copy, foreign)
+        // Nor is the right one, when the body fails for other reasons.
+        val own = vault.dek.copyOf()
+        val damaged = blob.copyOf().also { it[it.size - 1] = (it[it.size - 1].toInt() xor 1).toByte() }
+        expect<CorruptedVaultException>("a damaged body") { VaultContainer.openWithKey(damaged, own) }
+        assertArrayEquals(vault.dek, own)
+    }
+
+    @Test
+    fun headerFromOldPasswordDoesNotOpenNewBody() {
+        val old = VaultContainer.create("vieja".toCharArray(), sampleData, testParams)
+        val rekeyed = VaultContainer.changePassword("nueva".toCharArray(), old.data, testParams)
+        val newBlob = VaultContainer.seal(rekeyed.header, rekeyed.dek, rekeyed.data)
+        // An old header (whose password may be compromised) pasted on a current body.
+        val spliced = old.header.encoded + newBlob.copyOfRange(rekeyed.header.encoded.size, newBlob.size)
+        expect<CorruptedVaultException>("a current body under an old header") { VaultContainer.open(spliced, "vieja".toCharArray()) }
+        expect<WrongPasswordException>("the new password on the old header") { VaultContainer.open(spliced, "nueva".toCharArray()) }
+        expect<CorruptedVaultException>("the old DEK on the current body") { VaultContainer.openWithKey(spliced, old.dek) }
+    }
+
+    @Test
+    fun deviceLayerRejectsAFutureVersionByte() {
+        val key = randomBytes(32)
+        val sealed = DeviceLayer.seal(key, "portable".toByteArray())
+        assertEquals(1, sealed[4].toInt())
+        val future = sealed.copyOf().also { it[4] = 2 }
+        expect<CorruptedVaultException>("a device layer of version 2") { DeviceLayer.open(key, future) }
+        val truncated = sealed.copyOf(4 + 28 - 1)
+        expect<CorruptedVaultException>("a device layer too short for a tag") { DeviceLayer.open(key, truncated) }
     }
 
     @Test
