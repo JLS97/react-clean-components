@@ -12,10 +12,15 @@ depende de ningún servidor ni API externa.
 - Entradas con nombre, usuario o email, contraseña, web o app y notas. Búsqueda.
 - Generador de contraseñas (8–128 caracteres, tipos de caracteres, evitar caracteres parecidos).
 - Copiar al portapapeles marcado como sensible y borrado automático (15 s – 2 min).
-- Desbloqueo con huella opcional, ligado a una clave de hardware.
+- Desbloqueo con huella opcional, ligado a una clave de hardware. Activarla, exportar o restaurar
+  una copia y relajar los ajustes de seguridad piden la contraseña maestra.
+- Frase antiphishing personal que se muestra antes de pedir la contraseña maestra, también cuando
+  Bóveda aparece encima de otra app para rellenar.
 - Bloqueo automático por inactividad (configurable, con la opción de bloquear al salir de la
   app), siempre al apagar la pantalla y, con cualquier ajuste, tras 5 minutos en segundo plano.
-- Copias de seguridad cifradas (exportar e importar un archivo `.bvd`).
+- Copias de seguridad cifradas (exportar e importar un archivo `.bvd`). La copia exportada se
+  vuelve a leer y abrir antes de darla por buena; Bóveda recuerda cuándo fue la última y avisa si
+  hay cambios sin copiar. Restaurar guarda la bóveda anterior para poder deshacerlo.
 - Cambio de contraseña maestra.
 - **Autorrelleno** en otras apps y en Chrome desde la barra de sugerencias del teclado, y oferta de
   guardar las credenciales nuevas al iniciar sesión o registrarte.
@@ -36,8 +41,10 @@ depende de ningún servidor ni API externa.
 
 Cómo protege tus datos:
 
-- **El teclado no ve nada.** La sugerencia solo dice «Bóveda». Nombres de cuentas, usuarios y
-  contraseñas nunca pasan por el teclado, que es otra app.
+- **La sugerencia no lleva nada.** La sugerencia solo dice «Bóveda». Nombres de cuentas, usuarios y
+  contraseñas nunca pasan por el teclado al elegir. Una vez rellenado, el campo de la otra app es
+  texto normal que el teclado activo puede leer como cualquier otro campo: es inherente al
+  autorrelleno de Android, por eso conviene un teclado de confianza.
 - **Nada sale sin que elijas.** Android solo recibe los datos de la entrada que tocas dentro de
   Bóveda, y los pone directamente en los campos de la app que los pidió.
 - **Antiphishing: webs.** Cualquier app puede decirle a Android que está mostrando `banco.es`, así
@@ -89,7 +96,8 @@ Cómo se protegen:
 - **Huella en cada código.** Los secretos se cifran con una clave 2FA propia. En el teléfono, esa
   clave está envuelta por una clave de Android Keystore que exige una huella fuerte (clase 3) en
   cada uso. Desbloquear la bóveda con la contraseña maestra no basta para ver un código.
-- **Nuevas huellas.** Si añades o borras una huella, o quitas el bloqueo de pantalla, el sistema
+- **Nuevas huellas.** Si inscribes una huella nueva o quitas el bloqueo de pantalla (borrar una huella dejando
+  otras no cuenta), el sistema
   destruye esa clave: nadie puede registrar su dedo para leer tus códigos. Los recuperas con el
   código de recuperación.
 - **Código de recuperación.** Es aleatorio (100 bits) y protege, con Argon2id, la copia de la
@@ -119,13 +127,21 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
 
 - **Doble capa.** El archivo del teléfono lleva una capa extra cuya clave vive en el hardware
   seguro del teléfono y solo funciona con el teléfono desbloqueado. Una copia del archivo sacada
-  del teléfono no sirve ni para intentar adivinar la contraseña maestra.
+  del teléfono no sirve ni para intentar adivinar la contraseña maestra. Esa capa protege frente a
+  copias del archivo (extracción por USB, copia del fabricante, clonado del almacenamiento), no
+  frente a quien controle el sistema con el teléfono desbloqueado (root, malware): ahí solo queda
+  la contraseña maestra. Ajustes muestra si la clave vive en StrongBox, en el TEE o solo en
+  software, y avisa en este último caso.
 - **Copias portables.** El `.bvd` exportado solo depende de la contraseña maestra (Argon2id), así
   que se puede restaurar en otro teléfono. Su seguridad es la de tu contraseña maestra.
 - **Integridad.** AES-GCM autentica todo, incluidas las cabeceras y los parámetros de Argon2id:
   cualquier modificación del archivo se detecta.
 - **Huella.** Una copia de la DEK se cifra con una clave de Keystore que exige huella fuerte
-  (clase 3) en cada uso y que el sistema destruye si se añade una huella nueva.
+  (clase 3) en cada uso y que el sistema destruye si se inscribe una huella nueva o se quita el
+  bloqueo de pantalla (borrar una huella dejando otras no la invalida). Vale cualquier huella
+  registrada en el teléfono: si otras personas tienen sus dedos inscritos, podrán abrir la bóveda y
+  los códigos 2FA. Revísalo antes de activarla; al cambiar la contraseña maestra la huella se
+  desactiva y hay que volver a activarla.
 - **Freno a los intentos.** Tras 5 contraseñas incorrectas, cada fallo bloquea la siguiente
   comprobación de contraseña (desbloqueo, cambio de contraseña o restauración) durante un tiempo
   creciente (30 s … 64 min). La espera se mide con el reloj monótono del sistema y el contador de
@@ -135,7 +151,7 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
 - **Sin fugas.** Sin permiso de Internet (el manifiesto lo elimina aunque una librería lo pida).
   Sin copias en la nube ni transferencias entre dispositivos. `FLAG_SECURE` (sin capturas ni
   vista previa en recientes). Oculta superposiciones de otras apps (tapjacking). Excluida del
-  autorrelleno de terceros. El portapapeles se marca como sensible y se borra solo pasado el
+  autorrelleno de terceros, también sus diálogos. El portapapeles se marca como sensible y se borra solo pasado el
   tiempo elegido, también si el sistema cierra la app (mejor esfuerzo: desde segundo plano
   Android no deja comprobar si el clip sigue siendo el de Bóveda, así que puede borrar algo
   copiado después).
@@ -150,7 +166,9 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
 - La app no declara el permiso `INTERNET` y el manifiesto lo elimina aunque una librería lo pida.
   El autorrelleno tampoco lo necesita: es comunicación entre apps dentro del teléfono.
 - Para comprobar la firma de la app que pide rellenar, Bóveda puede ver qué apps tienes
-  instaladas (permiso `QUERY_ALL_PACKAGES`). Sin Internet, esa información no sale del teléfono.
+  instaladas (permiso `QUERY_ALL_PACKAGES`). Solo se usa para leer el certificado de la app que
+  pide rellenar; la lista de apps no se guarda ni se muestra. Sin Internet, esa información no
+  sale del teléfono.
   Sin ese permiso, Android no deja que la app abra ninguna conexión: no es una promesa del
   código, lo impone el sistema.
 - No hay servidores, cuentas, APIs externas, analíticas ni informes de errores. Las dependencias
@@ -259,6 +277,13 @@ Todo seguirá funcionando sin Internet.
 - Otras ideas: auditoría local de contraseñas repetidas o débiles (sin consultar servicios de
   filtraciones), importar la exportación de Google Authenticator, generador de frases, favoritos
   y categorías.
+
+## Seguridad y auditoría
+
+La política de seguridad, el modelo de amenaza y cómo reportar un fallo están en
+[SECURITY.md](SECURITY.md). En octubre de 2026 se hizo una auditoría completa del código; el
+informe con los 101 hallazgos verificados y su estado de corrección está en
+[docs/AUDITORIA_SEGURIDAD.md](docs/AUDITORIA_SEGURIDAD.md) y su anexo.
 
 ## Licencia
 
