@@ -28,7 +28,8 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
 
     /**
      * Fills with [entry]. With [rememberChoice], links the app or site to it first, unless the
-     * target can't be linked safely (see AutofillTarget.key).
+     * target can't be linked safely (see AutofillTarget.key). An entry already linked to the app
+     * through an older certificate of its key rotation gets its link moved to the current one.
      */
     fun pick(
         entry: VaultEntry,
@@ -38,13 +39,20 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
         onReady: (VaultEntry) -> Unit,
     ) {
         if (busy) return
-        if (!rememberChoice || target.key == null || CredentialMatcher.isExactMatch(entry, target) || impersonates(target)) {
+        // A new link needs the user's choice and a linkable target; an existing one only needs
+        // following the app's current key. Neither happens next to a suspected impersonation.
+        val exact = CredentialMatcher.isExactMatch(entry, target)
+        if ((!exact && (!rememberChoice || target.key == null)) || impersonates(target)) {
+            onReady(entry)
+            return
+        }
+        val linked = CredentialMatcher.remember(entry, target)
+        if (linked == entry) {
             onReady(entry)
             return
         }
         busy = true
         viewModelScope.launch {
-            val linked = CredentialMatcher.remember(entry, target)
             // If saving the link fails, still fill: the user asked for this entry.
             session.saveEntry(linked)
             busy = false

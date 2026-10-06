@@ -311,6 +311,35 @@ class AutofillLogicTest {
     }
 
     @Test
+    fun movesAppLinksToTheCurrentCertificateAfterAKeyRotation() {
+        val newCertificate = "c".repeat(64)
+        val rotated = TargetResolver.resolve("com.bank.app", AppCertificates(current = newCertificate, accepted = setOf(bankCertificate, newCertificate)), null)
+        val linked = entry("Banco", targets = listOf("web:banco.es", "android:com.bank.app@$bankCertificate"))
+
+        // The first match through the old certificate rewrites the link; other links are untouched.
+        val migrated = CredentialMatcher.remember(linked, rotated)
+        assertEquals(listOf("web:banco.es", "android:com.bank.app@$newCertificate"), migrated.autofillTargets)
+        assertTrue(CredentialMatcher.isExactMatch(migrated, rotated))
+        assertEquals(migrated, CredentialMatcher.remember(migrated, rotated))
+        // Two links to the same app (one old, one current) collapse into one.
+        val twice = entry("Banco", targets = listOf("android:com.bank.app@$bankCertificate", "android:com.bank.app@$newCertificate"))
+        assertEquals(listOf("android:com.bank.app@$newCertificate"), CredentialMatcher.remember(twice, rotated).autofillTargets)
+
+        // The link also moves when the target itself can't be linked (a WebView reporting a domain).
+        val webView = TargetResolver.resolve("com.bank.app", AppCertificates(current = newCertificate, accepted = setOf(bankCertificate, newCertificate)), "login.banco.es")
+        assertNull(webView.key)
+        assertEquals(migrated.autofillTargets, CredentialMatcher.remember(linked, webView).autofillTargets)
+
+        // Afterwards an app signed only with the old (possibly leaked) key no longer matches: it is flagged.
+        val oldKeyOnly = TargetResolver.resolve("com.bank.app", bankApp, null)
+        assertFalse(CredentialMatcher.isExactMatch(migrated, oldKeyOnly))
+        assertEquals(listOf(migrated), CredentialMatcher.impersonationWarnings(listOf(migrated), oldKeyOnly))
+        // Links to other apps or under unknown certificates are left as they are (a new link is added as usual).
+        val other = entry("Otra", targets = listOf("android:com.other.app@$bankCertificate", "android:com.bank.app@${"d".repeat(64)}"))
+        assertEquals(other.autofillTargets + "android:com.bank.app@$newCertificate", CredentialMatcher.remember(other, rotated).autofillTargets)
+    }
+
+    @Test
     fun genuineAppShowingAWebPageStillMatchesItsLink() {
         // A verified bank app whose login screen is a WebView reporting a domain.
         val linked = entry("Banco", targets = listOf("android:com.bank.app@$bankCertificate"))
@@ -469,6 +498,31 @@ class AutofillLogicTest {
         val multi = AppCertificates("$chromeCertificate,${"e".repeat(64)}", setOf("$chromeCertificate,${"e".repeat(64)}"))
         assertTrue(TrustedBrowsers.isTrusted("com.android.chrome", multi))
         assertFalse(TrustedBrowsers.isTrusted("com.android.chrome", attacker))
+    }
+
+    @Test
+    fun trustsBrowsersOnlyByTheirCurrentCertificate() {
+        // The browser rotated its key and the table wasn't updated yet: the old key may have leaked,
+        // and an app signed only with it would carry the same history, so it is no longer trusted.
+        val rotatedAway = AppCertificates(current = "e".repeat(64), accepted = setOf(chromeCertificate, "e".repeat(64)))
+        assertFalse(TrustedBrowsers.isTrusted("com.android.chrome", rotatedAway))
+        assertNull(TargetResolver.resolve("com.android.chrome", rotatedAway, "banco.es").host)
+        // The current key being known is enough, whatever the history holds.
+        val rotatedInto = AppCertificates(current = chromeCertificate, accepted = setOf("e".repeat(64), chromeCertificate))
+        assertTrue(TrustedBrowsers.isTrusted("com.android.chrome", rotatedInto))
+        // A multi-signer history doesn't count either unless a current signer is known.
+        val oldMulti = AppCertificates("${"e".repeat(64)},${"f".repeat(64)}", setOf("$chromeCertificate,${"e".repeat(64)}", "${"e".repeat(64)},${"f".repeat(64)}"))
+        assertFalse(TrustedBrowsers.isTrusted("com.android.chrome", oldMulti))
+    }
+
+    @Test
+    fun recognisesPackageNames() {
+        for (valid in listOf("com.android.chrome", "a.b", "io.github.jls97.boveda", "com.Bank_1.app2")) {
+            assertTrue(valid, TargetResolver.isPackageName(valid))
+        }
+        for (invalid in listOf("", " ", "chrome", "com..chrome", ".com.chrome", "com.chrome.", "com.1bank.app", "com.bank app", "com/bank", "banco.es/login", "a.".repeat(130) + "b")) {
+            assertFalse(invalid, TargetResolver.isPackageName(invalid))
+        }
     }
 
     @Test

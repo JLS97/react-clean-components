@@ -132,6 +132,16 @@ object TargetResolver {
         val scheme = webScheme?.trim()?.removeSuffix(":")?.lowercase().orEmpty()
         return scheme.isNotEmpty() && scheme != "https"
     }
+
+    /**
+     * True when [value] has the shape of an Android package name: two or more segments of letters,
+     * digits and underscores, each starting with a letter, joined by dots. Anything else can't
+     * name an installed app and isn't worth asking the package manager about.
+     */
+    fun isPackageName(value: String): Boolean = value.length <= MAX_PACKAGE_NAME_LENGTH && PACKAGE_NAME.matches(value)
+
+    private const val MAX_PACKAGE_NAME_LENGTH = 255
+    private val PACKAGE_NAME = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")
 }
 
 /**
@@ -188,7 +198,11 @@ object CredentialMatcher {
         }
     }
 
-    /** `android:<package>@<certificate>` matches when both the package and the certificate do. */
+    /**
+     * `android:<package>@<certificate>` matches when both the package and the certificate do. Older
+     * certificates of a key rotation are accepted so a link survives it, and [remember] then moves
+     * the link to the current certificate (see [migrateAppLinks]).
+     */
     private fun appLinkMatches(link: String, target: AutofillTarget): Boolean {
         if (!link.startsWith(APP_PREFIX)) return false
         val accepted = target.certificates?.accepted ?: return false
@@ -268,11 +282,34 @@ object CredentialMatcher {
 
     /**
      * The entry, remembering [target] so it is an exact match next time. Targets that must not be
-     * remembered (see [AutofillTarget.key]) leave the entry unchanged.
+     * remembered (see [AutofillTarget.key]) leave the entry unchanged, except that a link to the
+     * same app under an older certificate of its key rotation is moved to the current one.
      */
     fun remember(entry: VaultEntry, target: AutofillTarget): VaultEntry {
-        val key = target.key ?: return entry
-        return if (isExactMatch(entry, target)) entry else entry.copy(autofillTargets = entry.autofillTargets + key)
+        val migrated = migrateAppLinks(entry, target)
+        val key = target.key ?: return migrated
+        return if (isExactMatch(migrated, target)) migrated else migrated.copy(autofillTargets = migrated.autofillTargets + key)
+    }
+
+    /**
+     * Links to [target]'s app through an older certificate of its key rotation, rewritten to the
+     * current one. The old key may have leaked (a usual reason to rotate), and Android lets an app
+     * signed only with it keep the package name: once the link follows the current key, such an
+     * app no longer matches and is flagged by [impersonationWarnings] instead.
+     */
+    private fun migrateAppLinks(entry: VaultEntry, target: AutofillTarget): VaultEntry {
+        val certificates = target.certificates ?: return entry
+        val migrated = entry.autofillTargets
+            .map { link ->
+                val (packageName, certificate) = splitAppLink(link) ?: return@map link
+                val outdated = packageName == target.packageName &&
+                    certificate.isNotEmpty() &&
+                    certificate != certificates.current &&
+                    certificate in certificates.accepted
+                if (outdated) APP_PREFIX + packageName + CERTIFICATE_SEPARATOR + certificates.current else link
+            }
+            .distinct()
+        return if (migrated == entry.autofillTargets) entry else entry.copy(autofillTargets = migrated)
     }
 
     private fun words(title: String): List<String> =

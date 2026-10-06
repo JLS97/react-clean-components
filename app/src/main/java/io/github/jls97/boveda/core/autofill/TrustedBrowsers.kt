@@ -106,12 +106,15 @@ object TrustedBrowsers {
     internal fun all(): Map<String, Set<String>> = BROWSERS
 
     /**
-     * True if [packageName] is a trusted browser and one of its verified certificates is known.
-     * A multi-signer token ("a,b") counts if any of its signers is known: faking one of them
-     * would require that browser's private key.
+     * True if [packageName] is a trusted browser and its current verified certificate is known.
+     * Only [AppCertificates.current] counts, never older certificates of a key rotation: a browser
+     * rotates its key precisely when the old one may have leaked, and Android lets anyone holding
+     * that old key install an app under the browser's package name whose lineage ends there. So
+     * the table must follow each browser's current key. A multi-signer token ("a,b") counts if any
+     * of its signers is known: faking one of them would require that browser's private key.
      */
     fun isTrusted(packageName: String, certificates: AppCertificates): Boolean {
         val known = BROWSERS[packageName] ?: return false
-        return certificates.accepted.any { token -> token.split(',').any { it in known } }
+        return certificates.current.split(',').any { it in known }
     }
 }
