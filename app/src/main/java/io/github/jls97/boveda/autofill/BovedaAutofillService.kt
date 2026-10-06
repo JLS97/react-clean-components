@@ -25,8 +25,9 @@ class BovedaAutofillService : AutofillService() {
             } else {
                 AutofillResponses.fillResponse(this, request.inlineSuggestionsRequest, parsed, login)
             }
-        } catch (e: Exception) {
-            // A screen we don't understand must never break the other app.
+        } catch (e: Throwable) {
+            // A screen we don't understand must never break the other app, nor Bóveda: a hostile
+            // tree can overflow the stack (an Error, not an Exception) while the system reads it.
             null
         }
         callback.onSuccess(response)
@@ -43,11 +44,11 @@ class BovedaAutofillService : AutofillService() {
             if (parsed == null || login == null || password.isNullOrEmpty() || parsed.packageName == packageName) {
                 null
             } else {
-                val target = AppSigners.resolveTarget(this, parsed.packageName, parsed.reportedWebDomain)
+                val target = AppSigners.resolveTarget(this, parsed.packageName, parsed.reportedWebDomain, parsed.reportedWebScheme)
                 val token = PendingSaves.put(PendingSave(target, parsed.textOf(login.username).orEmpty(), password))
                 AutofillActivity.saveIntentSender(this, token)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             null
         }
         if (saveIntent == null) callback.onSuccess() else callback.onSuccess(saveIntent)

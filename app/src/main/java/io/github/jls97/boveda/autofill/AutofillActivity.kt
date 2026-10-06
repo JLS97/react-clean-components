@@ -117,6 +117,7 @@ class AutofillActivity : ComponentActivity() {
         private const val EXTRA_MODE = "io.github.jls97.boveda.autofill.MODE"
         private const val EXTRA_PACKAGE = "io.github.jls97.boveda.autofill.PACKAGE"
         private const val EXTRA_REPORTED_WEB_DOMAIN = "io.github.jls97.boveda.autofill.REPORTED_WEB_DOMAIN"
+        private const val EXTRA_WEB_SCHEME = "io.github.jls97.boveda.autofill.WEB_SCHEME"
         private const val EXTRA_USERNAME_ID = "io.github.jls97.boveda.autofill.USERNAME_ID"
         private const val EXTRA_PASSWORD_ID = "io.github.jls97.boveda.autofill.PASSWORD_ID"
         private const val EXTRA_OTP_ID = "io.github.jls97.boveda.autofill.OTP_ID"
@@ -128,12 +129,14 @@ class AutofillActivity : ComponentActivity() {
 
         /**
          * Carries only field ids and who is asking; never a secret. Trust in the web domain is
-         * decided when the activity opens, from the app's verified signature.
+         * decided when the activity opens, from the app's verified signature. [reportedWebDomain]
+         * and [webScheme] are those of the fields to fill, as reported by the app.
          */
         internal fun fillIntentSender(
             context: Context,
             packageName: String,
             reportedWebDomain: String?,
+            webScheme: String?,
             usernameId: AutofillId?,
             passwordId: AutofillId?,
         ): IntentSender {
@@ -141,6 +144,7 @@ class AutofillActivity : ComponentActivity() {
                 .putExtra(EXTRA_MODE, MODE_FILL)
                 .putExtra(EXTRA_PACKAGE, packageName)
                 .putExtra(EXTRA_REPORTED_WEB_DOMAIN, reportedWebDomain)
+                .putExtra(EXTRA_WEB_SCHEME, webScheme)
                 .putExtra(EXTRA_USERNAME_ID, usernameId)
                 .putExtra(EXTRA_PASSWORD_ID, passwordId)
             // Mutable because the platform adds its authentication extras to this intent
@@ -158,12 +162,14 @@ class AutofillActivity : ComponentActivity() {
             context: Context,
             packageName: String,
             reportedWebDomain: String?,
+            webScheme: String?,
             otpId: AutofillId,
         ): IntentSender {
             val intent = Intent(context, AutofillActivity::class.java)
                 .putExtra(EXTRA_MODE, MODE_OTP)
                 .putExtra(EXTRA_PACKAGE, packageName)
                 .putExtra(EXTRA_REPORTED_WEB_DOMAIN, reportedWebDomain)
+                .putExtra(EXTRA_WEB_SCHEME, webScheme)
                 .putExtra(EXTRA_OTP_ID, otpId)
             // Mutable for the same reason as the fill intent.
             return PendingIntent.getActivity(
@@ -189,7 +195,12 @@ class AutofillActivity : ComponentActivity() {
         private fun readRequest(context: Context, intent: Intent): AutofillRequest? = when (intent.getStringExtra(EXTRA_MODE)) {
             MODE_FILL -> intent.getStringExtra(EXTRA_PACKAGE)?.let { packageName ->
                 AutofillRequest.Fill(
-                    target = AppSigners.resolveTarget(context, packageName, intent.getStringExtra(EXTRA_REPORTED_WEB_DOMAIN)),
+                    target = AppSigners.resolveTarget(
+                        context,
+                        packageName,
+                        intent.getStringExtra(EXTRA_REPORTED_WEB_DOMAIN),
+                        intent.getStringExtra(EXTRA_WEB_SCHEME),
+                    ),
                     usernameId = intent.getParcelableExtra(EXTRA_USERNAME_ID, AutofillId::class.java),
                     passwordId = intent.getParcelableExtra(EXTRA_PASSWORD_ID, AutofillId::class.java),
                 )
@@ -201,7 +212,12 @@ class AutofillActivity : ComponentActivity() {
                     null
                 } else {
                     AutofillRequest.FillOtp(
-                        target = AppSigners.resolveTarget(context, packageName, intent.getStringExtra(EXTRA_REPORTED_WEB_DOMAIN)),
+                        target = AppSigners.resolveTarget(
+                            context,
+                            packageName,
+                            intent.getStringExtra(EXTRA_REPORTED_WEB_DOMAIN),
+                            intent.getStringExtra(EXTRA_WEB_SCHEME),
+                        ),
                         otpId = otpId,
                     )
                 }

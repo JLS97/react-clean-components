@@ -41,6 +41,8 @@ data class AutofillTarget(
     val webDomain: String? = null,
     /** Domain shown by an app that isn't a trusted browser. Only displayed as a warning. */
     val claimedWebDomain: String? = null,
+    /** The browser said the page isn't served over https: never linked, shown as a warning. */
+    val unencrypted: Boolean = false,
 ) {
     val host: String? get() = webDomain?.let { Domains.host(it) }
 
@@ -64,16 +66,30 @@ object TargetResolver {
     /**
      * Decides what a request is about. A web domain is trusted only when a known browser with a
      * matching certificate reports it. Any other app is identified by its package name and
-     * certificate, and a domain it reports is kept only to warn about it.
+     * certificate, and a domain it reports is kept only to warn about it. A page whose browser
+     * reports a [webScheme] other than https is only a claim too: on an unencrypted page anyone on
+     * the network could be serving the form. A missing scheme (older browsers) changes nothing.
      */
-    fun resolve(packageName: String, certificates: AppCertificates?, reportedWebDomain: String?): AutofillTarget {
+    fun resolve(
+        packageName: String,
+        certificates: AppCertificates?,
+        reportedWebDomain: String?,
+        webScheme: String? = null,
+    ): AutofillTarget {
         val reported = reportedWebDomain?.trim()?.takeIf { it.isNotEmpty() }
         val trustedBrowser = certificates != null && TrustedBrowsers.isTrusted(packageName, certificates)
-        return if (reported != null && trustedBrowser && Domains.host(reported) != null) {
+        val unencrypted = reported != null && isUnencrypted(webScheme)
+        return if (reported != null && trustedBrowser && !unencrypted && Domains.host(reported) != null) {
             AutofillTarget(packageName, certificates, webDomain = reported)
         } else {
-            AutofillTarget(packageName, certificates, claimedWebDomain = reported?.take(MAX_CLAIM_LENGTH))
+            AutofillTarget(packageName, certificates, claimedWebDomain = reported?.take(MAX_CLAIM_LENGTH), unencrypted = unencrypted)
         }
+    }
+
+    /** True only when the browser reported a scheme and it isn't https. */
+    fun isUnencrypted(webScheme: String?): Boolean {
+        val scheme = webScheme?.trim()?.removeSuffix(":")?.lowercase().orEmpty()
+        return scheme.isNotEmpty() && scheme != "https"
     }
 
     private const val MAX_CLAIM_LENGTH = 100

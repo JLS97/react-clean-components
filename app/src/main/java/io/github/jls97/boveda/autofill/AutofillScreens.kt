@@ -84,6 +84,7 @@ internal fun AutofillApp(
                     title = "Rellenar con Bóveda",
                     entries = current.data.entries,
                     target = request.target,
+                    fillDescription = fillDescription(request),
                     emptyText = "La bóveda está vacía.",
                     viewModel = viewModel,
                     onPick = { entry, rememberChoice ->
@@ -116,6 +117,7 @@ internal fun AutofillApp(
                         title = "Rellenar código 2FA",
                         entries = current.data.entries.filter { it.otp != null },
                         target = request.target,
+                        fillDescription = "Se rellenará solo el código 2FA.",
                         emptyText = "No tienes ningún código 2FA guardado. Añádelo en Bóveda, desde la entrada de la cuenta.",
                         viewModel = viewModel,
                         onPick = { entry, rememberChoice ->
@@ -160,13 +162,18 @@ internal fun AutofillApp(
     }
 }
 
-/** Lists [entries] with those linked to [target] first; [onPick] fills with the chosen one. */
+/**
+ * Lists [entries] with those linked to [target] first; [onPick] fills with the chosen one.
+ * [fillDescription] tells the user which fields will receive data, so a hidden password field
+ * never gets one without them knowing.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PickEntryScreen(
     title: String,
     entries: List<VaultEntry>,
     target: AutofillTarget,
+    fillDescription: String,
     emptyText: String,
     viewModel: AutofillViewModel,
     onPick: (entry: VaultEntry, rememberChoice: Boolean) -> Unit,
@@ -215,6 +222,7 @@ private fun PickEntryScreen(
                         if (target.host != null) "Web: ${target.label}" else "App: ${target.label}",
                         style = MaterialTheme.typography.titleMedium,
                     )
+                    Text(fillDescription, style = MaterialTheme.typography.bodyMedium)
                     if (exact.isEmpty()) {
                         Text(
                             fillWarning(target),
@@ -404,11 +412,21 @@ private fun MessageScreen(title: String, text: String, onClose: () -> Unit) {
     }
 }
 
+/** What a fill request will write, from the ids the system asked for. */
+private fun fillDescription(request: AutofillRequest.Fill): String = when {
+    request.usernameId != null && request.passwordId != null -> "Se rellenarán usuario y contraseña."
+    request.passwordId != null -> "Solo la contraseña."
+    else -> "Solo el usuario."
+}
+
 /** Why a target can't be linked to an entry, or null if it can. */
 private fun unlinkableReason(target: AutofillTarget): String? {
     val claimed = target.claimedWebDomain
     val certificates = target.certificates
     return when {
+        target.unencrypted ->
+            "Página sin cifrar: «$claimed» se abre por http, no https, así que cualquiera en la red " +
+                "podría estar sirviendo este formulario."
         claimed != null && certificates != null && TrustedBrowsers.isTrusted(target.packageName, certificates) ->
             "La dirección de esta página («$claimed») no es un dominio web normal."
         claimed != null ->

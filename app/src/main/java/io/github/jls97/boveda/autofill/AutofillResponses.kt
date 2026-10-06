@@ -46,7 +46,14 @@ internal object AutofillResponses {
             // No values yet: they arrive after authentication, from AutofillActivity.
             login.fillIds.forEach { dataset.setField(it, null) }
             dataset.setAuthentication(
-                AutofillActivity.fillIntentSender(context, parsed.packageName, parsed.reportedWebDomain, login.username, login.password),
+                AutofillActivity.fillIntentSender(
+                    context,
+                    parsed.packageName,
+                    parsed.reportedWebDomain,
+                    parsed.reportedWebScheme,
+                    login.username,
+                    login.password,
+                ),
             )
             builder.addDataset(dataset.build())
             hasContent = true
@@ -57,7 +64,7 @@ internal object AutofillResponses {
             val dataset = Dataset.Builder(presentations(context, inlineRequest, TITLE, OTP_SUBTITLE))
             dataset.setField(otpId, null)
             dataset.setAuthentication(
-                AutofillActivity.otpIntentSender(context, parsed.packageName, parsed.reportedWebDomain, otpId),
+                AutofillActivity.otpIntentSender(context, parsed.packageName, parsed.reportedWebDomain, parsed.reportedWebScheme, otpId),
             )
             builder.addDataset(dataset.build())
             hasContent = true
