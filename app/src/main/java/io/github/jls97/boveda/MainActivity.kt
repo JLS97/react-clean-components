@@ -6,12 +6,13 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import io.github.jls97.boveda.session.VaultSession
-import io.github.jls97.boveda.ui.BovedaApp
-import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.jls97.boveda.session.VaultSession
+import io.github.jls97.boveda.ui.BovedaApp
+import io.github.jls97.boveda.ui.components.BarrasDelSistema
+import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
 
 class MainActivity : ComponentActivity() {
     private val session: VaultSession get() = (application as BovedaApplication).session
@@ -32,7 +33,9 @@ class MainActivity : ComponentActivity() {
         val apariencia = (application as BovedaApplication).apariencia
         setContent {
             val ajustes by apariencia.ajustes.collectAsStateWithLifecycle()
-            ContrasenoraTheme(darkTheme = ajustes.oscuro(isSystemInDarkTheme()), personalidad = ajustes.personalidad) {
+            val oscuro = ajustes.oscuro(isSystemInDarkTheme())
+            BarrasDelSistema(oscuro)
+            ContrasenoraTheme(darkTheme = oscuro, personalidad = ajustes.personalidad) {
                 BovedaApp(session)
             }
         }

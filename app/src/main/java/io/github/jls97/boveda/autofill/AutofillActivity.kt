@@ -23,6 +23,7 @@ import io.github.jls97.boveda.core.autofill.TargetResolver
 import io.github.jls97.boveda.core.crypto.secureRandom
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
+import io.github.jls97.boveda.ui.components.BarrasDelSistema
 import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
 import kotlinx.coroutines.launch
 
@@ -78,7 +79,9 @@ class AutofillActivity : ComponentActivity() {
         val apariencia = (application as BovedaApplication).apariencia
         setContent {
             val ajustes by apariencia.ajustes.collectAsStateWithLifecycle()
-            ContrasenoraTheme(darkTheme = ajustes.oscuro(isSystemInDarkTheme()), personalidad = ajustes.personalidad) {
+            val oscuro = ajustes.oscuro(isSystemInDarkTheme())
+            BarrasDelSistema(oscuro)
+            ContrasenoraTheme(darkTheme = oscuro, personalidad = ajustes.personalidad) {
                 AutofillApp(
                     session = session,
                     request = request,
