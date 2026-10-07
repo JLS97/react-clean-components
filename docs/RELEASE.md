@@ -1,6 +1,6 @@
-# Publicar una versión de Bóveda
+# Publicar una versión de Contraseñora
 
-Bóveda se distribuye por APK firmado con una clave propia; no hay tienda ni Play App Signing.
+Contraseñora se distribuye por APK firmado con una clave propia; no hay tienda ni Play App Signing.
 Android solo instala una versión nueva encima de la anterior si está firmada con **la misma
 clave**. Perderla obliga a desinstalar, y desinstalar destruye la bóveda local, las claves del
 Android Keystore y los secretos 2FA: solo una copia `.bvd`, la contraseña maestra y el código de
@@ -35,7 +35,7 @@ keytool -list -v -keystore ~/claves/boveda.jks -alias boveda | grep SHA256
 - La contraseña del almacén se guarda aparte de las copias (quien tenga el USB no debe poder
   firmar).
 - Nunca subas el `.jks` a la nube sin cifrar ni lo envíes por chat: quien lo obtenga puede firmar
-  un APK troyanizado que el teléfono aceptará como actualización legítima de Bóveda.
+  un APK troyanizado que el teléfono aceptará como actualización legítima de Contraseñora.
 - Antes de desinstalar la app o de cambiar de clave: exporta una copia `.bvd` verificada y
   confirma que el código de recuperación 2FA sigue funcionando. Sin esas dos cosas no hay vuelta
   atrás.

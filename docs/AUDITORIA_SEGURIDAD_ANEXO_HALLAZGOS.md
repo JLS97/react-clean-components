@@ -1,5 +1,7 @@
 # Anexo de hallazgos: severidad baja e informativa
 
+> **Nota posterior.** Los hallazgos se escribieron cuando la app se llamaba «Bóveda»; hoy se llama **Contraseñora**.
+
 Complemento de `AUDITORIA_SEGURIDAD.md`. Mismos identificadores (B‑xx, I‑xx) que el informe principal.
 
 

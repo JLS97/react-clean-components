@@ -1,5 +1,7 @@
 # Bóveda — Descripción funcional de la app tal como es hoy
 
+> **Nota posterior (remake visual).** La app se llama ahora **Contraseñora** y su interfaz y sus textos se han rediseñado con la guía de marca: los literales que cita este documento son los anteriores al remake. El funcionamiento que describe, incluidos todos los elementos 🔒, sigue siendo el mismo.
+
 > Documento pensado para pegarlo en el prompt de un agente de diseño. Describe la app Android **Bóveda** (gestor de contraseñas *offline*, Kotlin + Jetpack Compose Material 3, textos en español) **exactamente como está en el código hoy**, sin funciones inventadas.
 >
 > Convenciones:

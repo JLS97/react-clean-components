@@ -1,5 +1,7 @@
 # Auditoría de seguridad de Bóveda (Android)
 
+> **Nota posterior.** Cuando se hizo esta auditoría la app se llamaba «Bóveda». Desde el remake visual se llama **Contraseñora**; el informe conserva el nombre original y los identificadores internos (`io.github.jls97.boveda`, `.bvd`) no han cambiado.
+
 **Objeto:** app nativa Android «Bóveda» (`io.github.jls97.boveda`), versión 0.2.0 (`versionCode` 2), commit `cee8a6e` de la rama `master`.
 **Fecha:** 3 de octubre de 2026.
 **Alcance:** todo el código fuente (~8.900 líneas de Kotlin, manifiesto, recursos, configuración de Gradle, tests y README), desde todos los ángulos que admite una app sin red: criptografía y gestión de claves, formato de archivo y entradas hostiles, máquina de estados de sesión y concurrencia, autorrelleno y antiphishing, endurecimiento de plataforma, manejo de secretos en la interfaz, fuerza bruta local, copias de seguridad y disponibilidad, cadena de suministro, privacidad y metadatos, cobertura de tests, y la coherencia entre lo que promete el README y lo que hace el código. No se ha ejecutado la app en un dispositivo: es una auditoría de caja blanca sobre el código, complementada con la compilación, los tests JVM, Android Lint y la generación del manifiesto fusionado de release.

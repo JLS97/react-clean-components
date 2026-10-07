@@ -1,6 +1,6 @@
-# Política de seguridad de Bóveda
+# Política de seguridad de Contraseñora
 
-Bóveda es un gestor de contraseñas personal para Android sin conexión a Internet. Este documento
+Contraseñora es un gestor de contraseñas personal para Android sin conexión a Internet. Este documento
 resume qué protege, qué no protege, cómo se ha revisado y cómo comunicar un fallo de seguridad.
 
 ## Modelo de amenaza
