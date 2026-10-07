@@ -34,3 +34,5 @@ output-metadata.json
 
 # Encrypted vault backups must never end up in the repository
 *.bvd
+# Except the immutable format fixtures of the tests (known password, no real data)
+!app/src/test/resources/vault/*.bvd

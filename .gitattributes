@@ -6,3 +6,7 @@
 
 # Binary files should be left untouched
 *.jar           binary
+
+# Vault format fixtures (never regenerated)
+*.bvd           binary
+*.bin           binary
