@@ -8,7 +8,10 @@ plugins {
 // Firma de release reproducible desde la línea de comandos (`./gradlew assembleRelease`), sin pasar
 // por el asistente de Android Studio. La ruta del almacén y las contraseñas se leen de variables de
 // entorno o, en su defecto, de local.properties (ignorado por git), nunca del repositorio. Si falta
-// cualquiera de las cuatro, la release se compila sin firmar, como hasta ahora. Ver docs/RELEASE.md.
+// cualquiera de las cuatro, la release se compila sin firmar, como hasta ahora (así la CI y quien no
+// tenga la clave pueden compilar), pero se avisa nombrando las variables ausentes cuando hay alguna
+// definida, y con BOVEDA_REQUIRE_SIGNING=1 la configuración falla en vez de generar un APK sin
+// firma. Ver docs/RELEASE.md.
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.isFile) file.inputStream().use { load(it) }
@@ -23,6 +26,30 @@ val releaseKeyAlias = signingSetting("BOVEDA_KEY_ALIAS")
 val releaseKeyPassword = signingSetting("BOVEDA_KEY_PASSWORD")
 val releaseSigningConfigured = releaseKeystorePath != null && releaseKeystorePassword != null &&
     releaseKeyAlias != null && releaseKeyPassword != null
+
+// Solo se nombran las variables que faltan o están en blanco, nunca sus valores. El aviso se emite
+// en la fase de configuración; las variables de entorno leídas con System.getenv son entradas
+// rastreadas por la configuration cache, así que cambiarlas invalida la caché y el aviso reaparece.
+val signingVariables = mapOf(
+    "BOVEDA_KEYSTORE" to releaseKeystorePath,
+    "BOVEDA_KEYSTORE_PASSWORD" to releaseKeystorePassword,
+    "BOVEDA_KEY_ALIAS" to releaseKeyAlias,
+    "BOVEDA_KEY_PASSWORD" to releaseKeyPassword,
+)
+val missingSigningVariables = signingVariables.filterValues { it == null }.keys
+val releaseSigningRequired = signingSetting("BOVEDA_REQUIRE_SIGNING") == "1"
+if (!releaseSigningConfigured && releaseSigningRequired) {
+    throw GradleException(
+        "BOVEDA_REQUIRE_SIGNING=1 pero faltan o están en blanco: ${missingSigningVariables.joinToString()}; " +
+            "ver docs/RELEASE.md §3"
+    )
+}
+if (!releaseSigningConfigured && missingSigningVariables.size < signingVariables.size) {
+    logger.warn(
+        "Firma de release: faltan o están en blanco ${missingSigningVariables.joinToString()}; " +
+            "assembleRelease generará app-release-unsigned.apk (ver docs/RELEASE.md §3)"
+    )
+}
 
 android {
     namespace = "io.github.jls97.boveda"

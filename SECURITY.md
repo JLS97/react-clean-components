@@ -57,6 +57,7 @@ contraseña maestra.
 
 - Compila siempre desde una copia limpia del repositorio y verifica que `./gradlew test` y
   `./gradlew lintDebug` pasan.
-- La clave de firma de release vive fuera del repositorio (variables de entorno o `keystore.properties`
-  ignorado por git). Ver [`docs/RELEASE.md`](docs/RELEASE.md).
-- Las dependencias se verifican por hash con `gradle/verification-metadata.xml`.
+- La clave de firma de release vive fuera del repositorio (variables de entorno o `local.properties`
+  ignorado por git; el build no lee ningún otro archivo). Ver [`docs/RELEASE.md`](docs/RELEASE.md).
+- Las dependencias se verifican por hash con `gradle/verification-metadata.xml` y las acciones de la
+  CI van fijadas por SHA de commit (ver la política en `docs/RELEASE.md`, §6).
