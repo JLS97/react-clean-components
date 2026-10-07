@@ -68,6 +68,7 @@ import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -78,6 +79,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.jls97.boveda.R
@@ -87,7 +89,9 @@ import io.github.jls97.boveda.core.otp.OtpSecret
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.session.OtpAccess
+import io.github.jls97.boveda.ui.components.Apartado
 import io.github.jls97.boveda.ui.components.Aviso
+import io.github.jls97.boveda.ui.components.BotonCopiar
 import io.github.jls97.boveda.ui.components.BotonFantasma
 import io.github.jls97.boveda.ui.components.BotonPrimario
 import io.github.jls97.boveda.ui.components.BotonSecundario
@@ -182,6 +186,7 @@ fun OtpCard(
     OtpCardContenido(
         estado = estado,
         busy = otp.busy,
+        cuenta = revealed?.secret?.label?.ifEmpty { null },
         onAdd = onAdd,
         onRecover = onRecover,
         onRemove = { confirmRemove = true },
@@ -220,7 +225,9 @@ fun OtpCard(
 /**
  * La ficha del código 2FA, sin estado: un resguardo con la etiqueta de latón «Código 2FA», el
  * código (o su hueco) arriba y, tras la perforación, las acciones. Cada cambio de estado funde y
- * asienta el contenido mientras el papel crece o encoge. [codigo] dibuja el código revelado.
+ * asienta el contenido mientras el papel crece o encoge. [codigo] dibuja el código revelado y
+ * [cuenta] (emisor y usuario) se le dice a TalkBack con la etiqueta: en pantalla ya la cuentan el
+ * título de la entrada y sus datos.
  */
 @Composable
 internal fun OtpCardContenido(
@@ -234,6 +241,7 @@ internal fun OtpCardContenido(
     onHide: () -> Unit,
     onCopyRevealed: () -> Unit,
     modifier: Modifier = Modifier,
+    cuenta: String? = null,
     codigo: @Composable () -> Unit = {},
 ) {
     val c = ContrasenoraTheme.colors
@@ -242,7 +250,22 @@ internal fun OtpCardContenido(
     Resguardo(
         modifier = modifier,
         arriba = {
-            Etiqueta("Código 2FA", icono = R.drawable.ic_reloj)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Etiqueta(
+                    "Código 2FA",
+                    Modifier.semantics(mergeDescendants = true) {
+                        if (estado == EstadoOtp.Revelado && cuenta != null) contentDescription = "Código 2FA de $cuenta"
+                    },
+                    icono = R.drawable.ic_reloj,
+                )
+                Spacer(Modifier.weight(1f))
+                // El color del estado vive en el sello, como en los avisos: el texto va en tinta normal.
+                when (estado) {
+                    EstadoOtp.Bloqueado -> Sello("Ojo", c.warningFg, Modifier.clearAndSetSemantics { }, girado = 6f)
+                    EstadoOtp.SinLlave -> Sello("Urgente", c.dangerFg, Modifier.clearAndSetSemantics { }, girado = 6f)
+                    else -> Unit
+                }
+            }
             AnimatedContent(
                 targetState = estado,
                 modifier = Modifier.fillMaxWidth().padding(top = Spacing.s3),
@@ -256,8 +279,8 @@ internal fun OtpCardContenido(
                         style = t.body,
                         color = c.textSecondary,
                     )
-                    EstadoOtp.Bloqueado -> TextoError("Bloqueado en este móvil. Recupéralo con tu código de recuperación.")
-                    EstadoOtp.SinLlave -> TextoError("No se puede abrir: a la bóveda le falta la llave de los códigos 2FA.")
+                    EstadoOtp.Bloqueado -> TextoSellado("Ojo", "Bloqueado en este móvil. Recupéralo con tu código de recuperación.")
+                    EstadoOtp.SinLlave -> TextoSellado("Urgente", "No se puede abrir: a la bóveda le falta la llave de los códigos 2FA.")
                     EstadoOtp.Revelado -> Box(Modifier.fillMaxWidth()) { codigo() }
                     EstadoOtp.Oculto -> CodigoOculto()
                 }
@@ -271,31 +294,71 @@ internal fun OtpCardContenido(
                 contentAlignment = Alignment.CenterStart,
                 label = "acciones 2FA",
             ) { e ->
+                val holgado = altoHolgado()
                 when (e) {
-                    EstadoOtp.SinCodigo -> BotonSecundario(
-                        "Añadir código 2FA",
-                        onAdd,
-                        Modifier.padding(start = Spacing.s3),
-                        enabled = !busy,
-                        compacto = true,
-                        icono = R.drawable.ic_reloj,
-                    )
-                    EstadoOtp.Bloqueado -> Talon(izquierda = { Quitar(onRemove, busy) }) {
-                        BotonSecundario("Recuperar", onRecover, enabled = !busy, compacto = true, icono = R.drawable.ic_llave)
+                    EstadoOtp.SinCodigo -> {
+                        val grande = letraGrande()
+                        BotonSecundario(
+                            "Añadir código 2FA",
+                            onAdd,
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(start = Spacing.s3)
+                                .then(if (grande) Modifier.heightIn(min = holgado) else Modifier),
+                            enabled = !busy,
+                            compacto = !grande,
+                            icono = R.drawable.ic_reloj,
+                        )
                     }
-                    EstadoOtp.SinLlave -> Talon(izquierda = { Quitar(onRemove, busy) })
-                    EstadoOtp.Revelado -> Talon(
-                        izquierda = { BotonFantasma("Ocultar", onHide, icono = R.drawable.ic_ojo_tachado) },
-                    ) {
-                        BotonCopiarConfirmado(onCopyRevealed)
+                    EstadoOtp.Bloqueado -> Talon(izquierda = { Quitar(onRemove, busy) }) { apilado ->
+                        BotonSecundario(
+                            "Recuperar",
+                            onRecover,
+                            if (apilado) Modifier.fillMaxWidth().heightIn(min = holgado) else Modifier,
+                            enabled = !busy,
+                            compacto = !apilado,
+                            icono = R.drawable.ic_llave,
+                        )
                     }
-                    EstadoOtp.Oculto -> Talon(izquierda = { Quitar(onRemove, busy) }) {
-                        BotonSecundario("Mostrar", onShow, enabled = !busy, compacto = true, icono = R.drawable.ic_ojo)
-                        BotonSecundario("Copiar", onCopyHidden, enabled = !busy, compacto = true, icono = R.drawable.ic_copiar)
+                    EstadoOtp.SinLlave -> Talon(izquierda = { Quitar(onRemove, busy) }) { }
+                    // Mostrar y Ocultar ocupan el mismo hueco, y el copiar va justo detrás: el dedo que
+                    // acaba de pulsar uno encuentra el otro donde lo dejó.
+                    EstadoOtp.Revelado -> Talon { apilado ->
+                        Row(
+                            modifier = if (apilado) Modifier.fillMaxWidth() else Modifier,
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.s2),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            BotonSecundario(
+                                "Ocultar",
+                                onHide,
+                                if (apilado) Modifier.weight(1f).heightIn(min = holgado) else Modifier,
+                                compacto = !apilado,
+                                icono = R.drawable.ic_ojo_tachado,
+                            )
+                            BotonCopiar("Copiar el código 2FA", onCopyRevealed)
+                        }
+                    }
+                    // Las dos piden la huella antes de enseñar o copiar nada.
+                    EstadoOtp.Oculto -> Talon(izquierda = { Quitar(onRemove, busy) }) { apilado ->
+                        val ancho = if (apilado) Modifier.fillMaxWidth().heightIn(min = holgado) else Modifier
+                        BotonSecundario("Mostrar", onShow, ancho, enabled = !busy, compacto = !apilado, icono = R.drawable.ic_ojo)
+                        BotonSecundario("Copiar", onCopyHidden, ancho, enabled = !busy, compacto = !apilado, icono = R.drawable.ic_huella)
                     }
                 }
             }
         },
+    )
+}
+
+/** Un estado que dura (bloqueado, sin llave): en tinta normal; su sello, junto a la etiqueta, dice cuál es. */
+@Composable
+private fun TextoSellado(sello: String, texto: String) {
+    Text(
+        texto,
+        style = ContrasenoraTheme.type.body,
+        color = ContrasenoraTheme.colors.textPrimary,
+        modifier = Modifier.semantics { contentDescription = "$sello. $texto" },
     )
 }
 
@@ -317,55 +380,53 @@ private fun Quitar(onRemove: () -> Unit, busy: Boolean) {
     BotonFantasma("Quitar", onRemove, enabled = !busy, peligro = true)
 }
 
+/** Con la letra del sistema a partir del 150 %, las acciones se apilan a todo lo ancho. */
+@Composable
+private fun letraGrande(): Boolean = LocalDensity.current.fontScale >= 1.5f
+
+/**
+ * Alto mínimo de un botón apilado con letra grande: un renglón de su texto y aire arriba y abajo
+ * (los botones de la base solo tienen relleno a los lados).
+ */
+@Composable
+private fun altoHolgado(): Dp = with(LocalDensity.current) { ContrasenoraTheme.type.bodyStrong.lineHeight.toDp() } + Spacing.s4
+
 /**
  * El talón del resguardo: lo de [izquierda] (lo que se usa menos, o lo que deshace) al principio y
- * las acciones al final. Si no caben en una línea (letra grande), bajan a la siguiente.
+ * las acciones al final; si no caben en una línea, bajan a la siguiente. Con letra grande las
+ * acciones se apilan a todo lo ancho (las recibe con `apilado = true`) y lo de [izquierda] queda debajo.
  */
 @Composable
 private fun Talon(
-    izquierda: @Composable () -> Unit,
-    acciones: @Composable RowScope.() -> Unit = {},
+    izquierda: (@Composable () -> Unit)? = null,
+    acciones: @Composable (apilado: Boolean) -> Unit,
 ) {
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        // Si las acciones bajan de renglón, se quedan a la derecha, bajo su sitio de siempre.
-        horizontalArrangement = Arrangement.spacedBy(Spacing.s2, Alignment.End),
-        verticalArrangement = Arrangement.spacedBy(Spacing.s1),
-        itemVerticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.padding(end = Spacing.s2)) { izquierda() }
-        Spacer(Modifier.weight(1f))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(Spacing.s2),
-            verticalAlignment = Alignment.CenterVertically,
-            content = acciones,
-        )
-    }
-}
-
-/**
- * «Copiar» del código revelado: copia en el acto y su icono se convierte un momento en una marca
- * de conforme, como [io.github.jls97.boveda.ui.components.BotonCopiar], pero con su palabra: es el
- * mismo sitio y el mismo tamaño que el «Copiar» del código oculto.
- */
-@Composable
-private fun BotonCopiarConfirmado(onCopy: () -> Unit) {
-    var copiado by remember { mutableStateOf(false) }
-    LaunchedEffect(copiado) {
-        if (copiado) {
-            delay(1_400)
-            copiado = false
+    if (letraGrande()) {
+        Column(Modifier.fillMaxWidth().padding(vertical = Spacing.s1)) {
+            Column(
+                // La matriz deja Spacing.s1 a la izquierda para el «Quitar» de solo texto; los botones
+                // apilados se alinean con el contenido de arriba.
+                modifier = Modifier.fillMaxWidth().padding(start = Spacing.s3),
+                verticalArrangement = Arrangement.spacedBy(Spacing.s2),
+            ) { acciones(true) }
+            if (izquierda != null) Box(Modifier.padding(top = Spacing.s1)) { izquierda() }
+        }
+    } else {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            // Si las acciones bajan de renglón, se quedan a la derecha, bajo su sitio de siempre.
+            horizontalArrangement = Arrangement.spacedBy(Spacing.s2, Alignment.End),
+            verticalArrangement = Arrangement.spacedBy(Spacing.s1),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (izquierda != null) Box(Modifier.padding(end = Spacing.s2)) { izquierda() }
+            Spacer(Modifier.weight(1f))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.s2),
+                verticalAlignment = Alignment.CenterVertically,
+            ) { acciones(false) }
         }
     }
-    BotonSecundario(
-        "Copiar",
-        {
-            onCopy()
-            copiado = true
-        },
-        compacto = true,
-        icono = if (copiado) R.drawable.ic_check else R.drawable.ic_copiar,
-    )
 }
 
 /**
@@ -430,7 +491,7 @@ private fun AnilloConHuella() {
 }
 
 /**
- * The current code of [secret], its label and a countdown, refreshed every second until
+ * The current code of [secret] and a countdown, refreshed every second until
  * [stillShown] says otherwise. [onExpired] then wipes the secret, so it is checked before reading.
  */
 @Composable
@@ -446,11 +507,12 @@ private fun LiveCode(secret: OtpSecret, stillShown: () -> Boolean = { true }, on
             delay(1_000 - now % 1_000)
         }
     }
+    // Sin la cuenta encima: en la ficha la dicen el título y los datos de la entrada (y TalkBack, la
+    // etiqueta «Código 2FA»), y al añadir, «Clave leída del código QR».
     CodigoTotp(
         codigo = secret.code(now),
         segundosRestantes = secret.secondsLeft(now),
         periodo = secret.params.period,
-        etiqueta = secret.label.ifEmpty { null },
     )
 }
 
@@ -651,13 +713,19 @@ internal fun AnadirCodigoContenido(
         ocupado = busy,
         mostrador = {
             Mostrador {
-                BotonPrimario(
-                    "Guardar con mi huella",
-                    onSave,
-                    Modifier.weight(1f),
-                    enabled = pendiente != null && !busy,
-                    icono = R.drawable.ic_huella,
-                )
+                // Mientras se cifra y se guarda, el mostrador dice qué pasa en vez de un botón apagado.
+                if (busy) {
+                    Trabajando(voz("Cifrando. La seguridad no tiene prisa…", "Cifrando…"), Modifier.weight(1f).padding(vertical = Spacing.s2))
+                } else {
+                    BotonPrimario(
+                        "Guardar con mi huella",
+                        onSave,
+                        Modifier.weight(1f),
+                        enabled = pendiente != null,
+                        // Con letra grande, sin icono: así cabe en un renglón.
+                        icono = if (letraGrande()) null else R.drawable.ic_huella,
+                    )
+                }
             }
         },
     ) {
@@ -682,7 +750,9 @@ internal fun AnadirCodigoContenido(
                     Column(verticalArrangement = Arrangement.spacedBy(Spacing.s4)) {
                         SeparadorO("o escríbela a mano")
                         CampoCodigo(
-                            value = input,
+                            // Mientras este campo funde al pasar a enlace, ya no recibe la URI: lleva el
+                            // secreto en claro y el campo podría estar a la vista (B-40).
+                            value = if (inputIsLink) "" else input,
                             onValueChange = onInputChange,
                             label = "Clave de configuración",
                             placeholder = "p. ej. JBSW Y3DP EHPK 3PXP",
@@ -722,14 +792,14 @@ internal fun AnadirCodigoContenido(
                 )
             }
             Row(
-                modifier = Modifier.padding(top = Spacing.s2),
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(Spacing.s2),
             ) {
+                // Lo que es tiempo va en latón.
                 Icon(
                     painterResource(R.drawable.ic_reloj),
                     contentDescription = null,
-                    tint = c.textTertiary,
+                    tint = c.brassText,
                     modifier = Modifier.padding(top = 3.dp).size(Sizes.iconSm),
                 )
                 Text("Los códigos dependen de la hora del móvil: déjala en automática.", style = t.small, color = c.textSecondary)
@@ -755,7 +825,8 @@ private fun SeparadorO(texto: String) {
 
 /**
  * La cuenta que trae el QR, sin su clave: de quién es, cómo calcula los códigos y un sello de
- * conforme si se ha podido leer; si no, por qué. «Descartar» vuelve a la clave a mano.
+ * conforme si se ha podido leer; si no, un sello de «Ojo» y por qué. «Descartar» vuelve a la clave
+ * a mano.
  */
 @Composable
 private fun ClaveLeida(pendiente: OtpSecret?, error: String?, busy: Boolean, onDiscard: () -> Unit) {
@@ -779,11 +850,24 @@ private fun ClaveLeida(pendiente: OtpSecret?, error: String?, busy: Boolean, onD
                     )
                 }
             }
-            if (pendiente != null) {
-                Sello("Conforme", c.successFg, Modifier.padding(start = Spacing.s2), girado = 6f)
+            when {
+                pendiente != null -> Sello("Conforme", c.successFg, Modifier.padding(start = Spacing.s2), girado = 6f)
+                error != null -> Sello("Ojo", c.warningFg, Modifier.padding(start = Spacing.s2).clearAndSetSemantics { }, girado = 6f)
             }
         }
-        if (error != null) TextoError(error, Modifier.padding(top = Spacing.s3))
+        if (error != null) {
+            Text(
+                error,
+                style = t.body,
+                color = c.textPrimary,
+                modifier = Modifier
+                    .padding(top = Spacing.s3)
+                    .semantics {
+                        contentDescription = "Ojo. $error"
+                        liveRegion = LiveRegionMode.Polite
+                    },
+            )
+        }
         LineaPunteada(Modifier.padding(top = Spacing.s4))
         BotonFantasma("Descartar", onDiscard, Modifier.desbordar(Spacing.s3).padding(vertical = Spacing.s1), enabled = !busy, icono = R.drawable.ic_cerrar)
     }
@@ -936,8 +1020,9 @@ internal fun EscaneoContenido(
                         val (titulo, resto) = partirEnAviso(
                             "No se pudo abrir la cámara. Cierra otras apps que la estén usando o escribe la clave a mano.",
                         )
-                        Aviso(TipoAviso.Aviso, titulo, mensaje = resto)
-                        BotonSecundario("Escribir la clave", onBack, Modifier.fillMaxWidth(), icono = R.drawable.ic_teclado)
+                        Aviso(TipoAviso.Aviso, titulo.removeSuffix("."), mensaje = resto)
+                        // Sin cámara, escribir la clave es lo único que queda: es la acción principal.
+                        BotonPrimario("Escribir la clave", onBack, Modifier.fillMaxWidth(), icono = R.drawable.ic_teclado)
                     }
                     EstadoEscaneo.Camara -> {
                         Visor(camara)
@@ -957,11 +1042,14 @@ internal fun EscaneoContenido(
                         }
                     }
                     EstadoEscaneo.SinPermiso -> {
-                        val (titulo, resto) = partirEnAviso(
-                            "Contraseñora solo usa la cámara aquí, para leer el código QR. Si no te pregunta, da el permiso en " +
-                                "Ajustes → Apps → Contraseñora → Permisos, o escribe la clave a mano.",
+                        // Título corto (qué pasa) y el texto entero debajo: con letra grande, la primera
+                        // frase como título ocupaba cinco renglones en negrita junto al sello.
+                        Aviso(
+                            TipoAviso.Info,
+                            "Falta el permiso de la cámara",
+                            mensaje = "Contraseñora solo usa la cámara aquí, para leer el código QR. Si no te pregunta, " +
+                                "da el permiso en Ajustes → Apps → Contraseñora → Permisos, o escribe la clave a mano.",
                         )
-                        Aviso(TipoAviso.Info, titulo, mensaje = resto)
                         BotonPrimario("Permitir la cámara", onPermitir, Modifier.fillMaxWidth(), icono = R.drawable.ic_qr)
                         BotonSecundario("Escribir la clave", onBack, Modifier.fillMaxWidth(), icono = R.drawable.ic_teclado)
                     }
@@ -1071,9 +1159,11 @@ fun RecoveryCodeScreen(
 }
 
 /**
- * El código de recuperación, sin estado: la explicación, el código como una papeleta (agrupado, en
- * letra de códigos, con su sello de nota y, en el talón, qué hacer con él) y el campo para
- * escribirlo, que estampa «Conforme» cuando coincide. Abajo, activar o cambiar con la huella.
+ * El código de recuperación, sin estado: una entradilla breve y un impreso en dos apartados. En el
+ * I, por qué hace falta y el código como una papeleta (agrupado, en letra de códigos, con su sello
+ * de nota y, en el talón, qué hacer con él); en el II, el campo para escribirlo, que estampa
+ * «Conforme» cuando coincide. Antes del botón, lo que hay que revisar antes de activarla. Abajo,
+ * activar o cambiar con la huella.
  */
 @Composable
 internal fun CodigoRecuperacionContenido(
@@ -1089,20 +1179,15 @@ internal fun CodigoRecuperacionContenido(
 ) {
     val c = ContrasenoraTheme.colors
     val t = ContrasenoraTheme.type
+    val alta = purpose == RecoveryCodePurpose.SETUP
     Pantalla(
-        titulo = if (purpose == RecoveryCodePurpose.SETUP) "Protege tus códigos 2FA" else "Nuevo código de recuperación",
+        titulo = if (alta) "Protege tus códigos 2FA" else "Nuevo código de recuperación",
         salida = Salida(onBack),
-        entradilla = if (purpose == RecoveryCodePurpose.SETUP) {
-            "Cada código 2FA se cifra con una llave que solo se abre con tu huella. Abrirá la bóveda " +
-                "cualquier huella ya registrada en este teléfono. Revisa las huellas en los ajustes del " +
-                "sistema antes de activarla. Esa llave no sale de este móvil y se destruye al inscribir " +
-                "una huella nueva o quitar el bloqueo de pantalla, así que para recuperar los códigos en " +
-                "otro teléfono (desde una copia) o si cambias tus huellas necesitarás este código de " +
-                "recuperación:"
+        entradilla = if (alta) {
+            "Cada código 2FA se cifra con una llave que solo se abre con tu huella."
         } else {
             "Este código sustituirá al anterior y tus códigos 2FA se cifrarán con una llave nueva (te pedirá " +
-                "la huella dos veces). Las copias de seguridad que ya tengas seguirán necesitando el antiguo, " +
-                "así que haz una copia nueva después."
+                "la huella dos veces)."
         },
         snackbar = snackbar,
         ocupado = busy,
@@ -1112,48 +1197,82 @@ internal fun CodigoRecuperacionContenido(
                     Trabajando(voz("Cifrando. La seguridad no tiene prisa…", "Cifrando…"), Modifier.weight(1f).padding(vertical = Spacing.s2))
                 } else {
                     BotonPrimario(
-                        if (purpose == RecoveryCodePurpose.SETUP) "Activar con mi huella" else "Cambiar con mi huella",
+                        if (alta) "Activar con mi huella" else "Cambiar con mi huella",
                         onConfirm,
                         Modifier.weight(1f),
                         enabled = matches && !busy,
-                        icono = R.drawable.ic_huella,
+                        // Con letra grande, sin icono: así cabe en un renglón.
+                        icono = if (letraGrande()) null else R.drawable.ic_huella,
                     )
                 }
             }
         },
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(Spacing.s5)) {
-            Papeleta(codigo)
-            Column {
-                CampoCodigo(
-                    value = typed,
-                    onValueChange = onTypedChange,
-                    label = "Escríbelo para confirmar que lo has apuntado",
-                    ayuda = "Mayúsculas, espacios y guiones dan igual.",
+        Apartado("Tu código de recuperación", numero = "I")
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.s4)) {
+            if (alta) {
+                Text(
+                    "Esa llave no sale de este móvil y se destruye al inscribir una huella nueva o quitar el " +
+                        "bloqueo de pantalla, así que para recuperar los códigos en otro teléfono (desde una " +
+                        "copia) o si cambias tus huellas necesitarás este código de recuperación:",
+                    style = t.body,
+                    color = c.textPrimary,
                 )
-                AnimatedVisibility(
-                    visible = matches,
-                    enter = fadeIn(tween(Motion.BASE)) + expandVertically(tween(Motion.BASE, easing = Motion.Standard)),
-                    exit = fadeOut(tween(Motion.FAST)) + shrinkVertically(tween(Motion.BASE, easing = Motion.Standard)),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(top = Spacing.s3),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
-                    ) {
-                        Sello("Conforme", c.successFg, Modifier.clearAndSetSemantics { })
-                        Text(
-                            "Coincide con el de arriba.",
-                            style = t.small,
-                            color = c.textSecondary,
-                            modifier = Modifier.semantics {
-                                contentDescription = "Conforme: coincide con el de arriba."
-                                liveRegion = LiveRegionMode.Polite
-                            },
-                        )
-                    }
-                }
             }
+            Papeleta(codigo)
+        }
+
+        Apartado("Confírmalo", numero = "II")
+        CampoCodigo(
+            value = typed,
+            onValueChange = onTypedChange,
+            label = "Escríbelo para confirmar que lo has apuntado",
+            placeholder = "XXXXX-XXXXX-XXXXX-XXXXX",
+            ayuda = "Mayúsculas, espacios y guiones dan igual.",
+            // Con letra grande el código pasa de renglón en vez de cortarse: hay que poder compararlo
+            // con la papeleta.
+            singleLine = false,
+            maxLines = 3,
+        )
+        AnimatedVisibility(
+            visible = matches,
+            enter = fadeIn(tween(Motion.BASE)) + expandVertically(tween(Motion.BASE, easing = Motion.Standard)),
+            exit = fadeOut(tween(Motion.FAST)) + shrinkVertically(tween(Motion.BASE, easing = Motion.Standard)),
+        ) {
+            Row(
+                modifier = Modifier.padding(top = Spacing.s3),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
+            ) {
+                Sello("Conforme", c.successFg, Modifier.clearAndSetSemantics { })
+                Text(
+                    "Coincide con el de arriba.",
+                    style = t.small,
+                    color = c.textSecondary,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Conforme: coincide con el de arriba."
+                        liveRegion = LiveRegionMode.Polite
+                    },
+                )
+            }
+        }
+        // Lo que hay que revisar antes de pulsar el botón de abajo.
+        if (alta) {
+            Aviso(
+                TipoAviso.Aviso,
+                "Vale cualquier huella del teléfono",
+                Modifier.padding(top = Spacing.s6),
+                mensaje = "Abrirá la bóveda cualquier huella ya registrada en este teléfono. Revisa las huellas en " +
+                    "los ajustes del sistema antes de activarla.",
+            )
+        } else {
+            Aviso(
+                TipoAviso.Aviso,
+                "Tus copias siguen con el código antiguo",
+                Modifier.padding(top = Spacing.s6),
+                mensaje = "Las copias de seguridad que ya tengas seguirán necesitando el antiguo, así que haz una " +
+                    "copia nueva después.",
+            )
         }
     }
 }
@@ -1196,12 +1315,13 @@ private fun Papeleta(codigo: String) {
             }
         },
         matriz = {
+            // Es un consejo de seguridad, no letra pequeña: en el cuerpo y en tinta normal.
             Text(
                 "Apúntalo en papel y guárdalo lejos del móvil. No lo guardes en Contraseñora, en fotos ni en la nube: " +
                     "si alguien lo consigue junto a tu contraseña maestra, podría leer tus códigos sin tu huella. " +
                     "Si lo pierdes y pierdes el móvil, tendrás que usar los códigos de respaldo de cada web.",
-                style = t.small,
-                color = c.textSecondary,
+                style = t.body,
+                color = c.textPrimary,
             )
         },
     )
@@ -1269,7 +1389,8 @@ internal fun RecuperarContenido(
                         onRecover,
                         Modifier.weight(1f),
                         enabled = typed.isNotBlank() && !busy,
-                        icono = R.drawable.ic_huella,
+                        // Con letra grande, sin icono: así cabe en un renglón.
+                        icono = if (letraGrande()) null else R.drawable.ic_huella,
                     )
                 }
             }
@@ -1286,6 +1407,9 @@ internal fun RecuperarContenido(
                 onValueChange = onTypedChange,
                 label = "Código de recuperación",
                 placeholder = "XXXXX-XXXXX-XXXXX-XXXXX",
+                // Con letra grande pasa de renglón en vez de cortarse.
+                singleLine = false,
+                maxLines = 3,
             )
         }
         LineaPunteada(Modifier.padding(top = Spacing.s8, bottom = Spacing.s3))

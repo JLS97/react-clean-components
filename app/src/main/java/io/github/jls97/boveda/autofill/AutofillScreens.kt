@@ -12,17 +12,21 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -41,6 +45,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -56,16 +61,18 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.jls97.boveda.BovedaApplication
@@ -82,13 +89,14 @@ import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
 import io.github.jls97.boveda.ui.components.Apartado
-import io.github.jls97.boveda.ui.components.Aviso
 import io.github.jls97.boveda.ui.components.BarraSuperior
+import io.github.jls97.boveda.ui.components.BotonFantasma
 import io.github.jls97.boveda.ui.components.BotonIcono
 import io.github.jls97.boveda.ui.components.BotonPrimario
 import io.github.jls97.boveda.ui.components.BotonSecundario
 import io.github.jls97.boveda.ui.components.CabeceraGrande
 import io.github.jls97.boveda.ui.components.CampoBusqueda
+import io.github.jls97.boveda.ui.components.EstadoVacio
 import io.github.jls97.boveda.ui.components.Ficha
 import io.github.jls97.boveda.ui.components.FilaCasilla
 import io.github.jls97.boveda.ui.components.Isotipo
@@ -98,13 +106,15 @@ import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.OnAppBackground
 import io.github.jls97.boveda.ui.components.Pantalla
 import io.github.jls97.boveda.ui.components.Salida
+import io.github.jls97.boveda.ui.components.Sello
 import io.github.jls97.boveda.ui.components.TextoError
 import io.github.jls97.boveda.ui.components.TipoAviso
+import io.github.jls97.boveda.ui.components.Trabajando
 import io.github.jls97.boveda.ui.components.desbordar
 import io.github.jls97.boveda.ui.components.findActivity
 import io.github.jls97.boveda.ui.components.margenLateral
-import io.github.jls97.boveda.ui.components.partirEnAviso
 import io.github.jls97.boveda.ui.components.textoSecreto
+import io.github.jls97.boveda.ui.components.tintaDe
 import io.github.jls97.boveda.ui.lock.LockViewModel
 import io.github.jls97.boveda.ui.lock.UnlockScreen
 import io.github.jls97.boveda.ui.theme.ContrasenoraShapes
@@ -279,9 +289,11 @@ private fun PickEntryScreen(
 
 /**
  * Elegir con qué entrada rellenar, sin estado. De arriba abajo, en el orden en que hay que leerlo:
- * la ventanilla con el destino (y lo que dice mostrar, y si su dominio es internacionalizado), qué
- * se va a rellenar, los avisos antiphishing uno a uno y siempre a la vista, la búsqueda, la casilla
- * de vincular y las entradas: vinculadas, sugeridas y todas.
+ * la ventanilla con el destino (y lo que dice mostrar) y qué se va a rellenar; los avisos (dominio
+ * internacionalizado y antiphishing), todos a la vista en una sola ficha con un solo sello; la
+ * búsqueda, la casilla de vincular y las entradas: vinculadas, sugeridas y todas. Sin entradas,
+ * nada que buscar ni avisar: un estado vacío. Mientras se vincula o se abre el código, el mostrador
+ * lo dice.
  */
 @Composable
 internal fun ElegirEntradaContenido(
@@ -321,9 +333,15 @@ internal fun ElegirEntradaContenido(
     val others = remember(entries, exact, suggested) {
         (entries - exact.toSet() - suggested.toSet()).sortedBy { it.title.lowercase() }
     }
-    // Always shown, one by one, as urgent: an unlinked app or site is the realistic phishing case,
-    // and an unencrypted page is a warning even when an entry is linked.
-    val warnings = FillWarnings.forFill(target, exact, impersonated)
+    // Always shown, and as urgent: an unlinked app or site is the realistic phishing case, and an
+    // unencrypted page is a warning even when an entry is linked. With nothing to pick, nothing can
+    // be filled, so there is nothing to warn about.
+    val avisos = if (entries.isEmpty()) {
+        emptyList()
+    } else {
+        listOfNotNull(avisoIdn(target)) +
+            FillWarnings.forFill(target, exact, impersonated).map { avisoDe(it, suplantada = impersonated.isNotEmpty()) }
+    }
 
     fun fill(entry: VaultEntry) = onPick(entry, rememberChoice && canRemember)
 
@@ -344,6 +362,21 @@ internal fun ElegirEntradaContenido(
                 ocupado = busy,
             )
         },
+        // Vincular o abrir el código lleva un momento: las filas se apagan y aquí se dice por qué.
+        bottomBar = {
+            AnimatedVisibility(
+                visible = busy,
+                enter = fadeIn(tween(Motion.BASE)) + expandVertically(tween(Motion.BASE, easing = Motion.Standard)),
+                exit = fadeOut(tween(Motion.FAST)) + shrinkVertically(tween(Motion.BASE, easing = Motion.Standard)),
+            ) {
+                Mostrador {
+                    Trabajando(
+                        voz("Preparando el relleno. Aquí nada se hace a lo loco…", "Preparando el relleno…"),
+                        Modifier.weight(1f).padding(vertical = Spacing.s2),
+                    )
+                }
+            }
+        },
     ) { inner ->
         LazyColumn(
             state = lista,
@@ -360,11 +393,20 @@ internal fun ElegirEntradaContenido(
         ) {
             item(key = "cabecera") { CabeceraGrande(title) }
             item(key = "destino") { Ventanilla(target, fillDescription) }
-            warnings.forEachIndexed { i, warning ->
-                item(key = "aviso/$i") {
-                    val (titulo, resto) = partirEnAviso(warning)
-                    Aviso(TipoAviso.Peligro, titulo, Modifier.padding(top = Spacing.s3), mensaje = resto)
+            if (avisos.isNotEmpty()) {
+                item(key = "avisos") { AvisosDestino(avisos, Modifier.padding(top = Spacing.s3)) }
+            }
+            error?.let { item(key = "error") { TextoError(it, Modifier.padding(top = Spacing.s3)) } }
+            if (entries.isEmpty()) {
+                // Desde aquí no se puede crear nada: sin acción.
+                item(key = "vacia") {
+                    EstadoVacio(
+                        titulo = voz("Aquí no hay nada que rellenar… todavía.", "Nada que rellenar"),
+                        mensaje = emptyText,
+                        modifier = Modifier.padding(top = Spacing.s2),
+                    )
                 }
+                return@LazyColumn
             }
             item(key = "busqueda") {
                 CampoBusqueda(
@@ -374,85 +416,99 @@ internal fun ElegirEntradaContenido(
                     modifier = Modifier.fillMaxWidth().padding(top = Spacing.s6),
                 )
             }
-            if (linkable) {
+            // Solo si se puede vincular: junto a una app suplantada no se puede, y el aviso ya lo dice.
+            if (canRemember) {
                 item(key = "vincular") {
                     FilaCasilla(
                         "Vincular la entrada que elija a ${target.label}",
-                        marcada = rememberChoice && canRemember,
+                        marcada = rememberChoice,
                         onCambio = onRememberChoiceChange,
-                        enabled = canRemember,
                         modifier = Modifier.padding(top = Spacing.s2),
                     )
                 }
             }
-            error?.let { item(key = "error") { TextoError(it, Modifier.padding(top = Spacing.s3)) } }
             if (query.isNotBlank()) {
                 seccion("Resultados", searchResults, busy, ::fill)
                 if (searchResults.isEmpty()) {
                     item(key = "sin-resultados") {
-                        TextoVacio(voz("No encuentro nada con «$query». Y mira que soy cotilla.", "Nada coincide con «$query»."))
+                        Column {
+                            TextoVacio(voz("No encuentro nada con «$query». Y mira que soy cotilla.", "Nada coincide con «$query»."))
+                            BotonFantasma(
+                                "Borrar búsqueda",
+                                { onQueryChange("") },
+                                Modifier.desbordar(Spacing.s3).padding(top = Spacing.s2),
+                                icono = R.drawable.ic_cerrar,
+                            )
+                        }
                     }
                 }
             } else {
                 seccion("Vinculadas a ${target.label}", exact, busy, ::fill)
                 seccion("Quizá sea una de estas", suggested, busy, ::fill)
                 seccion("Todas", others, busy, ::fill)
-                if (entries.isEmpty()) item(key = "vacia") { TextoVacio(emptyText) }
             }
         }
     }
 }
 
 /**
- * La ventanilla: para quién se rellena, en una ficha de borde marcado que no se puede pasar por
- * alto. Arriba, Web o App y su nombre en letra de códigos; debajo, la dirección que dice mostrar
- * en su propia línea y el aviso de dominio internacionalizado; tras la línea de puntos, qué se va
- * a rellenar. TalkBack lee el destino de una vez: «Web, banco.es».
+ * La ventanilla: para quién se rellena, en una ficha de papel. Arriba, «Para la web» o «Para la app»
+ * en ciruela y su nombre en letra de códigos; debajo, la dirección que dice mostrar en su propia
+ * línea; tras la línea de puntos, qué se va a rellenar. TalkBack lee el destino de una vez: «Para la
+ * web, banco.es».
  */
 @Composable
-private fun Ventanilla(target: AutofillTarget, fillDescription: String?) {
+private fun Ventanilla(target: AutofillTarget, fillDescription: String) {
     val c = ContrasenoraTheme.colors
     val t = ContrasenoraTheme.type
-    Ficha(relleno = PaddingValues(0.dp), borde = c.borderStrong) {
+    Ficha(relleno = PaddingValues(0.dp)) {
         Column(Modifier.padding(Spacing.s4), verticalArrangement = Arrangement.spacedBy(Spacing.s3)) {
-            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Spacing.s3)) {
-                Icon(
-                    painterResource(R.drawable.ic_llave),
-                    contentDescription = null,
-                    tint = c.textLink,
-                    modifier = Modifier.padding(top = 2.dp).size(Sizes.iconLg),
-                )
-                Column(Modifier.weight(1f).semantics(mergeDescendants = true) { }) {
-                    Text(if (target.host != null) "Web" else "App", style = t.label, color = c.textSecondary)
-                    Text(
-                        cortesEnPuntos(target.label),
-                        style = t.secret.copy(fontWeight = FontWeight.Medium),
-                        color = c.textPrimary,
-                        modifier = Modifier.padding(top = Spacing.s0_5).semantics { contentDescription = target.label },
-                    )
-                }
-            }
+            CabeceraDestino(target, if (target.host != null) "Para la web" else "Para la app")
             ClaimedAddress(target)
-            idnWarning(target)?.let { TextoError(it) }
         }
-        if (fillDescription != null) {
-            LineaPunteada(Modifier.padding(horizontal = Spacing.s4))
+        LineaPunteada(Modifier.padding(horizontal = Spacing.s4))
+        Text(
+            fillDescription,
+            style = t.body,
+            color = c.textPrimary,
+            modifier = Modifier.padding(horizontal = Spacing.s4, vertical = Spacing.s3),
+        )
+    }
+}
+
+/**
+ * El destino, igual en Elegir y en Guardar: la llave, el [antetitulo] en ciruela («Para la web»,
+ * «Credenciales de la app») y el nombre en letra de códigos, que pasa de renglón entre sus partes.
+ */
+@Composable
+private fun CabeceraDestino(target: AutofillTarget, antetitulo: String) {
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Spacing.s3)) {
+        Icon(
+            painterResource(R.drawable.ic_llave),
+            contentDescription = null,
+            tint = c.textLink,
+            modifier = Modifier.padding(top = 2.dp).size(Sizes.iconLg),
+        )
+        Column(Modifier.weight(1f).semantics(mergeDescendants = true) { }) {
+            Text(antetitulo, style = t.label, color = c.textLink)
             Text(
-                fillDescription,
-                style = t.body,
+                cortesEnPuntos(target.label),
+                style = t.secret.copy(fontWeight = FontWeight.Medium),
                 color = c.textPrimary,
-                modifier = Modifier.padding(horizontal = Spacing.s4, vertical = Spacing.s3),
+                modifier = Modifier.padding(top = Spacing.s0_5).semantics { contentDescription = target.label },
             )
         }
     }
 }
 
 /**
- * El nombre con un punto de corte invisible tras cada punto: un paquete largo
- * (`com.banco.login.mobile`) pasa de renglón entre sus partes y no a mitad de una. Solo para
- * dibujarlo; TalkBack lee el nombre tal cual.
+ * El nombre con un punto de corte invisible tras cada punto y cada guion: un paquete o una
+ * dirección largos (`com.banco.login.mobile`, `banco.es.verificacion-clientes.ru`) pasan de renglón
+ * entre sus partes y no a mitad de una. Solo para dibujarlo; TalkBack lee el nombre tal cual.
  */
-private fun cortesEnPuntos(nombre: String): String = nombre.replace(".", ".\u200B")
+private fun cortesEnPuntos(nombre: String): String = nombre.replace(".", ".\u200B").replace("-", "-\u200B")
 
 /** Encabezado y filas de una sección de la lista; nada si no tiene entradas. */
 private fun LazyListScope.seccion(
@@ -480,8 +536,9 @@ private fun LazyListScope.seccion(
 }
 
 /**
- * Una entrada que se puede elegir, al estilo del fichero: nombre y usuario, la flecha al final y una
- * línea de puntos hasta la siguiente. Se pulsa entera; mientras se vincula, no.
+ * Una entrada que se puede elegir, al estilo del fichero: nombre y usuario y una línea de puntos
+ * hasta la siguiente. Sin flecha: pulsarla no abre nada, rellena y cierra. Se pulsa entera; mientras
+ * se vincula, no.
  */
 @Composable
 private fun FilaEntrada(entry: VaultEntry, enabled: Boolean, ultima: Boolean, onClick: () -> Unit) {
@@ -493,7 +550,7 @@ private fun FilaEntrada(entry: VaultEntry, enabled: Boolean, ultima: Boolean, on
                 .fillMaxWidth()
                 .desbordar(Spacing.s2)
                 .clip(ContrasenoraShapes.sm)
-                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                .clickable(enabled = enabled, onClickLabel = "Rellenar", role = Role.Button, onClick = onClick)
                 .heightIn(min = Sizes.listItemHeight)
                 .padding(horizontal = Spacing.s2, vertical = Spacing.s3),
             verticalAlignment = Alignment.CenterVertically,
@@ -517,12 +574,6 @@ private fun FilaEntrada(entry: VaultEntry, enabled: Boolean, ultima: Boolean, on
                     )
                 }
             }
-            Icon(
-                painterResource(R.drawable.ic_flecha),
-                contentDescription = null,
-                tint = if (enabled) c.textTertiary else c.textDisabled,
-                modifier = Modifier.size(Sizes.iconMd),
-            )
         }
         if (!ultima) LineaPunteada()
     }
@@ -593,8 +644,9 @@ private fun SaveEntryScreen(
 
 /**
  * Guardar lo que se ha tecleado en otra app, sin estado: un resguardo con el destino, el resumen y
- * las contraseñas (capturada y, al actualizar, la actual), ocultas hasta pulsar el ojo; los avisos;
- * dónde guardarla y los datos. Abajo, «No guardar» y «Guardar».
+ * las contraseñas (capturada y, al actualizar, la actual), ocultas hasta pulsar el ojo; los avisos
+ * en una ficha; y un impreso con dónde guardarla (I, si hay dónde elegir) y los datos (II). Abajo,
+ * «No guardar» y «Guardar», del mismo alto, o apilados con letra grande.
  */
 @Composable
 internal fun GuardarContenido(
@@ -621,20 +673,29 @@ internal fun GuardarContenido(
         ocupado = busy,
         mostrador = {
             Mostrador {
-                BotonSecundario("No guardar", onCancel, Modifier.weight(1f), enabled = !busy)
-                BotonPrimario("Guardar", onSave, Modifier.weight(1f), enabled = !busy)
+                if (LocalDensity.current.fontScale >= 1.5f) {
+                    // Con letra grande, apilados a todo lo ancho y con aire arriba y abajo (los botones de
+                    // la base solo tienen relleno a los lados).
+                    val alto = with(LocalDensity.current) { ContrasenoraTheme.type.bodyStrong.lineHeight.toDp() } + Spacing.s4
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Spacing.s2)) {
+                        BotonPrimario("Guardar", onSave, Modifier.fillMaxWidth().heightIn(min = alto), enabled = !busy)
+                        BotonSecundario("No guardar", onCancel, Modifier.fillMaxWidth().heightIn(min = alto), enabled = !busy)
+                    }
+                } else {
+                    Row(Modifier.weight(1f).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(Spacing.s2)) {
+                        BotonSecundario("No guardar", onCancel, Modifier.weight(1f).fillMaxHeight(), enabled = !busy)
+                        BotonPrimario("Guardar", onSave, Modifier.weight(1f).fillMaxHeight(), enabled = !busy)
+                    }
+                }
             }
         },
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(Spacing.s3)) {
-            Capturado(pending, existing, username, revealed, onRevealedChange)
-            FillWarnings.forSave(pending.target, impersonated).forEach { warning ->
-                val (titulo, resto) = partirEnAviso(warning)
-                Aviso(TipoAviso.Peligro, titulo, mensaje = resto)
-            }
-        }
+        Capturado(pending, existing, username, revealed, onRevealedChange)
+        val avisos = listOfNotNull(avisoIdn(pending.target)) +
+            FillWarnings.forSave(pending.target, impersonated).map { avisoDe(it, suplantada = impersonated.isNotEmpty()) }
+        if (avisos.isNotEmpty()) AvisosDestino(avisos, Modifier.padding(top = Spacing.s3))
         if (matches.isNotEmpty()) {
-            Apartado("¿Dónde la guardo?")
+            Apartado("¿Dónde la guardo?", numero = "I")
             Column(
                 modifier = Modifier.selectableGroup(),
                 verticalArrangement = Arrangement.spacedBy(Spacing.s2),
@@ -649,10 +710,8 @@ internal fun GuardarContenido(
                 }
             }
         }
-        Column(
-            modifier = Modifier.padding(top = Spacing.s6),
-            verticalArrangement = Arrangement.spacedBy(Spacing.s4),
-        ) {
+        Apartado("Los datos", numero = if (matches.isNotEmpty()) "II" else null)
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.s4)) {
             AnimatedVisibility(
                 visible = replaceId == null,
                 enter = fadeIn(tween(Motion.BASE)) + expandVertically(tween(Motion.BASE, easing = Motion.Standard)),
@@ -682,9 +741,10 @@ internal fun GuardarContenido(
 }
 
 /**
- * Lo capturado, como un resguardo de ventanilla: de dónde viene (y lo que dice mostrar), el resumen
- * de lo que se va a guardar y, bajo la línea de puntos, la contraseña capturada y la actual. Nunca
- * se sobrescribe a ciegas: el ojo enseña las dos para compararlas.
+ * Lo capturado, como un resguardo de ventanilla: de dónde viene (igual que el destino al rellenar, y
+ * lo que dice mostrar), el resumen de lo que se va a guardar y, bajo la línea de puntos, la
+ * contraseña capturada y la actual. Nunca se sobrescribe a ciegas: el ojo enseña las dos para
+ * compararlas.
  */
 @Composable
 private fun Capturado(
@@ -696,29 +756,30 @@ private fun Capturado(
 ) {
     val c = ContrasenoraTheme.colors
     val t = ContrasenoraTheme.type
-    Ficha(relleno = PaddingValues(0.dp), borde = c.borderStrong) {
+    Ficha(relleno = PaddingValues(0.dp)) {
         Column(Modifier.padding(Spacing.s4), verticalArrangement = Arrangement.spacedBy(Spacing.s3)) {
+            CabeceraDestino(
+                pending.target,
+                if (pending.target.host != null) "Credenciales de la web" else "Credenciales de la app",
+            )
+            ClaimedAddress(pending.target)
             if (existing != null) {
-                Text(
-                    "Credenciales de ${pending.target.label}. Se actualizará «${existing.title}».",
-                    style = t.body,
-                    color = c.textPrimary,
-                )
-                Text(
-                    SaveCapture.changeSummary(existing, username, pending.password),
-                    style = t.small,
-                    color = c.textSecondary,
-                )
+                Column {
+                    Text("Se actualizará «${existing.title}».", style = t.body, color = c.textPrimary)
+                    Text(
+                        SaveCapture.changeSummary(existing, username, pending.password),
+                        style = t.small,
+                        color = c.textSecondary,
+                        modifier = Modifier.padding(top = Spacing.s1),
+                    )
+                }
             } else {
                 Text(
-                    "Credenciales de ${pending.target.label}. La contraseña (${pending.password.length} caracteres) " +
-                        "se guardará cifrada.",
+                    "La contraseña (${pending.password.length} caracteres) se guardará cifrada.",
                     style = t.body,
                     color = c.textPrimary,
                 )
             }
-            ClaimedAddress(pending.target)
-            idnWarning(pending.target)?.let { TextoError(it) }
         }
         LineaPunteada(Modifier.padding(horizontal = Spacing.s4))
         // What is about to be stored is never a blind overwrite: the user can compare both values.
@@ -741,8 +802,9 @@ private fun Capturado(
 }
 
 /**
- * Una contraseña del resguardo: doce puntos mientras está oculta (no dicen cuánto mide) o, a la
- * vista, en letra de códigos con las cifras en latón. Una vacía se dice con palabras.
+ * Una contraseña del resguardo: doce puntos mientras está oculta (un hueco, siempre igual; cuánto
+ * mide la nueva ya lo dice el resumen de arriba) o, a la vista, en letra de códigos con las cifras
+ * en latón. Una vacía se dice con palabras.
  */
 @Composable
 private fun ValorGuardado(etiqueta: String, password: String, revealed: Boolean) {
@@ -863,6 +925,8 @@ private fun fillDescription(request: AutofillRequest.Fill): String = when {
 /**
  * The address an app claims to show, on a line of its own in monospace and never inside a
  * sentence: whatever it contains (quotes, a reassuring text) can't pass for part of a warning.
+ * Never cut short: the part that matters is at the end (`banco.es.estafa.ru`), so it wraps between
+ * its labels instead.
  */
 @Composable
 private fun ClaimedAddress(target: AutofillTarget) {
@@ -872,14 +936,13 @@ private fun ClaimedAddress(target: AutofillTarget) {
     Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { }) {
         Text("Muestra:", style = t.label, color = c.textSecondary)
         Text(
-            claimed,
-            style = t.secret.copy(fontSize = 16.sp, lineHeight = 24.sp),
+            cortesEnPuntos(claimed),
+            style = t.secret,
             color = c.textPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .padding(top = Spacing.s1)
                 .fillMaxWidth()
+                .semantics { contentDescription = claimed }
                 .clip(ContrasenoraShapes.xs)
                 .background(c.bgSunken)
                 .padding(horizontal = Spacing.s2, vertical = Spacing.s1),
@@ -887,11 +950,88 @@ private fun ClaimedAddress(target: AutofillTarget) {
     }
 }
 
-/** Shown when the domain has non-ASCII characters: a look-alike of a real domain can hide there. */
-private fun idnWarning(target: AutofillTarget): String? =
+/** Un aviso sobre el destino: el sello que le toca, un título corto y el texto entero. */
+private class AvisoDestino(val tipo: TipoAviso, val titulo: String, val texto: String)
+
+/**
+ * Shown when the domain has non-ASCII characters: a look-alike of a real domain can hide there.
+ * First of the warnings, as urgent.
+ */
+private fun avisoIdn(target: AutofillTarget): AvisoDestino? =
     if (target.isIdn) {
-        "Dominio internacionalizado: su nombre real tiene caracteres no latinos y se muestra en su " +
-            "forma ASCII («${target.host}»). Puede imitar a un dominio conocido: compruébalo con cuidado."
+        AvisoDestino(
+            TipoAviso.Peligro,
+            "Dominio internacionalizado",
+            "Su nombre real tiene caracteres no latinos y se muestra en su forma ASCII («${target.host}»). " +
+                "Puede imitar a un dominio conocido: compruébalo con cuidado.",
+        )
     } else {
         null
     }
+
+/**
+ * Un aviso de [FillWarnings] con un título corto según de qué avisa; el texto, entero y tal cual
+ * (sin el «Página sin cifrar:» del principio cuando ese es ya el título). Todo lo que avisa de
+ * phishing va como urgente; solo «se guardará sin vincular», que es una consecuencia, va con «Ojo».
+ * Lo que no se reconoce, también urgente.
+ */
+private fun avisoDe(aviso: String, suplantada: Boolean): AvisoDestino {
+    val (tipo, titulo) = when {
+        aviso == FillWarnings.UNENCRYPTED -> TipoAviso.Peligro to "Página sin cifrar"
+        aviso == FillWarnings.BROWSER_WITHOUT_DOMAIN -> TipoAviso.Peligro to "Página sin dirección"
+        aviso.startsWith(FillWarnings.NOT_A_BROWSER) -> TipoAviso.Peligro to "No es un navegador"
+        aviso.startsWith(FillWarnings.UNUSUAL_ADDRESS) -> TipoAviso.Peligro to "Dirección poco corriente"
+        aviso.startsWith(FillWarnings.UNVERIFIED_SIGNATURE) -> TipoAviso.Peligro to "Firma sin verificar"
+        aviso == FillWarnings.NO_LINKED_WEB -> TipoAviso.Peligro to "Web sin entrada vinculada"
+        aviso == FillWarnings.NO_LINKED_APP -> TipoAviso.Peligro to "App sin entrada vinculada"
+        aviso == FillWarnings.CHOOSE_WITH_CARE -> TipoAviso.Peligro to "No se podrá vincular"
+        aviso == FillWarnings.SAVED_UNLINKED -> TipoAviso.Aviso to "Se guardará sin vincular"
+        suplantada -> TipoAviso.Peligro to "Posible app falsa"
+        else -> TipoAviso.Peligro to "Revisa el destino"
+    }
+    val prefijo = "$titulo: "
+    val texto = if (aviso.startsWith(prefijo)) aviso.removePrefix(prefijo).replaceFirstChar { it.uppercase() } else aviso
+    return AvisoDestino(tipo, titulo, texto)
+}
+
+/**
+ * Los avisos del destino en una sola ficha, en su orden y todos a la vista: un solo sello (el más
+ * grave) y, por aviso, su título corto y el texto entero en letra normal, separados por líneas de
+ * puntos. Con alguno urgente, borde del color del sello y TalkBack lo anuncia en cuanto aparece.
+ */
+@Composable
+private fun AvisosDestino(avisos: List<AvisoDestino>, modifier: Modifier = Modifier) {
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    val tipo = if (avisos.any { it.tipo == TipoAviso.Peligro }) TipoAviso.Peligro else avisos.first().tipo
+    val critico = tipo == TipoAviso.Peligro
+    val tinta = tintaDe(tipo)
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = if (critico) LiveRegionMode.Assertive else LiveRegionMode.Polite },
+        shape = ContrasenoraShapes.md,
+        color = c.bgSurface,
+        contentColor = c.textPrimary,
+        border = BorderStroke(if (critico) Sizes.inputBorder else 1.dp, if (critico) tinta else c.borderSubtle),
+    ) {
+        Column(Modifier.padding(start = Spacing.s4, end = Spacing.s3, top = Spacing.s4, bottom = Spacing.s4)) {
+            avisos.forEachIndexed { i, aviso ->
+                if (i > 0) LineaPunteada(Modifier.padding(top = Spacing.s4, bottom = Spacing.s3, end = Spacing.s1))
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Spacing.s3)) {
+                    // El sello se lee primero: «Urgente. Página sin cifrar.»
+                    Text(
+                        aviso.titulo,
+                        style = t.bodyStrong,
+                        color = c.textPrimary,
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { contentDescription = if (i == 0) "${tipo.palabra}. ${aviso.titulo}" else aviso.titulo },
+                    )
+                    if (i == 0) Sello(tipo.palabra, tinta, Modifier.clearAndSetSemantics { })
+                }
+                Text(aviso.texto, style = t.body, color = c.textPrimary, modifier = Modifier.padding(top = Spacing.s1, end = Spacing.s1))
+            }
+        }
+    }
+}

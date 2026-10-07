@@ -74,7 +74,7 @@ object FillWarnings {
      */
     fun impersonationWarning(entries: List<VaultEntry>): String {
         val titles = entries.joinToString(", ") { "«${it.title.ifBlank { "(sin nombre)" }}»" }
-        return "Esta app tiene el mismo nombre que la vinculada a $titles pero OTRA firma digital: " +
+        return "Esta app tiene el mismo nombre que la vinculada a $titles pero otra firma digital: " +
             "probablemente es falsa. No se podrá vincular."
     }
 
