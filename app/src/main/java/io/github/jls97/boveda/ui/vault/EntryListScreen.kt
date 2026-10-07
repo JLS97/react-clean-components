@@ -124,7 +124,7 @@ fun EntryListScreen(
                 CampoBusqueda(
                     value = query,
                     onValueChange = onQueryChange,
-                    placeholder = "Buscar por nombre, web o usuario",
+                    placeholder = "Buscar una clave",
                     modifier = Modifier.weight(1f),
                 )
                 BotonIcono(R.drawable.ic_generar, "Generador de contraseñas", onGenerator, tinte = c.textPrimary, fondo = c.bgSunken)

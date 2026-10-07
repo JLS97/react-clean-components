@@ -84,35 +84,30 @@ fun Aviso(
         contentColor = c.textPrimary,
         border = BorderStroke(if (critico) Sizes.inputBorder else 1.dp, if (critico) tinta else c.borderSubtle),
     ) {
-        Row(
-            modifier = Modifier.padding(start = Spacing.s4, end = Spacing.s3, top = Spacing.s4, bottom = Spacing.s3),
-            verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
-        ) {
-            Column(Modifier.weight(1f)) {
+        Column(Modifier.padding(start = Spacing.s4, end = Spacing.s3, top = Spacing.s4, bottom = Spacing.s3)) {
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Spacing.s3)) {
                 // El sello se lee primero: «Urgente. Título.»
                 Text(
                     text = titulo,
                     style = t.bodyStrong,
                     color = c.textPrimary,
-                    modifier = Modifier.semantics { contentDescription = "${tipo.palabra}. $titulo" },
+                    modifier = Modifier.weight(1f).semantics { contentDescription = "${tipo.palabra}. $titulo" },
                 )
-                if (mensaje != null) {
-                    Spacer(Modifier.height(Spacing.s1))
-                    Text(mensaje, style = t.small, color = c.textSecondary)
-                }
-                if ((accion != null && onAccion != null) || (accionSecundaria != null && onAccionSecundaria != null)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s4)) {
-                        if (accion != null && onAccion != null) AccionAviso(accion, onAccion, accionesActivas)
-                        if (accionSecundaria != null && onAccionSecundaria != null) {
-                            AccionAviso(accionSecundaria, onAccionSecundaria, accionesActivas)
-                        }
-                    }
-                } else {
-                    Spacer(Modifier.height(Spacing.s1))
-                }
+                Sello(texto = tipo.palabra, tinta = tinta, modifier = Modifier.clearAndSetSemantics { })
             }
-            Sello(texto = tipo.palabra, tinta = tinta, modifier = Modifier.clearAndSetSemantics { })
+            if (mensaje != null) {
+                Text(mensaje, style = t.small, color = c.textSecondary, modifier = Modifier.padding(top = Spacing.s1, end = Spacing.s1))
+            }
+            if ((accion != null && onAccion != null) || (accionSecundaria != null && onAccionSecundaria != null)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s4)) {
+                    if (accion != null && onAccion != null) AccionAviso(accion, onAccion, accionesActivas)
+                    if (accionSecundaria != null && onAccionSecundaria != null) {
+                        AccionAviso(accionSecundaria, onAccionSecundaria, accionesActivas)
+                    }
+                }
+            } else {
+                Spacer(Modifier.height(Spacing.s1))
+            }
         }
     }
 }

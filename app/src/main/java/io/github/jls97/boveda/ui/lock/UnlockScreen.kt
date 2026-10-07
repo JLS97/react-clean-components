@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -312,99 +314,114 @@ internal fun DesbloqueoContenido(
     val conHuella = biometricEnabled && !usePassword
     val blocked = blockedSeconds != null
 
-    Column(
-        modifier = Modifier
+    BoxWithConstraints(
+        Modifier
             .fillMaxSize()
             .background(c.bgCanvas)
             .testTag("unlock_screen")
-            .safeDrawingPadding()
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .safeDrawingPadding(),
     ) {
+        val altoVisible = maxHeight
         Column(
-            Modifier
-                .widthIn(max = 560.dp)
-                .fillMaxWidth()
-                .padding(start = margen, end = margen, top = Spacing.s10, bottom = Spacing.s8),
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            IsotipoPortero(abriendo = abriendo, trabajando = busy, fallos = wrongPasswords)
-            Text(
-                voz("¿Quién va?", "Contraseñora está bloqueada"),
-                style = if (sobria) t.display2 else t.display1,
-                color = c.textPrimary,
-                modifier = Modifier.padding(top = Spacing.s6).semantics { heading() },
-            )
-            Text(
-                if (conHuella) {
-                    voz("Enséñame tu huella y te abro la ventanilla.", "Usa tu huella para ver tus claves.")
-                } else {
-                    voz("Enséñame la contraseña maestra y te abro la ventanilla.", "Escribe la contraseña maestra para ver tus claves.")
-                },
-                style = t.bodyLarge,
-                color = c.textSecondary,
-                modifier = Modifier.padding(top = Spacing.s2),
-            )
-            if (requestContext != null) {
-                ParaQuien(requestContext, Modifier.padding(top = Spacing.s5))
-            }
-            Spacer(Modifier.height(Spacing.s6))
-            AnimatedContent(
-                targetState = blocked,
-                transitionSpec = { fadeIn(tween(Motion.BASE)) togetherWith fadeOut(tween(Motion.FAST)) },
-                label = "bloqueo temporal",
-            ) { bloqueada ->
-                if (bloqueada) {
-                    DescanseEnPass(
-                        segundosRestantes = blockedSeconds ?: 0,
-                        modifier = Modifier.padding(vertical = Spacing.s4),
-                    )
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.s4)) {
-                        NotaAntiphishing(phrase)
-                        if (!deviceSecure) InsecureDeviceWarning()
-                        notice?.let { notice ->
-                            val (titulo, resto) = partirEnAviso(notice)
-                            Aviso(TipoAviso.Info, titulo, mensaje = resto)
-                        }
-                        if (usePassword) {
-                            PasswordField(
-                                value = password,
-                                onValueChange = onPasswordChange,
-                                label = "Contraseña maestra",
-                                imeAction = ImeAction.Done,
-                                onImeAction = onUnlock,
-                                enabled = !busy,
-                                error = error,
-                                intentosFallidos = wrongPasswords,
-                            )
-                        } else {
-                            error?.let { TextoError(it) }
-                        }
-                        Acciones(
-                            busy = busy,
-                            usePassword = usePassword,
-                            biometricEnabled = biometricEnabled,
-                            canUnlock = password.isNotEmpty(),
-                            inAutofill = inAutofill,
-                            onUnlock = onUnlock,
-                            onFingerprint = onFingerprint,
-                            onUsePassword = onUsePassword,
+            Column(
+                Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    // Con poco contenido, el pie de «Restaurar» se queda abajo y no flotando a media pantalla.
+                    .heightIn(min = altoVisible)
+                    .padding(start = margen, end = margen, top = Spacing.s10, bottom = Spacing.s6),
+            ) {
+                AnimatedContent(
+                    targetState = blocked,
+                    transitionSpec = { fadeIn(tween(Motion.SLOW)) togetherWith fadeOut(tween(Motion.FAST)) },
+                    label = "bloqueo temporal",
+                ) { bloqueada ->
+                    if (bloqueada) {
+                        // Durante el bloqueo no se pide nada: solo la lápida y cuánto falta.
+                        DescanseEnPass(
+                            segundosRestantes = blockedSeconds ?: 0,
+                            modifier = Modifier.padding(top = Spacing.s8),
                         )
+                    } else {
+                        Column {
+                            IsotipoPortero(abriendo = abriendo, trabajando = busy, fallos = wrongPasswords)
+                            Text(
+                                voz("¿Quién va?", "Contraseñora está bloqueada"),
+                                style = if (sobria) t.display2 else t.display1,
+                                color = c.textPrimary,
+                                modifier = Modifier.padding(top = Spacing.s6).semantics { heading() },
+                            )
+                            Text(
+                                if (conHuella) {
+                                    voz("Enséñame tu huella y te abro la ventanilla.", "Usa tu huella para ver tus claves.")
+                                } else {
+                                    voz(
+                                        "Enséñame la contraseña maestra y te abro la ventanilla.",
+                                        "Escribe la contraseña maestra para ver tus claves.",
+                                    )
+                                },
+                                style = t.bodyLarge,
+                                color = c.textSecondary,
+                                modifier = Modifier.padding(top = Spacing.s2),
+                            )
+                            if (requestContext != null) {
+                                ParaQuien(requestContext, Modifier.padding(top = Spacing.s5))
+                            }
+                            Column(
+                                modifier = Modifier.padding(top = Spacing.s6),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.s4),
+                            ) {
+                                NotaAntiphishing(phrase)
+                                if (!deviceSecure) InsecureDeviceWarning()
+                                notice?.let { notice ->
+                                    val (titulo, resto) = partirEnAviso(notice)
+                                    Aviso(TipoAviso.Info, titulo, mensaje = resto)
+                                }
+                                if (usePassword) {
+                                    PasswordField(
+                                        value = password,
+                                        onValueChange = onPasswordChange,
+                                        label = "Contraseña maestra",
+                                        imeAction = ImeAction.Done,
+                                        onImeAction = onUnlock,
+                                        enabled = !busy,
+                                        error = error,
+                                        intentosFallidos = wrongPasswords,
+                                    )
+                                } else {
+                                    error?.let { TextoError(it) }
+                                }
+                                Acciones(
+                                    busy = busy,
+                                    usePassword = usePassword,
+                                    biometricEnabled = biometricEnabled,
+                                    canUnlock = password.isNotEmpty(),
+                                    inAutofill = inAutofill,
+                                    onUnlock = onUnlock,
+                                    onFingerprint = onFingerprint,
+                                    onUsePassword = onUsePassword,
+                                )
+                            }
+                        }
                     }
                 }
-            }
-            if (allowRestore) {
-                LineaPunteada(Modifier.padding(top = Spacing.s10, bottom = Spacing.s3))
-                Text("¿Vienes de otro teléfono o la bóveda no abre?", style = t.small, color = c.textTertiary)
-                BotonFantasma(
-                    "Restaurar una copia de seguridad",
-                    onRestore,
-                    enabled = !busy,
-                    icono = R.drawable.ic_deshacer,
-                    modifier = Modifier.padding(top = Spacing.s1),
-                )
-                if (canUndoRestore) {
-                    BotonFantasma("Volver a la bóveda anterior", onUndoRestore, enabled = !busy)
+                Spacer(Modifier.weight(1f))
+                if (allowRestore) {
+                    LineaPunteada(Modifier.padding(top = Spacing.s10, bottom = Spacing.s3))
+                    Text("¿Vienes de otro teléfono o la bóveda no abre?", style = t.small, color = c.textTertiary)
+                    BotonFantasma(
+                        "Restaurar una copia de seguridad",
+                        onRestore,
+                        enabled = !busy,
+                        icono = R.drawable.ic_deshacer,
+                        modifier = Modifier.padding(top = Spacing.s1),
+                    )
+                    if (canUndoRestore) {
+                        BotonFantasma("Volver a la bóveda anterior", onUndoRestore, enabled = !busy)
+                    }
                 }
             }
         }
