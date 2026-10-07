@@ -474,6 +474,13 @@ class VaultSession private constructor(
      * new otp.key, so after an undo the vault that comes back is in [OtpAccess.LOCKED] (a
      * deliberate action, not a loss).
      *
+     * Restoring again the very vault already on the phone (a restore that finished while the
+     * phone locked, or the same backup chosen twice) leaves vault.prev.bin alone, so the vault
+     * that [undoRestore] brings back is the one from before the first restore, not the open one.
+     * Everything tied to that copy is then left as it is too: the wrong-password count kept aside
+     * by a forced restore (a password proved for the restored vault clears only the live count)
+     * and otp.key, even when the open vault is known not to own it.
+     *
      * On success the result is [OperationResult.Restored], which says whether the master password
      * is now a different one (the backup's) and whether the copy for [undoRestore] exists. It is
      * returned even if the phone locked while the file was being written: the restore is done and
@@ -556,25 +563,33 @@ class VaultSession private constructor(
                     try {
                         val portable = VaultContainer.seal(restored.header, restored.dek, restored.data)
                         val sealed = DeviceLayer.seal(layerKey, portable)
-                        hadUndo = keepPreviousVault(keep = vaultOnPhone && !layerKeyRotated, layerKey, restored)
+                        val kept = keepPreviousVault(keep = vaultOnPhone && !layerKeyRotated, layerKey, restored)
+                        hadUndo = kept != KeptPrevious.NONE
                         writeVault(sealed)
                         biometricKeys.disable()
                         // An older backup of this same vault keeps working with the fingerprint.
                         // Otherwise the key lives as long as the vault it may belong to can come
-                        // back: with no undo, or when the open vault that leaves does not own it,
-                        // it is an orphan.
+                        // back: with no undo, or when the open vault that leaves (and is the one
+                        // the undo brings back) does not own it, it is an orphan. When the copy
+                        // kept is an older vault, the key may be that one's: it stays.
                         val otpOnDevice = otpOnDevice(restored.data)
-                        if (!otpOnDevice && (!hadUndo || current?.otpOnDevice == false)) otpKeys.disable()
+                        val otpOrphan = when (kept) {
+                            KeptPrevious.NONE -> true
+                            KeptPrevious.REPLACED -> current?.otpOnDevice == false
+                            KeptPrevious.PRESERVED -> false
+                        }
+                        if (!otpOnDevice && otpOrphan) otpKeys.disable()
                         // A forced restore proved nothing about the owner: the count stays and is
                         // kept aside, so an unlock of the restored copy cannot clear it for the
-                        // vault that comes back with undoRestore.
-                        when {
-                            RestorePolicy.resetsThrottle(decision) -> {
-                                throttle.reset()
-                                throttle.discardKept()
-                            }
-                            hadUndo -> throttle.keepForUndo()
-                            else -> throttle.discardKept()
+                        // vault that comes back with undoRestore. The slot belongs to the vault in
+                        // vault.prev.bin: it is only written or emptied when that copy changes,
+                        // never when an older vault stays there (R01-9).
+                        val resetsThrottle = RestorePolicy.resetsThrottle(decision)
+                        if (resetsThrottle) throttle.reset()
+                        when (kept) {
+                            KeptPrevious.PRESERVED -> Unit
+                            KeptPrevious.REPLACED -> if (resetsThrottle) throttle.discardKept() else throttle.keepForUndo()
+                            KeptPrevious.NONE -> throttle.discardKept()
                         }
                         OpenVault(
                             restored.header,
@@ -660,21 +675,31 @@ class VaultSession private constructor(
     }
 
     /**
+     * What [keepPreviousVault] did with vault.prev.bin: nothing to keep ([NONE]), the vault.bin
+     * being replaced is now the copy for [undoRestore] ([REPLACED]), or the copy kept before was
+     * left alone because vault.bin already was the vault being restored ([PRESERVED]). Only with
+     * [REPLACED] does the undo bring back the vault that was on the phone at the start of the
+     * restore; with [PRESERVED] it brings back an older one, which the throttle state kept aside
+     * and this phone's otp.key may belong to.
+     */
+    private enum class KeptPrevious { NONE, REPLACED, PRESERVED }
+
+    /**
      * Keeps the vault.bin about to be replaced as vault.prev.bin for [undoRestore], or drops a
      * stale copy when there is nothing to keep. When vault.bin already holds the very vault being
      * restored ([sameVault]: a restore that finished while the phone locked, done again) the copy
      * kept is left alone: writing the restored vault over it would lose the only copy of the vault
      * that left. Runs off the main thread.
      */
-    private fun keepPreviousVault(keep: Boolean, layerKey: ByteArray, restored: VaultContainer.Opened): Boolean {
+    private fun keepPreviousVault(keep: Boolean, layerKey: ByteArray, restored: VaultContainer.Opened): KeptPrevious {
         if (!keep || !storage.vaultExists()) {
             storage.deletePreviousVault()
-            return false
+            return KeptPrevious.NONE
         }
         val current = storage.readVault()
-        if (storage.previousVaultExists() && sameVault(layerKey, current, restored)) return true
+        if (storage.previousVaultExists() && sameVault(layerKey, current, restored)) return KeptPrevious.PRESERVED
         storage.writePreviousVault(current)
-        return true
+        return KeptPrevious.REPLACED
     }
 
     /**

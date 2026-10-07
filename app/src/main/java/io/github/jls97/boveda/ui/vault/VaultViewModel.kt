@@ -27,11 +27,13 @@ import io.github.jls97.boveda.ui.components.writeBackup
 import io.github.jls97.boveda.ui.lock.LockViewModel
 import io.github.jls97.boveda.ui.otp.RecoveryCodePurpose
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import javax.crypto.Cipher
 
@@ -546,9 +548,11 @@ class VaultViewModel(
 
     /** Borra la copia de la bóveda que sustituyó la última restauración: ya no se podrá deshacer. */
     fun discardUndo() {
-        session.discardUndo()
-        canUndoRestore = session.canUndoRestore()
-        message("Copia de la bóveda anterior borrada.")
+        launchBusy {
+            withContext(Dispatchers.IO) { session.discardUndo() }
+            canUndoRestore = session.canUndoRestore()
+            message("Copia de la bóveda anterior borrada.")
+        }
     }
 
     fun biometricEnrollmentCipher(): Cipher? = session.biometricEnrollmentCipher()

@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.data.VaultStorage
+import io.github.jls97.boveda.security.ThrottlePolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -171,8 +172,65 @@ class VaultSessionRestoreTest {
         assertTrue("se conserva mientras la bóveda anterior pueda volver (R01-8)", otpKey.exists())
         assertEquals(OtpAccess.NONE, unlocked.otpAccess)
 
+        // Volver a restaurar la misma copia desde abierta: vault.prev.bin sigue siendo la bóveda
+        // de antes y el otp.key puede ser suyo, aunque la abierta no lo use.
+        assertEquals(
+            OperationResult.Restored(masterPasswordChanged = false, hadUndo = true),
+            session.restoreBackup(backup, PASSWORD_A.toCharArray(), PASSWORD_A.toCharArray(), forceWithoutCurrent = false),
+        )
+        assertTrue(session.canUndoRestore())
+        assertTrue("sigue mientras se pueda deshacer", otpKey.exists())
+
         session.discardUndo()
         assertFalse("huérfano una vez descartada la bóveda anterior", otpKey.exists())
+    }
+
+    @Test
+    fun forcedRestoreDoneTwiceKeepsTheThrottleOfTheVaultThatComesBack() = runBlocking(Dispatchers.Main) {
+        theThrottleOfTheVaultThatComesBackSurvives { backup ->
+            session.lock()
+            session.restoreBackup(backup, PASSWORD_A.toCharArray(), null, forceWithoutCurrent = true)
+        }
+    }
+
+    @Test
+    fun restoringTheSameBackupAgainFromUnlockedKeepsTheThrottleOfTheVaultThatComesBack() = runBlocking(Dispatchers.Main) {
+        theThrottleOfTheVaultThatComesBackSurvives { backup ->
+            session.restoreBackup(backup, PASSWORD_A.toCharArray(), PASSWORD_A.toCharArray(), forceWithoutCurrent = false)
+        }
+    }
+
+    /**
+     * R01-9 con la defensa de R01-5: forzar la restauración de X sobre V con intentos fallidos
+     * acumulados, desbloquear X con su contraseña (el freno vivo se limpia) y restaurar X otra
+     * vez ([secondRestore]: vault.prev.bin sigue siendo V) no deja a cero el contador de V. Al
+     * deshacer, V vuelve con sus intentos y el siguiente fallo ya bloquea.
+     */
+    private suspend fun theThrottleOfTheVaultThatComesBackSurvives(secondRestore: suspend (ByteArray) -> OperationResult) {
+        val backup = vaultWithAnOlderBackup()
+        session.lock()
+        // Los que el freno deja gratis: el siguiente fallo bloquea (ThrottlePolicy por defecto).
+        repeat(FREE_ATTEMPTS) {
+            assertEquals(OperationResult.WrongPassword, session.unlock("contraseña errónea".toCharArray()))
+        }
+
+        assertEquals(
+            OperationResult.Restored(masterPasswordChanged = true, hadUndo = true),
+            session.restoreBackup(backup, PASSWORD_A.toCharArray(), null, forceWithoutCurrent = true),
+        )
+        session.lock()
+        assertEquals("la contraseña de la copia limpia el freno vivo", OperationResult.Success, session.unlock(PASSWORD_A.toCharArray()))
+
+        assertEquals(
+            OperationResult.Restored(masterPasswordChanged = false, hadUndo = true),
+            secondRestore(backup),
+        )
+        assertTrue(session.canUndoRestore())
+
+        assertEquals(OperationResult.Success, session.undoRestore())
+        assertEquals(VaultState.Locked, session.state.value)
+        val result = session.unlock("contraseña errónea".toCharArray())
+        assertTrue("V vuelve con sus intentos fallidos: $result", result is OperationResult.Throttled)
     }
 
     @Test
@@ -210,5 +268,8 @@ class VaultSessionRestoreTest {
     private companion object {
         const val PASSWORD_A = "una frase larga de prueba 1"
         const val PASSWORD_B = "otra frase larga de prueba 2"
+
+        /** Fallos sin bloqueo con la política por defecto: el quinto ya impone 30 s. */
+        val FREE_ATTEMPTS = ThrottlePolicy().freeAttempts - 1
     }
 }
