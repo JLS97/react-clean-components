@@ -339,4 +339,3 @@ private fun recuento(entries: List<VaultEntry>, visible: List<VaultEntry>, query
     return if (conCodigo == 0) claves else "$claves · $conCodigo con 2FA"
 }
 
-internal val ScreenPadding = Arrangement.spacedBy(12.dp)

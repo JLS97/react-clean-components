@@ -3,7 +3,6 @@ package io.github.jls97.boveda.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,15 +47,13 @@ fun RestoreBackupDialog(
                     onImeAction = { if (complete) onConfirm(backupPassword, currentPassword) },
                 )
                 if (onForgotCurrent != null) {
-                    TextButton(onClick = { onForgotCurrent(backupPassword) }, enabled = backupPassword.isNotEmpty()) {
-                        Text("No recuerdo la contraseña actual")
-                    }
+                    BotonFantasma("No recuerdo la contraseña actual", { onForgotCurrent(backupPassword) }, enabled = backupPassword.isNotEmpty())
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(backupPassword, currentPassword) }, enabled = complete) { Text("Restaurar") }
+            BotonFantasma("Restaurar", { onConfirm(backupPassword, currentPassword) }, enabled = complete, peligro = true)
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        dismissButton = { BotonFantasma("Cancelar", onDismiss) },
     )
 }

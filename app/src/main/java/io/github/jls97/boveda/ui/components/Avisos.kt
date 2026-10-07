@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -42,6 +43,9 @@ import io.github.jls97.boveda.ui.theme.Sizes
 import io.github.jls97.boveda.ui.theme.Spacing
 import io.github.jls97.boveda.ui.theme.rememberReducedMotion
 import java.util.Locale
+
+/** A partir de esta escala de letra el sello de un aviso se coloca encima del título. */
+private const val LETRA_GRANDE = 1.5f
 
 /** Tipo de aviso. La palabra del sello dice el estado, así que nunca depende solo del color. */
 enum class TipoAviso(val palabra: String) {
@@ -85,15 +89,17 @@ fun Aviso(
         border = BorderStroke(if (critico) Sizes.inputBorder else 1.dp, if (critico) tinta else c.borderSubtle),
     ) {
         Column(Modifier.padding(start = Spacing.s4, end = Spacing.s3, top = Spacing.s4, bottom = Spacing.s3)) {
-            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Spacing.s3)) {
-                // El sello se lee primero: «Urgente. Título.»
-                Text(
-                    text = titulo,
-                    style = t.bodyStrong,
-                    color = c.textPrimary,
-                    modifier = Modifier.weight(1f).semantics { contentDescription = "${tipo.palabra}. $titulo" },
-                )
-                Sello(texto = tipo.palabra, tinta = tinta, modifier = Modifier.clearAndSetSemantics { })
+            // El sello se lee primero: «Urgente. Título.»
+            val tituloLeido = Modifier.semantics { contentDescription = "${tipo.palabra}. $titulo" }
+            if (LocalDensity.current.fontScale >= LETRA_GRANDE) {
+                // Con la letra muy grande, el sello al lado dejaría el título palabra a palabra.
+                Sello(texto = tipo.palabra, tinta = tinta, modifier = Modifier.align(Alignment.End).clearAndSetSemantics { })
+                Text(text = titulo, style = t.bodyStrong, color = c.textPrimary, modifier = tituloLeido.padding(top = Spacing.s2))
+            } else {
+                Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Spacing.s3)) {
+                    Text(text = titulo, style = t.bodyStrong, color = c.textPrimary, modifier = Modifier.weight(1f).then(tituloLeido))
+                    Sello(texto = tipo.palabra, tinta = tinta, modifier = Modifier.clearAndSetSemantics { })
+                }
             }
             if (mensaje != null) {
                 Text(mensaje, style = t.small, color = c.textSecondary, modifier = Modifier.padding(top = Spacing.s1, end = Spacing.s1))

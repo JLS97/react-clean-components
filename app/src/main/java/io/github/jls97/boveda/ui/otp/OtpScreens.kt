@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -54,19 +53,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -78,9 +72,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.jls97.boveda.R
 import io.github.jls97.boveda.core.otp.OtpAlgorithm
@@ -92,6 +84,7 @@ import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.ui.components.Apartado
 import io.github.jls97.boveda.ui.components.Aviso
 import io.github.jls97.boveda.ui.components.BotonCopiar
+import io.github.jls97.boveda.ui.components.Resguardo
 import io.github.jls97.boveda.ui.components.BotonFantasma
 import io.github.jls97.boveda.ui.components.BotonPrimario
 import io.github.jls97.boveda.ui.components.BotonSecundario
@@ -102,7 +95,6 @@ import io.github.jls97.boveda.ui.components.ConfirmDialog
 import io.github.jls97.boveda.ui.components.Etiqueta
 import io.github.jls97.boveda.ui.components.Ficha
 import io.github.jls97.boveda.ui.components.Fila
-import io.github.jls97.boveda.ui.components.FormaResguardo
 import io.github.jls97.boveda.ui.components.LineaPunteada
 import io.github.jls97.boveda.ui.components.Mostrador
 import io.github.jls97.boveda.ui.components.OnAppBackground
@@ -115,7 +107,6 @@ import io.github.jls97.boveda.ui.components.Trabajando
 import io.github.jls97.boveda.ui.components.desbordar
 import io.github.jls97.boveda.ui.components.findActivity
 import io.github.jls97.boveda.ui.components.partirEnAviso
-import io.github.jls97.boveda.ui.components.sombraPapel
 import io.github.jls97.boveda.ui.components.textoSecreto
 import io.github.jls97.boveda.ui.theme.ContrasenoraShapes
 import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
@@ -247,7 +238,7 @@ internal fun OtpCardContenido(
     val c = ContrasenoraTheme.colors
     val t = ContrasenoraTheme.type
     val reduced = rememberReducedMotion()
-    Resguardo(
+    ResguardoDeLaton(
         modifier = modifier,
         arriba = {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -521,58 +512,29 @@ private fun LiveCode(secret: OtpSecret, stillShown: () -> Boolean = { true }, on
 // region Resguardo
 
 /**
- * Resguardo de ventanilla: papel con dos muescas y una línea perforada de latón que separa la
- * parte de [arriba] de la [matriz]. Las muescas se colocan donde empieza la matriz, mida lo que
- * mida (letra al 200 %, un estado más alto que otro).
+ * El resguardo de la base con los valores del 2FA: perforación de latón, muescas de 10 dp y la
+ * matriz algo más pegada al borde izquierdo, donde van las acciones.
  */
 @Composable
-private fun Resguardo(
+private fun ResguardoDeLaton(
     modifier: Modifier = Modifier,
     perforacion: Color = ContrasenoraTheme.colors.brassDefault.copy(alpha = 0.55f),
     rellenoMatriz: PaddingValues =
         PaddingValues(start = Spacing.s1, end = Spacing.s4, top = Spacing.s2, bottom = Spacing.s2),
     arriba: @Composable ColumnScope.() -> Unit,
     matriz: @Composable ColumnScope.() -> Unit,
-) {
-    val c = ContrasenoraTheme.colors
-    // Distancia en píxeles desde abajo hasta la perforación: se mide al colocar y la forma la lee al
-    // dibujar el papel, en el mismo fotograma.
-    val corte = remember { floatArrayOf(0f) }
-    val forma = remember(corte) { FormaResguardoMedida(corte) }
-    Layout(
-        content = {
-            Column(Modifier.fillMaxWidth().padding(start = Spacing.s4, end = Spacing.s4, top = Spacing.s4, bottom = Spacing.s3), content = arriba)
-            LineaPunteada(Modifier.padding(horizontal = RadioMuesca + Spacing.s2), color = perforacion)
-            Column(Modifier.fillMaxWidth().padding(rellenoMatriz), content = matriz)
-        },
-        modifier = modifier
-            .fillMaxWidth()
-            .sombraPapel(forma, c.isDark)
-            .drawBehind {
-                val contorno = forma.createOutline(size, layoutDirection, this)
-                drawOutline(contorno, c.bgSurface)
-                drawOutline(contorno, c.borderSubtle, style = Stroke(1.dp.toPx()))
-            },
-    ) { medibles, restricciones ->
-        val libres = restricciones.copy(minHeight = 0)
-        val (resguardo, linea, talon) = medibles.map { it.measure(libres) }
-        val alto = resguardo.height + linea.height + talon.height
-        corte[0] = talon.height + linea.height / 2f
-        layout(restricciones.maxWidth, alto) {
-            resguardo.place(0, 0)
-            linea.place(0, resguardo.height)
-            talon.place(0, resguardo.height + linea.height)
-        }
-    }
-}
+) = Resguardo(
+    modifier = modifier,
+    perforacion = perforacion,
+    rellenoArriba = PaddingValues(start = Spacing.s4, end = Spacing.s4, top = Spacing.s4, bottom = Spacing.s3),
+    rellenoMatriz = rellenoMatriz,
+    margenPerforacion = RadioMuesca + Spacing.s2,
+    radioMuesca = RadioMuesca,
+    arriba = arriba,
+    matriz = matriz,
+)
 
 private val RadioMuesca = 10.dp
-
-/** [FormaResguardo] con las muescas a la altura que [Resguardo] mide para su matriz. */
-private class FormaResguardoMedida(private val corte: FloatArray) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
-        FormaResguardo(with(density) { corte[0].toDp() }, radioMuesca = RadioMuesca).createOutline(size, layoutDirection, density)
-}
 
 // endregion
 
@@ -770,7 +732,7 @@ internal fun AnadirCodigoContenido(
                 enter = fadeIn(tween(Motion.BASE)) + expandVertically(tween(Motion.BASE, easing = Motion.Standard)),
                 exit = fadeOut(tween(Motion.FAST)) + shrinkVertically(tween(Motion.BASE, easing = Motion.Standard)),
             ) {
-                Resguardo(
+                ResguardoDeLaton(
                     modifier = Modifier.padding(top = Spacing.s2),
                     rellenoMatriz = PaddingValues(
                         start = Spacing.s4,
@@ -1288,7 +1250,7 @@ private fun Papeleta(codigo: String) {
     val t = ContrasenoraTheme.type
     val grupos = codigo.split("-").filter { it.isNotEmpty() }
     val lectura = grupos.joinToString(", ") { it.toList().joinToString(" ") }
-    Resguardo(
+    ResguardoDeLaton(
         perforacion = c.borderDefault,
         rellenoMatriz = PaddingValues(start = Spacing.s4, end = Spacing.s4, top = Spacing.s3, bottom = Spacing.s4),
         arriba = {

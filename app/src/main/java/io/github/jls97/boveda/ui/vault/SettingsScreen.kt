@@ -2,7 +2,6 @@ package io.github.jls97.boveda.ui.vault
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.content.res.Configuration
 import android.net.Uri
 import android.provider.Settings
 import android.view.autofill.AutofillManager
@@ -25,7 +24,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,22 +57,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.drawOutline
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.FirstBaseline
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -88,8 +75,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -107,6 +92,7 @@ import io.github.jls97.boveda.data.lastBackupLabel
 import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.ui.components.Apartado
+import io.github.jls97.boveda.ui.components.Resguardo
 import io.github.jls97.boveda.ui.components.Aviso
 import io.github.jls97.boveda.ui.components.BotonFantasma
 import io.github.jls97.boveda.ui.components.BotonPrimario
@@ -118,7 +104,6 @@ import io.github.jls97.boveda.ui.components.ConfirmDialog
 import io.github.jls97.boveda.ui.components.Etiqueta
 import io.github.jls97.boveda.ui.components.Ficha
 import io.github.jls97.boveda.ui.components.Fila
-import io.github.jls97.boveda.ui.components.FormaResguardo
 import io.github.jls97.boveda.ui.components.InsecureDeviceWarning
 import io.github.jls97.boveda.ui.components.Interruptor
 import io.github.jls97.boveda.ui.components.Isotipo
@@ -985,7 +970,7 @@ private fun Pie() {
     ) {
         LineaPunteada()
         Image(
-            painter = logotipoDelTema(),
+            painter = painterResource(R.drawable.logotipo_horizontal),
             contentDescription = "Contraseñora",
             modifier = Modifier.padding(top = Spacing.s8).width(160.dp),
         )
@@ -1322,54 +1307,6 @@ private fun Renglones(modifier: Modifier = Modifier, content: @Composable Column
 @Composable
 private fun Renglon() = LineaPunteada(color = ContrasenoraTheme.colors.borderSubtle)
 
-/**
- * Resguardo de ventanilla: papel con dos muescas y una línea perforada que separa el resguardo de su
- * matriz. Las muescas se colocan donde empieza la matriz, mida lo que mida (fuente al 200 %).
- */
-@Composable
-private fun Resguardo(
-    modifier: Modifier = Modifier,
-    arriba: @Composable ColumnScope.() -> Unit,
-    matriz: @Composable ColumnScope.() -> Unit,
-) {
-    val c = ContrasenoraTheme.colors
-    // Distancia en píxeles desde abajo hasta la perforación: se mide al colocar y la forma la lee al
-    // dibujar el papel y su sombra, en el mismo fotograma.
-    val corte = remember { floatArrayOf(0f) }
-    val forma = remember(corte) { FormaResguardoMedida(corte) }
-    Layout(
-        content = {
-            Column(Modifier.fillMaxWidth().padding(Spacing.s4), content = arriba)
-            LineaPunteada(Modifier.padding(horizontal = Spacing.s4), color = c.borderDefault)
-            Column(Modifier.fillMaxWidth().padding(Spacing.s4), content = matriz)
-        },
-        modifier = modifier
-            .fillMaxWidth()
-            .sombraPapel(forma, c.isDark)
-            .drawBehind {
-                val contorno = forma.createOutline(size, layoutDirection, this)
-                drawOutline(contorno, c.bgSurface)
-                drawOutline(contorno, c.borderSubtle, style = Stroke(1.dp.toPx()))
-            },
-    ) { medibles, restricciones ->
-        val libres = restricciones.copy(minHeight = 0)
-        val (resguardo, perforacion, talon) = medibles.map { it.measure(libres) }
-        val alto = resguardo.height + perforacion.height + talon.height
-        corte[0] = talon.height + perforacion.height / 2f
-        layout(restricciones.maxWidth, alto) {
-            resguardo.place(0, 0)
-            perforacion.place(0, resguardo.height)
-            talon.place(0, resguardo.height + perforacion.height)
-        }
-    }
-}
-
-/** [FormaResguardo] con las muescas a la altura que [Resguardo] mide para su matriz. */
-private class FormaResguardoMedida(private val corte: FloatArray) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
-        FormaResguardo(with(density) { corte[0].toDp() }).createOutline(size, layoutDirection, density)
-}
-
 /** La última copia, partida para el resguardo: cuándo, lo que ha pasado desde entonces y si no hay ninguna. */
 private class PartesDeLaCopia(val cuando: String, val detalle: String?, val sinCopia: Boolean)
 
@@ -1431,27 +1368,6 @@ private fun Aparece(visible: Boolean, content: @Composable () -> Unit) {
             shrinkVertically(tween(Motion.BASE, easing = Motion.Exit)) + fadeOut(tween(Motion.FAST))
         },
     ) { content() }
-}
-
-/**
- * El logotipo en la variante del tema de la app. Con el tema forzado en Ajustes, el del sistema
- * puede no coincidir y `drawable-night` daría el del otro: entonces se carga con la configuración
- * del tema elegido.
- */
-@Composable
-private fun logotipoDelTema(): Painter {
-    val oscuro = ContrasenoraTheme.colors.isDark
-    if (oscuro == isSystemInDarkTheme()) return painterResource(R.drawable.logotipo_horizontal)
-    val context = LocalContext.current
-    val configuracion = LocalConfiguration.current
-    val vector = remember(context, configuracion, oscuro) {
-        val delTema = Configuration(configuracion).apply {
-            uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
-                if (oscuro) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
-        }
-        ImageVector.vectorResource(null, context.createConfigurationContext(delTema).resources, R.drawable.logotipo_horizontal)
-    }
-    return rememberVectorPainter(vector)
 }
 
 // endregion

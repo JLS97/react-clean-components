@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -63,7 +62,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -75,7 +73,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.jls97.boveda.R
@@ -87,9 +84,9 @@ import io.github.jls97.boveda.ui.components.Aviso
 import io.github.jls97.boveda.ui.components.BotonPrimario
 import io.github.jls97.boveda.ui.components.BotonSecundario
 import io.github.jls97.boveda.ui.components.FilaCasilla
-import io.github.jls97.boveda.ui.components.FormaResguardo
 import io.github.jls97.boveda.ui.components.LineaPunteada
 import io.github.jls97.boveda.ui.components.MedidorFuerza
+import io.github.jls97.boveda.ui.components.Resguardo
 import io.github.jls97.boveda.ui.components.Mostrador
 import io.github.jls97.boveda.ui.components.Pantalla
 import io.github.jls97.boveda.ui.components.Salida
@@ -250,14 +247,13 @@ private fun Resguardo(password: String, entropy: Double, flojo: Boolean) {
         animationSpec = if (reduced) snap() else tween(Motion.BASE, easing = Motion.Standard),
         label = "bits",
     )
-    PapelResguardo(
+    // La perforación (2 dp) queda centrada entre las dos mitades, como la línea de las muescas.
+    Resguardo(
+        rellenoArriba = PaddingValues(start = Spacing.s4, end = Spacing.s4, top = Spacing.s4, bottom = Spacing.s4 - 1.dp),
+        rellenoMatriz = PaddingValues(start = Spacing.s4, end = Spacing.s4, top = Spacing.s4 - 1.dp, bottom = Spacing.s3),
+        margenPerforacion = 10.dp + Spacing.s2,
         arriba = {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = Spacing.s4, end = Spacing.s4, top = Spacing.s4, bottom = Spacing.s4)
-                    .semantics(mergeDescendants = true) { },
-            ) {
+            Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { }) {
                 Text("Tu contraseña", style = t.label, color = c.textSecondary)
                 AnimatedContent(
                     targetState = password,
@@ -279,7 +275,7 @@ private fun Resguardo(password: String, entropy: Double, flojo: Boolean) {
             }
         },
         matriz = {
-            Column(Modifier.fillMaxWidth().padding(start = Spacing.s4, end = Spacing.s4, top = Spacing.s4, bottom = Spacing.s3)) {
+            Column(Modifier.fillMaxWidth()) {
                 if (password.isEmpty()) {
                     Text("0 bits de entropía", style = t.label, color = c.textTertiary)
                 } else {
@@ -340,58 +336,6 @@ private fun aparecer(reduced: Boolean): EnterTransition =
 
 private fun desaparecer(reduced: Boolean): ExitTransition =
     if (reduced) ExitTransition.None else fadeOut(tween(Motion.FAST)) + shrinkVertically(tween(Motion.BASE, easing = Motion.Standard))
-
-private enum class PiezaResguardo { Arriba, Matriz, Papel }
-
-/**
- * Papel con forma de resguardo: mide primero la contraseña ([arriba]) y la matriz para poner las
- * muescas y la línea perforada justo entre las dos, midan lo que midan (contraseñas de varias
- * líneas, letra al 200 %).
- */
-@Composable
-private fun PapelResguardo(
-    arriba: @Composable () -> Unit,
-    matriz: @Composable () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    SubcomposeLayout(modifier.fillMaxWidth()) { constraints ->
-        val libre = constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity)
-        val piezasArriba = subcompose(PiezaResguardo.Arriba, arriba).map { it.measure(libre) }
-        val piezasMatriz = subcompose(PiezaResguardo.Matriz, matriz).map { it.measure(libre) }
-        val ancho = constraints.maxWidth
-        val altoArriba = piezasArriba.maxOfOrNull { it.height } ?: 0
-        val alto = altoArriba + (piezasMatriz.maxOfOrNull { it.height } ?: 0)
-        val corte = (alto - altoArriba).toDp()
-        val papel = subcompose(PiezaResguardo.Papel) { FondoResguardo(corte) }.map { it.measure(Constraints.fixed(ancho, alto)) }
-        layout(ancho, alto) {
-            papel.forEach { it.place(0, 0) }
-            piezasArriba.forEach { it.place(0, 0) }
-            piezasMatriz.forEach { it.place(0, altoArriba) }
-        }
-    }
-}
-
-/** El papel del resguardo: sus muescas a [corte] del borde de abajo y la perforación entre ellas. */
-@Composable
-private fun FondoResguardo(corte: Dp) {
-    val c = ContrasenoraTheme.colors
-    val radioMuesca = 10.dp
-    val forma = remember(corte) { FormaResguardo(corteDesdeAbajo = corte, radioMuesca = radioMuesca) }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .sombraPapel(forma, c.isDark)
-            .background(c.bgSurface, forma)
-            .border(1.dp, c.borderSubtle, forma),
-    ) {
-        // La línea mide 2 dp y dibuja el trazo en su mitad: así cae justo a la altura de las muescas.
-        LineaPunteada(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .padding(start = radioMuesca + Spacing.s2, end = radioMuesca + Spacing.s2, bottom = corte - 1.dp),
-        )
-    }
-}
 
 /**
  * «Copiar» con su palabra y la misma respuesta que [io.github.jls97.boveda.ui.components.BotonCopiar]

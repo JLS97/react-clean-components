@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -64,6 +63,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -79,8 +79,10 @@ import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -216,6 +218,60 @@ class FormaResguardo(
     }
 }
 
+/**
+ * Resguardo de ventanilla: papel con dos muescas y una línea perforada que separa la parte de
+ * [arriba] de su [matriz]. Las muescas se colocan donde empieza la matriz, mida lo que mida (un
+ * secreto de varias líneas, la letra al 200 %, un estado más alto que otro).
+ */
+@Composable
+fun Resguardo(
+    modifier: Modifier = Modifier,
+    perforacion: Color = ContrasenoraTheme.colors.borderDefault,
+    rellenoArriba: PaddingValues = PaddingValues(Spacing.s4),
+    rellenoMatriz: PaddingValues = PaddingValues(Spacing.s4),
+    margenPerforacion: Dp = Spacing.s4,
+    radioMuesca: Dp = 10.dp,
+    arriba: @Composable ColumnScope.() -> Unit,
+    matriz: @Composable ColumnScope.() -> Unit,
+) {
+    val c = ContrasenoraTheme.colors
+    // Distancia en píxeles desde abajo hasta la perforación: se mide al colocar y la forma la lee al
+    // dibujar el papel y su sombra, en el mismo fotograma.
+    val corte = remember { floatArrayOf(0f) }
+    val forma = remember(corte, radioMuesca) { FormaResguardoMedida(corte, radioMuesca) }
+    Layout(
+        content = {
+            Column(Modifier.fillMaxWidth().padding(rellenoArriba), content = arriba)
+            LineaPunteada(Modifier.padding(horizontal = margenPerforacion), color = perforacion)
+            Column(Modifier.fillMaxWidth().padding(rellenoMatriz), content = matriz)
+        },
+        modifier = modifier
+            .fillMaxWidth()
+            .sombraPapel(forma, c.isDark)
+            .drawBehind {
+                val contorno = forma.createOutline(size, layoutDirection, this)
+                drawOutline(contorno, c.bgSurface)
+                drawOutline(contorno, c.borderSubtle, style = Stroke(1.dp.toPx()))
+            },
+    ) { medibles, restricciones ->
+        val libres = restricciones.copy(minHeight = 0)
+        val (parteArriba, linea, talon) = medibles.map { it.measure(libres) }
+        val alto = parteArriba.height + linea.height + talon.height
+        corte[0] = talon.height + linea.height / 2f
+        layout(restricciones.maxWidth, alto) {
+            parteArriba.place(0, 0)
+            linea.place(0, parteArriba.height)
+            talon.place(0, parteArriba.height + linea.height)
+        }
+    }
+}
+
+/** [FormaResguardo] con las muescas a la altura que [Resguardo] mide para su matriz. */
+private class FormaResguardoMedida(private val corte: FloatArray, private val radioMuesca: Dp) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
+        FormaResguardo(with(density) { corte[0].toDp() }, radioMuesca = radioMuesca).createOutline(size, layoutDirection, density)
+}
+
 /** Etiqueta pequeña con borde, por ejemplo «2FA» en latón junto a una entrada. */
 @Composable
 fun Etiqueta(
@@ -231,7 +287,9 @@ fun Etiqueta(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icono != null) {
-            Icon(painterResource(icono), contentDescription = null, tint = color, modifier = Modifier.size(12.dp))
+            // El icono crece con la letra, como el texto que acompaña (hasta el doble).
+            val escala = LocalDensity.current.fontScale.coerceIn(1f, 2f)
+            Icon(painterResource(icono), contentDescription = null, tint = color, modifier = Modifier.size(12.dp * escala))
             Spacer(Modifier.width(4.dp))
         }
         Text(texto, style = ContrasenoraTheme.type.caption.copy(fontWeight = FontWeight.Bold), color = color, maxLines = 1)
@@ -466,19 +524,16 @@ fun Apartado(
     val c = ContrasenoraTheme.colors
     val t = ContrasenoraTheme.type
     Column(modifier.fillMaxWidth().padding(top = Spacing.s8, bottom = Spacing.s2)) {
-        Row(
-            modifier = Modifier.semantics(mergeDescendants = true) { heading() },
-            verticalAlignment = Alignment.Bottom,
-        ) {
+        Row(modifier = Modifier.semantics(mergeDescendants = true) { heading() }) {
             if (numero != null) {
                 Text(
                     numero,
                     style = t.title3.copy(fontFamily = YoungSerif, fontWeight = FontWeight.Normal),
                     color = c.textLink,
-                    modifier = Modifier.padding(end = Spacing.s3),
+                    modifier = Modifier.alignByBaseline().padding(end = Spacing.s3),
                 )
             }
-            Text(titulo, style = t.title3, color = c.textPrimary)
+            Text(titulo, style = t.title3, color = c.textPrimary, modifier = Modifier.alignByBaseline())
         }
         HorizontalDivider(Modifier.padding(top = Spacing.s2), thickness = 1.dp, color = c.borderDefault)
         if (descripcion != null) {
