@@ -20,6 +20,7 @@ import androidx.autofill.inline.v1.InlineSuggestionUi
 import io.github.jls97.boveda.MainActivity
 import io.github.jls97.boveda.R
 import io.github.jls97.boveda.core.autofill.LoginFields
+import io.github.jls97.boveda.core.autofill.ParsedStructure
 
 /**
  * Builds what Bóveda answers to the system. The answer never contains secrets: it is a "Bóveda"
@@ -35,7 +36,7 @@ internal object AutofillResponses {
     fun fillResponse(
         context: Context,
         inlineRequest: InlineSuggestionsRequest?,
-        parsed: ParsedStructure,
+        parsed: ParsedStructure<AutofillId>,
         login: LoginFields<AutofillId>,
     ): FillResponse? {
         val builder = FillResponse.Builder()

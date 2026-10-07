@@ -13,11 +13,26 @@ import java.security.UnrecoverableKeyException
 import javax.crypto.AEADBadTagException
 
 /**
+ * La clave de la capa de dispositivo tal y como la usa la sesión. La implementa
+ * [DeviceKeyManager] sobre el Keystore; los tests JVM de la sesión usan una clave en memoria.
+ */
+interface LayerKeys {
+    /** See [DeviceKeyManager.load]. */
+    fun load(): ByteArray?
+
+    /** See [DeviceKeyManager.loadOrCreate]. */
+    fun loadOrCreate(beforeCreate: () -> Unit = {}): ByteArray
+
+    /** See [DeviceKeyManager.securityLevel]. */
+    fun securityLevel(): KeySecurityLevel
+}
+
+/**
  * Manages the key of the device layer ([io.github.jls97.boveda.core.vault.DeviceLayer]). The key is
  * stored wrapped by a Keystore key that is bound to this phone and only works while the phone is
  * unlocked (`setUnlockedDeviceRequired`).
  */
-internal class DeviceKeyManager(private val keys: KeystoreKeys, private val file: File) {
+internal class DeviceKeyManager(private val keys: KeystoreKeys, private val file: File) : LayerKeys {
 
     /**
      * Returns the layer key, or null if none was created yet.
@@ -28,7 +43,7 @@ internal class DeviceKeyManager(private val keys: KeystoreKeys, private val file
      * locked, busy StrongBox, keystore daemon down): retry later, the key is intact.
      * @throws IOException if the file could not be read.
      */
-    fun load(): ByteArray? {
+    override fun load(): ByteArray? {
         if (!file.exists()) return null
         val stored = DeviceKeyFile.parse(readFile(file)) ?: throw DeviceBindingException("Invalid wrapped device key")
         return try {
@@ -54,7 +69,7 @@ internal class DeviceKeyManager(private val keys: KeystoreKeys, private val file
      * so the caller can drop whatever was sealed under the key that is gone, such as the copy of
      * the vault kept for undoing a restore.
      */
-    fun loadOrCreate(beforeCreate: () -> Unit = {}): ByteArray =
+    override fun loadOrCreate(beforeCreate: () -> Unit): ByteArray =
         try {
             load()
         } catch (e: DeviceBindingException) {
@@ -65,7 +80,7 @@ internal class DeviceKeyManager(private val keys: KeystoreKeys, private val file
         }
 
     /** Where the Keystore key that wraps the layer key lives. */
-    fun securityLevel(): KeySecurityLevel = keys.securityLevel(ALIAS)
+    override fun securityLevel(): KeySecurityLevel = keys.securityLevel(ALIAS)
 
     private fun create(): ByteArray {
         // Only reached when there is nothing to keep (no file, or a key that can never open it).

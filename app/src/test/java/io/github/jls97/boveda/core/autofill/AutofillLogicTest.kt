@@ -8,7 +8,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.time.LocalDate
-import java.time.Period
 
 class AutofillLogicTest {
 
@@ -602,14 +601,26 @@ class AutofillLogicTest {
     }
 
     @Test
-    fun trustedBrowserListIsRecentEnough() {
+    fun trustedBrowserListDateIsIsoAndItsAgeIsJudgedOnAnInjectedDate() {
+        // El formato es lo único que se comprueba contra el calendario real: la caducidad de la
+        // lista (18 meses) la vigila un paso de la CI que solo avisa, para que la suite no se ponga
+        // en rojo un día fijo sin que ningún commit lo provoque (R07-6, R07-7).
         val listDate = LocalDate.parse(TrustedBrowsers.LIST_DATE)
-        val age = Period.between(listDate, LocalDate.now())
-        val months = age.years * 12 + age.months
-        assertTrue(
-            "La lista de navegadores de confianza (TrustedBrowsers.LIST_DATE = ${TrustedBrowsers.LIST_DATE}) tiene $months meses: " +
-                "regenérala desde fido2_privileged_google.json, cúrala, y actualiza LIST_DATE, EXPECTED_SIZE y el README",
-            months <= 18,
-        )
+        assertEquals(TrustedBrowsers.LIST_DATE, listDate.toString())
+        assertEquals(18, TrustedBrowsers.MAX_LIST_AGE_MONTHS)
+
+        assertEquals(0, TrustedBrowsers.listAgeInMonths(listDate))
+        assertEquals(0, TrustedBrowsers.listAgeInMonths(listDate.plusDays(27)))
+        assertEquals(1, TrustedBrowsers.listAgeInMonths(listDate.plusMonths(1)))
+        assertEquals(18, TrustedBrowsers.listAgeInMonths(listDate.plusMonths(18)))
+        assertEquals(18, TrustedBrowsers.listAgeInMonths(listDate.plusMonths(19).minusDays(1)))
+        assertEquals(19, TrustedBrowsers.listAgeInMonths(listDate.plusMonths(19)))
+        assertEquals(-1, TrustedBrowsers.listAgeInMonths(listDate.minusMonths(1)))
+
+        assertTrue(TrustedBrowsers.listIsRecent(listDate))
+        assertTrue(TrustedBrowsers.listIsRecent(listDate.plusMonths(18)))
+        assertTrue(TrustedBrowsers.listIsRecent(listDate.plusMonths(19).minusDays(1)))
+        assertFalse(TrustedBrowsers.listIsRecent(listDate.plusMonths(19)))
+        assertFalse(TrustedBrowsers.listIsRecent(listDate.plusYears(5)))
     }
 }

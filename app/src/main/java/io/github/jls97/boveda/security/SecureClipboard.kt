@@ -15,6 +15,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
+ * El portapapeles tal y como lo usan la sesión y las pantallas. Lo implementa [SecureClipboard]
+ * sobre el sistema; los tests JVM de la sesión usan un doble que solo cuenta las llamadas.
+ */
+interface VaultClipboard {
+    fun copy(text: String, clearAfterSeconds: Int)
+
+    fun clearIfPending()
+}
+
+/**
  * Copies secrets marked as sensitive (Android hides them from the clipboard preview and keyboards
  * don't keep them in their history) under a neutral label, and clears the clipboard after a
  * timeout or when locking, only if the clip is still ours ([ClipboardClearPolicy]).
@@ -26,7 +36,7 @@ import kotlinx.coroutines.launch
  * `clearPrimaryClip()` always works, but the description reads as `null` and the policy cannot
  * tell our clip from one the user copied afterwards, which may then be wiped too.
  */
-class SecureClipboard(context: Context, private val scope: CoroutineScope) {
+class SecureClipboard(context: Context, private val scope: CoroutineScope) : VaultClipboard {
     private val appContext = context.applicationContext
     private val clipboard = appContext.getSystemService(ClipboardManager::class.java)
     private var clearJob: Job? = null
@@ -36,7 +46,7 @@ class SecureClipboard(context: Context, private val scope: CoroutineScope) {
 
     private class PendingClip(val stamp: Long, val deadlineMs: Long)
 
-    fun copy(text: String, clearAfterSeconds: Int) {
+    override fun copy(text: String, clearAfterSeconds: Int) {
         val stamp = SystemClock.elapsedRealtime()
         val deadline = stamp + clearAfterSeconds * 1_000L
         val clip = ClipData.newPlainText(ClipboardClearPolicy.LABEL, text)
@@ -55,7 +65,7 @@ class SecureClipboard(context: Context, private val scope: CoroutineScope) {
     }
 
     /** Clears the clipboard now if something copied from the vault may still be on it. */
-    fun clearIfPending() {
+    override fun clearIfPending() {
         if (pending == null) return
         clearJob?.cancel()
         finish(force = true)

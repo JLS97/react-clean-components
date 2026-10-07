@@ -14,6 +14,24 @@ import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 
 /**
+ * La copia de la clave 2FA de este teléfono, tal y como la usa la sesión. La implementa
+ * [OtpKeyManager] sobre el Keystore; los tests JVM de la sesión usan un doble.
+ */
+interface OtpKeys {
+    fun isReadyFor(keyringId: ByteArray): Boolean
+
+    fun enrollmentCipher(): Cipher
+
+    fun finishEnrollment(authorizedCipher: Cipher, keyringId: ByteArray, otpKey: ByteArray)
+
+    fun unlockCipher(keyringId: ByteArray): Cipher?
+
+    fun unwrap(authorizedCipher: Cipher, keyringId: ByteArray): ByteArray
+
+    fun disable()
+}
+
+/**
  * This phone's copy of the 2FA key, wrapped by a Keystore key that requires a strong (class 3)
  * biometric for every single use. The system destroys that Keystore key when a fingerprint is
  * added or the screen lock is removed; the codes then come back with the recovery code.
@@ -24,14 +42,14 @@ import javax.crypto.Cipher
  * copy still needs until the new copy is written; the key of the other slot is dropped then, or on
  * the next enrollment if that one never finished.
  */
-internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: File) {
+internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: File) : OtpKeys {
 
     /** Slot of the key [enrollmentCipher] created, until [finishEnrollment] writes its copy. */
     @Volatile
     private var enrollingSlot: Byte? = null
 
     /** True if this phone holds a copy of the 2FA key of [keyringId] (it may still be invalidated). */
-    fun isReadyFor(keyringId: ByteArray): Boolean {
+    override fun isReadyFor(keyringId: ByteArray): Boolean {
         val stored = read() ?: return false
         return stored.keyringId.contentEquals(keyringId) && keys.get(stored.alias) != null
     }
@@ -41,7 +59,7 @@ internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: F
      * The key goes to the slot the current copy does not use, so a cipher from [unlockCipher] keeps
      * working meanwhile.
      */
-    fun enrollmentCipher(): Cipher {
+    override fun enrollmentCipher(): Cipher {
         val slot = OtpKeyFile.otherSlot(read()?.slot)
         val alias = OtpKeyFile.aliasOf(slot)
         // Whatever is left in the free slot (an enrollment that never finished) is an orphan.
@@ -56,7 +74,7 @@ internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: F
     }
 
     /** Writes the copy wrapped by [authorizedCipher] (from [enrollmentCipher]) and drops the previous key. */
-    fun finishEnrollment(authorizedCipher: Cipher, keyringId: ByteArray, otpKey: ByteArray) {
+    override fun finishEnrollment(authorizedCipher: Cipher, keyringId: ByteArray, otpKey: ByteArray) {
         val slot = enrollingSlot ?: throw GeneralSecurityException("No 2FA key enrollment in progress")
         authorizedCipher.updateAAD(OtpCrypto.deviceAad(keyringId))
         val wrapped = authorizedCipher.doFinal(otpKey)
@@ -73,7 +91,7 @@ internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: F
      * Cipher to authorize with BiometricPrompt before [unwrap], or null when this phone has no
      * usable copy of the 2FA key of [keyringId]. A copy the system invalidated is deleted.
      */
-    fun unlockCipher(keyringId: ByteArray): Cipher? {
+    override fun unlockCipher(keyringId: ByteArray): Cipher? {
         val stored = read()?.takeIf { it.keyringId.contentEquals(keyringId) } ?: return null
         val key = keys.get(stored.alias) ?: return null
         return try {
@@ -85,7 +103,7 @@ internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: F
     }
 
     /** The 2FA key. The caller wipes it. A copy the key does not open is deleted: it is of no use. */
-    fun unwrap(authorizedCipher: Cipher, keyringId: ByteArray): ByteArray {
+    override fun unwrap(authorizedCipher: Cipher, keyringId: ByteArray): ByteArray {
         val stored = read() ?: throw IOException("The 2FA key of this phone is missing")
         if (!stored.keyringId.contentEquals(keyringId)) throw GeneralSecurityException("2FA key of another vault")
         authorizedCipher.updateAAD(OtpCrypto.deviceAad(keyringId))
@@ -102,7 +120,7 @@ internal class OtpKeyManager(private val keys: KeystoreKeys, private val file: F
         return otpKey
     }
 
-    fun disable() {
+    override fun disable() {
         enrollingSlot = null
         keys.delete(OtpKeyFile.aliasOf(OtpKeyFile.SLOT_A))
         keys.delete(OtpKeyFile.aliasOf(OtpKeyFile.SLOT_B))

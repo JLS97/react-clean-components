@@ -36,9 +36,8 @@ class StructureWalkerTest {
 
     private fun login(walked: WalkedStructure<String>) = FieldSelection.select(walked.fields.map { it.field }, walked.mainWebDomain)
 
-    /** Dominio de los campos elegidos, como lo calcula ParsedStructure. */
-    private fun domainOf(walked: WalkedStructure<String>, login: LoginFields<String>): String? =
-        walked.fields.filter { it.field.id in login.allIds }.firstNotNullOfOrNull { it.field.webDomain }
+    /** La pantalla tal y como la ve el servicio: la misma clase que decide qué dominio y esquema viajan a la pantalla de autorrelleno. */
+    private fun parsed(walked: WalkedStructure<String>) = ParsedStructure("com.example.app", walked)
 
     @Test
     fun fieldsInheritDomainAndSchemeFromNearestAncestor() {
@@ -74,7 +73,9 @@ class StructureWalkerTest {
         val walked = walk(tree)!!
         val login = login(walked)!!
         assertEquals(LoginFields("user", "pass", emptyList()), login)
-        assertEquals("banco.es", domainOf(walked, login))
+        val parsed = parsed(walked)
+        assertEquals(login, parsed.login)
+        assertEquals("banco.es", parsed.reportedWebDomain)
 
         // Si el único formulario está en el iframe, no se rellena nada.
         val onlyIframe = FakeNode(
@@ -82,6 +83,8 @@ class StructureWalkerTest {
             children = listOf(FakeNode(webDomain = "evil.com", children = listOf(userField("evilUser"), passwordField("evilPass")))),
         )
         assertNull(login(walk(onlyIframe)!!))
+        assertNull(parsed(walk(onlyIframe)!!).login)
+        assertNull("Sin campos elegidos no hay dominio que mostrar", parsed(walk(onlyIframe)!!).reportedWebDomain)
     }
 
     @Test
@@ -111,7 +114,7 @@ class StructureWalkerTest {
         val walked = walk(tree)!!
         val login = login(walked)!!
         assertEquals(LoginFields("user", "pass", emptyList()), login)
-        assertEquals("evil.com", domainOf(walked, login))
+        assertEquals("evil.com", parsed(walked).reportedWebDomain)
         assertFalse("bankPass" in login.allIds)
     }
 
@@ -136,7 +139,8 @@ class StructureWalkerTest {
         val walked = walk(app)!!
         val login = login(walked)!!
         assertEquals(LoginFields("user", "pass", emptyList()), login)
-        assertNull(domainOf(walked, login))
+        assertNull(parsed(walked).reportedWebDomain)
+        assertNull(parsed(walked).reportedWebScheme)
         assertNull(walked.mainWebDomain)
 
         // Varias ventanas de la misma web.
@@ -186,6 +190,67 @@ class StructureWalkerTest {
         assertFalse(TargetResolver.isUnencrypted(" "))
         // Sin dominio no hay página que degradar.
         assertFalse(TargetResolver.resolve("com.android.chrome", chrome, null, "http").unencrypted)
+    }
+
+    @Test
+    fun parsedStructureReportsTheDomainAndSchemeOfTheChosenFieldsAndHttpWins() {
+        // El dominio que se muestra es el de los campos que se van a rellenar, no el primero del
+        // árbol ni el de la ventana principal.
+        val tree = FakeNode(
+            webDomain = "banco.es",
+            webScheme = "https",
+            children = listOf(
+                FakeNode(webDomain = "ads.example", webScheme = "https", children = listOf(FakeNode("search", signals = FieldSignals(inputKind = InputKind.TEXT)))),
+                userField("user"),
+                // El formulario mezcla una parte https y otra http del mismo host: el esquema sin
+                // cifrar gana para que el aviso de página insegura nunca se oculte (B-11).
+                FakeNode(webDomain = "banco.es", webScheme = "http", children = listOf(passwordField("pass"))),
+            ),
+        )
+        val parsed = parsed(walk(tree)!!)
+        assertEquals("com.example.app", parsed.packageName)
+        assertEquals(LoginFields("user", "pass", emptyList()), parsed.login)
+        assertEquals("banco.es", parsed.reportedWebDomain)
+        assertEquals("http", parsed.reportedWebScheme)
+
+        // En el orden inverso (http primero, https después) el resultado es el mismo.
+        val reversed = FakeNode(
+            webDomain = "banco.es",
+            webScheme = "http",
+            children = listOf(userField("user"), FakeNode(webDomain = "banco.es", webScheme = "https", children = listOf(passwordField("pass")))),
+        )
+        assertEquals("http", parsed(walk(reversed)!!).reportedWebScheme)
+
+        // Todo https: se informa https. Sin esquema declarado: null, que TargetResolver trata como cifrado.
+        val secure = FakeNode(webDomain = "banco.es", webScheme = "https", children = listOf(userField("user"), passwordField("pass")))
+        assertEquals("https", parsed(walk(secure)!!).reportedWebScheme)
+        val unknown = FakeNode(webDomain = "banco.es", children = listOf(userField("user"), passwordField("pass")))
+        assertEquals("banco.es", parsed(walk(unknown)!!).reportedWebDomain)
+        assertNull(parsed(walk(unknown)!!).reportedWebScheme)
+
+        // La ventana principal declara otro dominio que el de los campos elegidos: manda el de los campos.
+        val mainDiffers = walk(
+            FakeNode(webDomain = "portal.example", webScheme = "https"),
+            FakeNode(webDomain = "banco.es", webScheme = "https", children = listOf(userField("user"), passwordField("pass"))),
+        )!!
+        assertEquals("portal.example", mainDiffers.mainWebDomain)
+        assertNull("Con dominio principal distinto no se elige nada", parsed(mainDiffers).login)
+        assertNull(parsed(mainDiffers).reportedWebDomain)
+    }
+
+    @Test
+    fun parsedStructureGivesTheTextOfAFieldOnlyByItsId() {
+        val tree = FakeNode(
+            children = listOf(
+                FakeNode("user", signals = FieldSignals(inputKind = InputKind.EMAIL), text = "yo@example.com"),
+                FakeNode("pass", signals = FieldSignals(inputKind = InputKind.PASSWORD), text = "s3cret"),
+            ),
+        )
+        val parsed = parsed(walk(tree)!!)
+        assertEquals("yo@example.com", parsed.textOf("user"))
+        assertEquals("s3cret", parsed.textOf("pass"))
+        assertNull(parsed.textOf("other"))
+        assertNull(parsed.textOf(null))
     }
 
     @Test

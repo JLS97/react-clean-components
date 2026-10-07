@@ -121,10 +121,43 @@ class KeyFilesTest {
     }
 
     @Test
-    fun biometricIndexAbove255RoundTripsThroughTheByte() {
-        val parsed = BiometricKeyFile.parse(BiometricKeyFile.encode(255, iv, bytes(BiometricKeyFile.WRAPPED_SIZE, 3)))
+    fun biometricIndex255SurvivesTheSignedByte() {
+        // 255 es el índice máximo: en el archivo es el byte 0xFF, que leído con signo vale -1 y
+        // debe recuperarse como 255. Por encima de 255 no hay índices: encode los rechaza
+        // (biometricKeyFileRefusesAnIndexOutOfRange) y nextIndex vuelve al 1.
+        val encoded = BiometricKeyFile.encode(255, iv, bytes(BiometricKeyFile.WRAPPED_SIZE, 3))
+        assertEquals((-1).toByte(), encoded[5])
+        val parsed = BiometricKeyFile.parse(encoded)
         assertEquals(255, parsed!!.index)
         assertEquals("boveda.biometric.v1.255", parsed.alias)
+        assertEquals(255, BiometricKeyFile.MAX_INDEX)
+        assertEquals(1, BiometricKeyFile.nextIndex(255))
+    }
+
+    @Test
+    fun legacyBiometricKeyFileFromTheFirstReleaseStillParses() {
+        // Bytes literales con la forma exacta que escribía la primera versión publicada
+        // (BiometricKeyManager de 05b7c78): IV de 12 bytes y DEK envuelta de 48, sin cabecera.
+        // Un cambio del lector que dejara de abrirlos apagaría la huella de quien ya la activó.
+        val legacyFile = byteArrayOf(
+            0x1b, 0x7e, 0x4f, 0x02, 0x66, 0x29.toByte(), 0x9a.toByte(), 0xc1.toByte(), 0x33, 0x08, 0xd4.toByte(), 0x5f,
+            0xe8.toByte(), 0x77, 0x10, 0xa3.toByte(), 0x4c, 0x95.toByte(), 0x2e, 0xb0.toByte(), 0x61, 0xf9.toByte(), 0x0d, 0x58,
+            0xc7.toByte(), 0x3a, 0x82.toByte(), 0x15, 0xde.toByte(), 0x6b, 0x24, 0x9f.toByte(), 0x41, 0xaa.toByte(), 0x07, 0xe3.toByte(),
+            0x5c, 0x90.toByte(), 0x18, 0xcd.toByte(), 0x72, 0x3f, 0xb6.toByte(), 0x05, 0x8e.toByte(), 0x4a, 0xd1.toByte(), 0x2b,
+            0x6d, 0xf4.toByte(), 0x37, 0x80.toByte(), 0x1c, 0xa9.toByte(), 0x53, 0xee.toByte(), 0x0a, 0x76, 0xbc.toByte(), 0x45,
+        )
+        assertEquals(60, legacyFile.size)
+        val parsed = BiometricKeyFile.parse(legacyFile)
+        assertNotNull(parsed)
+        assertTrue(parsed!!.legacy)
+        assertNull(parsed.index)
+        assertNull(parsed.aad)
+        assertEquals("boveda.biometric.v1", parsed.alias)
+        assertArrayEquals(legacyFile.copyOfRange(0, 12), parsed.iv)
+        assertArrayEquals(legacyFile.copyOfRange(12, 60), parsed.wrappedKey)
+        // La siguiente inscripción empieza en el índice 1, bajo un alias distinto del heredado.
+        assertEquals(1, BiometricKeyFile.nextIndex(parsed.index))
+        assertTrue(BiometricKeyFile.aliasOf(1) != parsed.alias)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -167,6 +200,33 @@ class KeyFilesTest {
         assertEquals(OtpKeyFile.SLOT_A, parsed!!.slot)
         assertEquals("boveda.otp.v1", parsed.alias)
         assertArrayEquals(keyringId, parsed.keyringId)
+    }
+
+    @Test
+    fun legacyOtpKeyFileFromTheFirstReleaseStillParses() {
+        // Bytes literales con la forma exacta que escribía la primera versión publicada
+        // (OtpKeyManager de 05b7c78): "BVOK", byte de versión 1, id del llavero (16), IV (12) y
+        // clave 2FA envuelta (48). Hoy ese byte se lee como la ranura 1, con el alias de entonces.
+        val legacyFile = byteArrayOf(
+            0x42, 0x56, 0x4f, 0x4b, 0x01,
+            0x10, 0x32, 0x54, 0x76, 0x98.toByte(), 0xba.toByte(), 0xdc.toByte(), 0xfe.toByte(), 0x01, 0x23, 0x45, 0x67, 0x89.toByte(), 0xab.toByte(), 0xcd.toByte(), 0xef.toByte(),
+            0x7a, 0x0c, 0xe5.toByte(), 0x93.toByte(), 0x2f, 0xb8.toByte(), 0x46, 0xd0.toByte(), 0x19, 0x6e, 0xa7.toByte(), 0x51,
+            0x04, 0x9d.toByte(), 0x3b, 0xc2.toByte(), 0x68, 0xf1.toByte(), 0x27, 0x8c.toByte(), 0x5a, 0xe9.toByte(), 0x13, 0xb4.toByte(),
+            0x7f, 0xd6.toByte(), 0x0e, 0x95.toByte(), 0x4b, 0xa0.toByte(), 0x36, 0xcf.toByte(), 0x62, 0x1d, 0xe7.toByte(), 0x88.toByte(),
+            0x2c, 0xb3.toByte(), 0x59, 0xfa.toByte(), 0x05, 0x9e.toByte(), 0x44, 0xdb.toByte(), 0x71, 0x16, 0xac.toByte(), 0x63,
+            0xf8.toByte(), 0x2a, 0x97.toByte(), 0x0f, 0xc4.toByte(), 0x5d, 0xb1.toByte(), 0x38, 0xe6.toByte(), 0x6f, 0x12, 0xa5.toByte(),
+        )
+        assertEquals(81, legacyFile.size)
+        assertEquals(OtpKeyFile.FILE_SIZE, legacyFile.size)
+        val parsed = OtpKeyFile.parse(legacyFile)
+        assertNotNull(parsed)
+        assertEquals(OtpKeyFile.SLOT_A, parsed!!.slot)
+        assertEquals("boveda.otp.v1", parsed.alias)
+        assertArrayEquals(legacyFile.copyOfRange(5, 21), parsed.keyringId)
+        assertArrayEquals(legacyFile.copyOfRange(21, 33), parsed.iv)
+        assertArrayEquals(legacyFile.copyOfRange(33, 81), parsed.wrappedKey)
+        // Volver a escribirlo con el codificador actual da los mismos bytes: el formato no cambió.
+        assertArrayEquals(legacyFile, OtpKeyFile.encode(parsed.slot, parsed.keyringId, parsed.iv, parsed.wrappedKey))
     }
 
     @Test
