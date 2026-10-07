@@ -3,57 +3,74 @@ package io.github.jls97.boveda.autofill
 import android.content.Intent
 import android.service.autofill.Dataset
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.jls97.boveda.BovedaApplication
 import io.github.jls97.boveda.MainActivity
+import io.github.jls97.boveda.R
 import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
 import io.github.jls97.boveda.core.autofill.ExternalText
@@ -64,11 +81,39 @@ import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
+import io.github.jls97.boveda.ui.components.Apartado
+import io.github.jls97.boveda.ui.components.Aviso
+import io.github.jls97.boveda.ui.components.BarraSuperior
+import io.github.jls97.boveda.ui.components.BotonIcono
+import io.github.jls97.boveda.ui.components.BotonPrimario
+import io.github.jls97.boveda.ui.components.BotonSecundario
+import io.github.jls97.boveda.ui.components.CabeceraGrande
+import io.github.jls97.boveda.ui.components.CampoBusqueda
+import io.github.jls97.boveda.ui.components.Ficha
+import io.github.jls97.boveda.ui.components.FilaCasilla
+import io.github.jls97.boveda.ui.components.Isotipo
+import io.github.jls97.boveda.ui.components.LineaPunteada
+import io.github.jls97.boveda.ui.components.Mostrador
 import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.OnAppBackground
+import io.github.jls97.boveda.ui.components.Pantalla
+import io.github.jls97.boveda.ui.components.Salida
+import io.github.jls97.boveda.ui.components.TextoError
+import io.github.jls97.boveda.ui.components.TipoAviso
+import io.github.jls97.boveda.ui.components.desbordar
 import io.github.jls97.boveda.ui.components.findActivity
+import io.github.jls97.boveda.ui.components.margenLateral
+import io.github.jls97.boveda.ui.components.partirEnAviso
+import io.github.jls97.boveda.ui.components.textoSecreto
 import io.github.jls97.boveda.ui.lock.LockViewModel
 import io.github.jls97.boveda.ui.lock.UnlockScreen
+import io.github.jls97.boveda.ui.theme.ContrasenoraShapes
+import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
+import io.github.jls97.boveda.ui.theme.Motion
+import io.github.jls97.boveda.ui.theme.Sizes
+import io.github.jls97.boveda.ui.theme.Spacing
+import io.github.jls97.boveda.ui.theme.rememberReducedMotion
+import io.github.jls97.boveda.ui.theme.voz
 
 @Composable
 internal fun AutofillApp(
@@ -195,12 +240,12 @@ internal fun AutofillApp(
     }
 }
 
+
 /**
  * Lists [entries] with those linked to [target] first; [onPick] fills with the chosen one.
  * [fillDescription] tells the user which fields will receive data, so a hidden password field
  * never gets one without them knowing.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PickEntryScreen(
     title: String,
@@ -215,6 +260,47 @@ private fun PickEntryScreen(
     var query by remember { mutableStateOf("") }
     // Off by default: linking is a deliberate decision, never a side effect of a hurried tap.
     var rememberChoice by remember { mutableStateOf(false) }
+    ElegirEntradaContenido(
+        title = title,
+        entries = entries,
+        target = target,
+        fillDescription = fillDescription,
+        emptyText = emptyText,
+        query = query,
+        onQueryChange = { query = it },
+        rememberChoice = rememberChoice,
+        onRememberChoiceChange = { rememberChoice = it },
+        busy = viewModel.busy,
+        error = viewModel.error,
+        onPick = onPick,
+        onCancel = onCancel,
+    )
+}
+
+/**
+ * Elegir con qué entrada rellenar, sin estado. De arriba abajo, en el orden en que hay que leerlo:
+ * la ventanilla con el destino (y lo que dice mostrar, y si su dominio es internacionalizado), qué
+ * se va a rellenar, los avisos antiphishing uno a uno y siempre a la vista, la búsqueda, la casilla
+ * de vincular y las entradas: vinculadas, sugeridas y todas.
+ */
+@Composable
+internal fun ElegirEntradaContenido(
+    title: String,
+    entries: List<VaultEntry>,
+    target: AutofillTarget,
+    fillDescription: String,
+    emptyText: String,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    rememberChoice: Boolean,
+    onRememberChoiceChange: (Boolean) -> Unit,
+    busy: Boolean,
+    error: String?,
+    onPick: (entry: VaultEntry, rememberChoice: Boolean) -> Unit,
+    onCancel: () -> Unit,
+    lista: LazyListState = rememberLazyListState(),
+) {
+    val c = ContrasenoraTheme.colors
     val linkable = target.key != null
     val exact = remember(entries, target) { CredentialMatcher.exactMatches(entries, target) }
     // Same package name as a linked app, another signature: never linkable, never suggested.
@@ -235,108 +321,224 @@ private fun PickEntryScreen(
     val others = remember(entries, exact, suggested) {
         (entries - exact.toSet() - suggested.toSet()).sortedBy { it.title.lowercase() }
     }
+    // Always shown, one by one, as urgent: an unlinked app or site is the realistic phishing case,
+    // and an unencrypted page is a warning even when an entry is linked.
+    val warnings = FillWarnings.forFill(target, exact, impersonated)
 
     fun fill(entry: VaultEntry) = onPick(entry, rememberChoice && canRemember)
 
+    val umbral = with(LocalDensity.current) { 56.dp.toPx() }
+    val desplazada by remember(lista, umbral) {
+        derivedStateOf { lista.firstVisibleItemIndex > 0 || lista.firstVisibleItemScrollOffset > umbral }
+    }
+    val margen = margenLateral()
+
     Scaffold(
+        containerColor = c.bgCanvas,
+        contentColor = c.textPrimary,
         topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, contentDescription = "Cancelar") }
-                },
+            BarraSuperior(
+                titulo = title,
+                mostrarTitulo = desplazada,
+                salida = Salida(onCancel, R.drawable.ic_cerrar, "Cancelar"),
+                ocupado = busy,
             )
         },
-    ) { padding ->
+    ) { inner ->
         LazyColumn(
+            state = lista,
             modifier = Modifier
-                .padding(padding)
-                .imePadding()
-                .fillMaxSize(),
+                .fillMaxSize()
+                .consumeWindowInsets(inner)
+                .imePadding(),
+            contentPadding = PaddingValues(
+                start = margen,
+                end = margen,
+                top = inner.calculateTopPadding(),
+                bottom = inner.calculateBottomPadding() + Spacing.s10,
+            ),
         ) {
-            item {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        if (target.host != null) "Web: ${target.label}" else "App: ${target.label}",
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    ClaimedAddress(target)
-                    idnWarning(target)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-                    Text(fillDescription, style = MaterialTheme.typography.bodyMedium)
-                    // Always in the error color: an unlinked app or site is the realistic phishing
-                    // case, and an unencrypted page is a warning even when an entry is linked.
-                    FillWarnings.forFill(target, exact, impersonated).forEach { warning ->
-                        Text(warning, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                    }
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Buscar en la bóveda") },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
-                    )
-                    if (linkable) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(
-                                checked = rememberChoice && canRemember,
-                                onCheckedChange = { rememberChoice = it },
-                                enabled = canRemember,
-                            )
-                            Text("Vincular la entrada que elija a ${target.label}")
-                        }
-                    }
-                    viewModel.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            item(key = "cabecera") { CabeceraGrande(title) }
+            item(key = "destino") { Ventanilla(target, fillDescription) }
+            warnings.forEachIndexed { i, warning ->
+                item(key = "aviso/$i") {
+                    val (titulo, resto) = partirEnAviso(warning)
+                    Aviso(TipoAviso.Peligro, titulo, Modifier.padding(top = Spacing.s3), mensaje = resto)
                 }
             }
+            item(key = "busqueda") {
+                CampoBusqueda(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    placeholder = "Buscar en la bóveda",
+                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.s6),
+                )
+            }
+            if (linkable) {
+                item(key = "vincular") {
+                    FilaCasilla(
+                        "Vincular la entrada que elija a ${target.label}",
+                        marcada = rememberChoice && canRemember,
+                        onCambio = onRememberChoiceChange,
+                        enabled = canRemember,
+                        modifier = Modifier.padding(top = Spacing.s2),
+                    )
+                }
+            }
+            error?.let { item(key = "error") { TextoError(it, Modifier.padding(top = Spacing.s3)) } }
             if (query.isNotBlank()) {
-                section("Resultados", searchResults, viewModel.busy, ::fill)
+                seccion("Resultados", searchResults, busy, ::fill)
                 if (searchResults.isEmpty()) {
-                    item { Text("Nada coincide con «$query».", modifier = Modifier.padding(16.dp)) }
+                    item(key = "sin-resultados") {
+                        TextoVacio(voz("No encuentro nada con «$query». Y mira que soy cotilla.", "Nada coincide con «$query»."))
+                    }
                 }
             } else {
-                section("Vinculadas a ${target.label}", exact, viewModel.busy, ::fill)
-                section("Quizá sea una de estas", suggested, viewModel.busy, ::fill)
-                section("Todas", others, viewModel.busy, ::fill)
-                if (entries.isEmpty()) {
-                    item { Text(emptyText, modifier = Modifier.padding(16.dp)) }
-                }
+                seccion("Vinculadas a ${target.label}", exact, busy, ::fill)
+                seccion("Quizá sea una de estas", suggested, busy, ::fill)
+                seccion("Todas", others, busy, ::fill)
+                if (entries.isEmpty()) item(key = "vacia") { TextoVacio(emptyText) }
             }
         }
     }
 }
 
-private fun LazyListScope.section(
+/**
+ * La ventanilla: para quién se rellena, en una ficha de borde marcado que no se puede pasar por
+ * alto. Arriba, Web o App y su nombre en letra de códigos; debajo, la dirección que dice mostrar
+ * en su propia línea y el aviso de dominio internacionalizado; tras la línea de puntos, qué se va
+ * a rellenar. TalkBack lee el destino de una vez: «Web, banco.es».
+ */
+@Composable
+private fun Ventanilla(target: AutofillTarget, fillDescription: String?) {
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    Ficha(relleno = PaddingValues(0.dp), borde = c.borderStrong) {
+        Column(Modifier.padding(Spacing.s4), verticalArrangement = Arrangement.spacedBy(Spacing.s3)) {
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Spacing.s3)) {
+                Icon(
+                    painterResource(R.drawable.ic_llave),
+                    contentDescription = null,
+                    tint = c.textLink,
+                    modifier = Modifier.padding(top = 2.dp).size(Sizes.iconLg),
+                )
+                Column(Modifier.weight(1f).semantics(mergeDescendants = true) { }) {
+                    Text(if (target.host != null) "Web" else "App", style = t.label, color = c.textSecondary)
+                    Text(
+                        cortesEnPuntos(target.label),
+                        style = t.secret.copy(fontWeight = FontWeight.Medium),
+                        color = c.textPrimary,
+                        modifier = Modifier.padding(top = Spacing.s0_5).semantics { contentDescription = target.label },
+                    )
+                }
+            }
+            ClaimedAddress(target)
+            idnWarning(target)?.let { TextoError(it) }
+        }
+        if (fillDescription != null) {
+            LineaPunteada(Modifier.padding(horizontal = Spacing.s4))
+            Text(
+                fillDescription,
+                style = t.body,
+                color = c.textPrimary,
+                modifier = Modifier.padding(horizontal = Spacing.s4, vertical = Spacing.s3),
+            )
+        }
+    }
+}
+
+/**
+ * El nombre con un punto de corte invisible tras cada punto: un paquete largo
+ * (`com.banco.login.mobile`) pasa de renglón entre sus partes y no a mitad de una. Solo para
+ * dibujarlo; TalkBack lee el nombre tal cual.
+ */
+private fun cortesEnPuntos(nombre: String): String = nombre.replace(".", ".\u200B")
+
+/** Encabezado y filas de una sección de la lista; nada si no tiene entradas. */
+private fun LazyListScope.seccion(
     title: String,
     entries: List<VaultEntry>,
     busy: Boolean,
     onPick: (VaultEntry) -> Unit,
 ) {
     if (entries.isEmpty()) return
-    item {
+    item(key = "titulo/$title") {
         Text(
             title,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
+            style = ContrasenoraTheme.type.label.copy(fontWeight = FontWeight.Bold),
+            color = ContrasenoraTheme.colors.textLink,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .padding(top = Spacing.s8, bottom = Spacing.s1)
+                .semantics { heading() },
         )
     }
-    items(entries, key = { "$title/${it.id}" }) { entry ->
-        ListItem(
-            headlineContent = { Text(entry.title.ifBlank { "(sin nombre)" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            supportingContent = if (entry.username.isNotEmpty()) {
-                { Text(entry.username, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            } else {
-                null
-            },
-            modifier = Modifier.clickable(enabled = !busy) { onPick(entry) },
-        )
-        HorizontalDivider()
+    itemsIndexed(entries, key = { _, entry -> "$title/${entry.id}" }) { i, entry ->
+        FilaEntrada(entry, enabled = !busy, ultima = i == entries.lastIndex) { onPick(entry) }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Una entrada que se puede elegir, al estilo del fichero: nombre y usuario, la flecha al final y una
+ * línea de puntos hasta la siguiente. Se pulsa entera; mientras se vincula, no.
+ */
+@Composable
+private fun FilaEntrada(entry: VaultEntry, enabled: Boolean, ultima: Boolean, onClick: () -> Unit) {
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .desbordar(Spacing.s2)
+                .clip(ContrasenoraShapes.sm)
+                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                .heightIn(min = Sizes.listItemHeight)
+                .padding(horizontal = Spacing.s2, vertical = Spacing.s3),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    entry.title.ifBlank { "(sin nombre)" },
+                    style = t.bodyStrong,
+                    color = if (enabled) c.textPrimary else c.textDisabled,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (entry.username.isNotEmpty()) {
+                    Text(
+                        entry.username,
+                        style = t.small,
+                        color = if (enabled) c.textSecondary else c.textDisabled,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Icon(
+                painterResource(R.drawable.ic_flecha),
+                contentDescription = null,
+                tint = if (enabled) c.textTertiary else c.textDisabled,
+                modifier = Modifier.size(Sizes.iconMd),
+            )
+        }
+        if (!ultima) LineaPunteada()
+    }
+}
+
+/** Lo que se dice cuando una lista no tiene nada. */
+@Composable
+private fun TextoVacio(texto: String) {
+    Text(
+        texto,
+        style = ContrasenoraTheme.type.bodyLarge,
+        color = ContrasenoraTheme.colors.textSecondary,
+        modifier = Modifier.padding(top = Spacing.s8),
+    )
+}
+
 @Composable
 private fun SaveEntryScreen(
     entries: List<VaultEntry>,
@@ -369,74 +571,97 @@ private fun SaveEntryScreen(
     var revealed by remember { mutableStateOf(false) }
     // Whatever was revealed hides again when the app goes to the background (B-39).
     OnAppBackground { revealed = false }
-    val existing = replaceId?.let { id -> matches.find { it.id == id } }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Guardar en Contraseñora") },
-                navigationIcon = {
-                    IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, contentDescription = "Cancelar") }
-                },
-            )
+    GuardarContenido(
+        pending = pending,
+        matches = matches,
+        impersonated = impersonated,
+        title = title,
+        onTitleChange = { title = it },
+        username = username,
+        onUsernameChange = { username = it },
+        replaceId = replaceId,
+        onReplaceIdChange = { replaceId = it },
+        revealed = revealed,
+        onRevealedChange = { revealed = it },
+        busy = viewModel.busy,
+        error = viewModel.error,
+        onSave = { viewModel.save(pending, title, username, replaceId, onDone) },
+        onCancel = onCancel,
+    )
+}
+
+/**
+ * Guardar lo que se ha tecleado en otra app, sin estado: un resguardo con el destino, el resumen y
+ * las contraseñas (capturada y, al actualizar, la actual), ocultas hasta pulsar el ojo; los avisos;
+ * dónde guardarla y los datos. Abajo, «No guardar» y «Guardar».
+ */
+@Composable
+internal fun GuardarContenido(
+    pending: PendingSave,
+    matches: List<VaultEntry>,
+    impersonated: List<VaultEntry>,
+    title: String,
+    onTitleChange: (String) -> Unit,
+    username: String,
+    onUsernameChange: (String) -> Unit,
+    replaceId: String?,
+    onReplaceIdChange: (String?) -> Unit,
+    revealed: Boolean,
+    onRevealedChange: (Boolean) -> Unit,
+    busy: Boolean,
+    error: String?,
+    onSave: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val existing = replaceId?.let { id -> matches.find { it.id == id } }
+    Pantalla(
+        titulo = "Guardar en Contraseñora",
+        salida = Salida(onCancel, R.drawable.ic_cerrar, "Cancelar"),
+        ocupado = busy,
+        mostrador = {
+            Mostrador {
+                BotonSecundario("No guardar", onCancel, Modifier.weight(1f), enabled = !busy)
+                BotonPrimario("Guardar", onSave, Modifier.weight(1f), enabled = !busy)
+            }
         },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                if (existing != null) {
-                    "Credenciales de ${pending.target.label}. Se actualizará «${existing.title}». " +
-                        SaveCapture.changeSummary(existing, username, pending.password)
-                } else {
-                    "Credenciales de ${pending.target.label}. La contraseña (${pending.password.length} caracteres) " +
-                        "se guardará cifrada."
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            // What is about to be stored is never a blind overwrite: the user can compare both values.
-            TextButton(onClick = { revealed = !revealed }) {
-                Text(if (revealed) "Ocultar" else "Mostrar")
-            }
-            if (revealed) {
-                Text(
-                    "Capturada: ${pending.password}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                )
-                if (existing != null) {
-                    Text(
-                        "Actual: ${existing.password.ifEmpty { "(vacía)" }}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                }
-            }
-            ClaimedAddress(pending.target)
-            idnWarning(pending.target)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.s3)) {
+            Capturado(pending, existing, username, revealed, onRevealedChange)
             FillWarnings.forSave(pending.target, impersonated).forEach { warning ->
-                Text(warning, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                val (titulo, resto) = partirEnAviso(warning)
+                Aviso(TipoAviso.Peligro, titulo, mensaje = resto)
             }
-            if (matches.isNotEmpty()) {
-                Text("¿Dónde la guardo?", style = MaterialTheme.typography.titleSmall)
-                ChoiceRow(label = "En una entrada nueva", selected = replaceId == null) { replaceId = null }
+        }
+        if (matches.isNotEmpty()) {
+            Apartado("¿Dónde la guardo?")
+            Column(
+                modifier = Modifier.selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(Spacing.s2),
+            ) {
+                OpcionGuardar("En una entrada nueva", null, replaceId == null) { onReplaceIdChange(null) }
                 matches.forEach { entry ->
-                    ChoiceRow(
-                        label = "Actualizar «${entry.title}» (${entry.username.ifEmpty { "sin usuario" }})",
-                        selected = replaceId == entry.id,
-                    ) { replaceId = entry.id }
+                    OpcionGuardar(
+                        "Actualizar «${entry.title}»",
+                        entry.username.ifEmpty { "sin usuario" },
+                        replaceId == entry.id,
+                    ) { onReplaceIdChange(entry.id) }
                 }
             }
-            if (replaceId == null) {
+        }
+        Column(
+            modifier = Modifier.padding(top = Spacing.s6),
+            verticalArrangement = Arrangement.spacedBy(Spacing.s4),
+        ) {
+            AnimatedVisibility(
+                visible = replaceId == null,
+                enter = fadeIn(tween(Motion.BASE)) + expandVertically(tween(Motion.BASE, easing = Motion.Standard)),
+                exit = fadeOut(tween(Motion.FAST)) + shrinkVertically(tween(Motion.BASE, easing = Motion.Standard)),
+            ) {
                 // The service's name often reads like the user: no keyboard learning here either (B-41).
                 NoLearningTextField(
                     value = title,
-                    onValueChange = { title = it },
+                    onValueChange = onTitleChange,
                     label = "Nombre",
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = false),
@@ -444,54 +669,186 @@ private fun SaveEntryScreen(
             }
             NoLearningTextField(
                 value = username,
-                onValueChange = { username = it },
+                onValueChange = onUsernameChange,
                 label = "Usuario o email",
                 // Empty while updating keeps the stored user, which is shown here as a hint.
                 placeholder = existing?.username?.takeIf { it.isNotEmpty() },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false),
             )
-            viewModel.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Button(
-                onClick = { viewModel.save(pending, title, username, replaceId, onDone) },
-                enabled = !viewModel.busy,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Guardar")
-            }
-            OutlinedButton(onClick = onCancel, enabled = !viewModel.busy, modifier = Modifier.fillMaxWidth()) {
-                Text("No guardar")
-            }
+            error?.let { TextoError(it) }
         }
     }
 }
 
+/**
+ * Lo capturado, como un resguardo de ventanilla: de dónde viene (y lo que dice mostrar), el resumen
+ * de lo que se va a guardar y, bajo la línea de puntos, la contraseña capturada y la actual. Nunca
+ * se sobrescribe a ciegas: el ojo enseña las dos para compararlas.
+ */
 @Composable
-private fun ChoiceRow(label: String, selected: Boolean, onSelect: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectable(selected = selected, onClick = onSelect, role = Role.RadioButton)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(selected = selected, onClick = null)
-        Text(label, modifier = Modifier.padding(start = 12.dp))
+private fun Capturado(
+    pending: PendingSave,
+    existing: VaultEntry?,
+    username: String,
+    revealed: Boolean,
+    onRevealedChange: (Boolean) -> Unit,
+) {
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    Ficha(relleno = PaddingValues(0.dp), borde = c.borderStrong) {
+        Column(Modifier.padding(Spacing.s4), verticalArrangement = Arrangement.spacedBy(Spacing.s3)) {
+            if (existing != null) {
+                Text(
+                    "Credenciales de ${pending.target.label}. Se actualizará «${existing.title}».",
+                    style = t.body,
+                    color = c.textPrimary,
+                )
+                Text(
+                    SaveCapture.changeSummary(existing, username, pending.password),
+                    style = t.small,
+                    color = c.textSecondary,
+                )
+            } else {
+                Text(
+                    "Credenciales de ${pending.target.label}. La contraseña (${pending.password.length} caracteres) " +
+                        "se guardará cifrada.",
+                    style = t.body,
+                    color = c.textPrimary,
+                )
+            }
+            ClaimedAddress(pending.target)
+            idnWarning(pending.target)?.let { TextoError(it) }
+        }
+        LineaPunteada(Modifier.padding(horizontal = Spacing.s4))
+        // What is about to be stored is never a blind overwrite: the user can compare both values.
+        Row(
+            modifier = Modifier.padding(start = Spacing.s4, end = Spacing.s1, top = Spacing.s2, bottom = Spacing.s3),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(Modifier.weight(1f).padding(top = Spacing.s2), verticalArrangement = Arrangement.spacedBy(Spacing.s3)) {
+                ValorGuardado("Capturada", pending.password, revealed)
+                if (existing != null) ValorGuardado("Actual", existing.password, revealed)
+            }
+            BotonIcono(
+                icono = if (revealed) R.drawable.ic_ojo_tachado else R.drawable.ic_ojo,
+                descripcion = if (revealed) "Ocultar" else "Mostrar",
+                onClick = { onRevealedChange(!revealed) },
+                tamanoIcono = Sizes.iconMd,
+            )
+        }
     }
 }
 
+/**
+ * Una contraseña del resguardo: doce puntos mientras está oculta (no dicen cuánto mide) o, a la
+ * vista, en letra de códigos con las cifras en latón. Una vacía se dice con palabras.
+ */
 @Composable
-private fun MessageScreen(title: String, text: String, onClose: () -> Unit) {
-    Scaffold { padding ->
+private fun ValorGuardado(etiqueta: String, password: String, revealed: Boolean) {
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { }) {
+        Text(etiqueta, style = t.label, color = c.textSecondary)
+        when {
+            password.isEmpty() -> Text("(vacía)", style = t.body, color = c.textTertiary, modifier = Modifier.padding(top = Spacing.s1))
+            revealed -> Text(textoSecreto(password), style = t.secret, modifier = Modifier.padding(top = Spacing.s1))
+            else -> Text(
+                "••••••••••••",
+                style = t.secret,
+                color = c.textPrimary,
+                maxLines = 1,
+                modifier = Modifier.padding(top = Spacing.s1).semantics { contentDescription = "Oculta" },
+            )
+        }
+    }
+}
+
+/**
+ * Una opción de «¿Dónde la guardo?»: papel con su redondel, que se marca y se enmarca en ciruela
+ * al elegirla. TalkBack la lee como botón de opción.
+ */
+@Composable
+private fun OpcionGuardar(titulo: String, detalle: String?, elegida: Boolean, onElegir: () -> Unit) {
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    val reduced = rememberReducedMotion()
+    val borde by animateColorAsState(
+        targetValue = if (elegida) c.brandPrimary else c.borderSubtle,
+        animationSpec = if (reduced) snap() else tween(Motion.BASE),
+        label = "borde de la opción",
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ContrasenoraShapes.md)
+            .background(c.bgSurface)
+            .border(if (elegida) Sizes.inputBorder else 1.dp, borde, ContrasenoraShapes.md)
+            .selectable(selected = elegida, onClick = onElegir, role = Role.RadioButton)
+            .heightIn(min = 56.dp)
+            .padding(horizontal = Spacing.s4, vertical = Spacing.s3),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
+    ) {
+        Redondel(elegida)
+        Column(Modifier.weight(1f)) {
+            Text(titulo, style = t.bodyStrong, color = c.textPrimary)
+            if (detalle != null) Text(detalle, style = t.small, color = c.textSecondary)
+        }
+    }
+}
+
+/** El redondel de una opción: un aro que, al elegirla, se llena hasta dejar un punto de ciruela. */
+@Composable
+private fun Redondel(elegida: Boolean) {
+    val c = ContrasenoraTheme.colors
+    val reduced = rememberReducedMotion()
+    val progreso by animateFloatAsState(
+        targetValue = if (elegida) 1f else 0f,
+        animationSpec = if (reduced) snap() else tween(Motion.BASE, easing = Motion.Emphasized),
+        label = "redondel",
+    )
+    val aro = lerp(c.borderStrong, c.brandPrimary, progreso)
+    Canvas(Modifier.size(22.dp)) {
+        val grosor = 1.5.dp.toPx()
+        drawCircle(c.bgSurface)
+        drawCircle(aro, radius = size.minDimension / 2 - grosor / 2, style = Stroke(grosor))
+        if (progreso > 0f) drawCircle(c.brandPrimary, radius = 5.dp.toPx() * progreso)
+    }
+}
+
+/**
+ * Pantalla de mensaje del autorrelleno: el isotipo, el título en Young Serif, el texto y «Cerrar».
+ * Para cuando no hay nada que elegir ni guardar.
+ */
+@Composable
+internal fun MessageScreen(title: String, text: String, onClose: () -> Unit) {
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    val margen = margenLateral()
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(c.bgCanvas)
+            .safeDrawingPadding()
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Column(
-            modifier = Modifier
-                .padding(padding)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            Modifier
+                .widthIn(max = 560.dp)
+                .fillMaxWidth()
+                .padding(start = margen, end = margen, top = Spacing.s10, bottom = Spacing.s8),
         ) {
-            Text(title, style = MaterialTheme.typography.headlineSmall)
-            Text(text)
-            Button(onClick = onClose) { Text("Cerrar") }
+            Isotipo(Modifier.size(72.dp), descripcion = "Contraseñora")
+            Text(
+                title,
+                style = t.display2,
+                color = c.textPrimary,
+                modifier = Modifier.padding(top = Spacing.s6).semantics { heading() },
+            )
+            Text(text, style = t.bodyLarge, color = c.textSecondary, modifier = Modifier.padding(top = Spacing.s3))
+            BotonPrimario("Cerrar", onClose, Modifier.fillMaxWidth().padding(top = Spacing.s8))
         }
     }
 }
@@ -510,14 +867,22 @@ private fun fillDescription(request: AutofillRequest.Fill): String = when {
 @Composable
 private fun ClaimedAddress(target: AutofillTarget) {
     val claimed = FillWarnings.claimedAddress(target) ?: return
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Muestra: ", style = MaterialTheme.typography.bodyMedium)
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { }) {
+        Text("Muestra:", style = t.label, color = c.textSecondary)
         Text(
             claimed,
-            style = MaterialTheme.typography.bodyMedium,
-            fontFamily = FontFamily.Monospace,
+            style = t.secret.copy(fontSize = 16.sp, lineHeight = 24.sp),
+            color = c.textPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .padding(top = Spacing.s1)
+                .fillMaxWidth()
+                .clip(ContrasenoraShapes.xs)
+                .background(c.bgSunken)
+                .padding(horizontal = Spacing.s2, vertical = Spacing.s1),
         )
     }
 }
@@ -530,4 +895,3 @@ private fun idnWarning(target: AutofillTarget): String? =
     } else {
         null
     }
-
