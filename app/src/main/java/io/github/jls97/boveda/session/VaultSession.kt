@@ -70,6 +70,13 @@ sealed interface VaultState {
         val deviceKeySecurityLevel: String = KeySecurityLevel.UNKNOWN.label,
         /** Set when that key is software only: the vault is not bound to the phone's security chip. */
         val deviceKeyWarning: String? = null,
+        /** Argon2id costs of the header the vault is written with. For the settings screen. */
+        val kdfParams: KdfParams = KdfParams.DEFAULT,
+        /**
+         * Set when the vault opened with costs below the app's default and could not be written
+         * again with the default ones ([KdfUpgradePolicy]): it keeps opening, with the old costs.
+         */
+        val kdfUpgradeWarning: String? = null,
     ) : VaultState
 }
 
@@ -139,6 +146,8 @@ class VaultSession private constructor(
         val integrityWarning: Boolean = false,
         /** Where the Keystore key that wraps [layerKey] lives. */
         val deviceKeySecurityLevel: KeySecurityLevel = KeySecurityLevel.UNKNOWN,
+        /** [header] has costs below [KdfParams.DEFAULT] and the rewrite on unlock failed. */
+        val kdfUpgradeFailed: Boolean = false,
     ) {
         fun wipe() {
             dek.wipe()
@@ -260,6 +269,8 @@ class VaultSession private constructor(
             current.integrityWarning,
             deviceKeySecurityLevel = current.deviceKeySecurityLevel.label,
             deviceKeyWarning = SOFTWARE_KEY_WARNING.takeIf { current.deviceKeySecurityLevel == KeySecurityLevel.SOFTWARE },
+            kdfParams = current.header.kdfParams,
+            kdfUpgradeWarning = KDF_UPGRADE_WARNING.takeIf { current.kdfUpgradeFailed },
         )
     }
 
@@ -318,7 +329,15 @@ class VaultSession private constructor(
         }
     }
 
-    /** Unlocks with the master password. The array is wiped. */
+    /**
+     * Unlocks with the master password. The array is wiped.
+     *
+     * A vault whose header has cheaper Argon2id costs than [KdfParams.DEFAULT] is written again
+     * with the default ones before it is published ([KdfUpgradePolicy]): the password is at
+     * hand and the DEK does not change, so the fingerprint copy keeps working. If that write
+     * fails the unlock goes on with the old header and [VaultState.Unlocked.kdfUpgradeWarning]
+     * says so. The fingerprint unlock has no password, so it never does this.
+     */
     suspend fun unlock(password: CharArray): OperationResult = writeMutex.withLock {
         try {
             val blockedUntil = withContext(Dispatchers.IO) { throttle.blockedUntil() }
@@ -339,7 +358,13 @@ class VaultSession private constructor(
                 return@withLock if (until > 0) OperationResult.Throttled(until) else OperationResult.WrongPassword
             }
             withContext(Dispatchers.IO) { throttle.reset() }
-            finishUnlock(newVault, lockCountAtStart)
+            // Only while nobody locked meanwhile: finishUnlock would discard the vault anyway.
+            val upgraded = if (KdfUpgradePolicy.shouldUpgrade(newVault.header.kdfParams) && lockCount == lockCountAtStart) {
+                withContext(Dispatchers.Default) { upgradeKdf(newVault, password) }
+            } else {
+                newVault
+            }
+            finishUnlock(upgraded, lockCountAtStart)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -347,6 +372,42 @@ class VaultSession private constructor(
         } finally {
             password.wipe()
         }
+    }
+
+    /**
+     * Rebuilds the header of [newVault], a vault just opened and not yet published, with
+     * [KdfParams.DEFAULT] and writes the file. [newVault] is private to the unlock in progress
+     * (not [open]), so a [lock] meanwhile cannot wipe its keys under this; the caller still
+     * checks the lock count before publishing. Returns the vault with the new header or, if
+     * anything fails, the same vault flagged with [OpenVault.kdfUpgradeFailed]: the file on disk
+     * is written atomically, so it still holds the old header that [newVault] describes.
+     * Runs off the main thread: Argon2id.
+     */
+    private fun upgradeKdf(newVault: OpenVault, password: CharArray): OpenVault {
+        val header = try {
+            val upgraded = VaultContainer.upgradeKdf(password, newVault.dek)
+            val portable = VaultContainer.seal(upgraded, newVault.dek, newVault.data)
+            writeVault(DeviceLayer.seal(newVault.layerKey, portable))
+            upgraded
+        } catch (e: Exception) {
+            null
+        } catch (e: OutOfMemoryError) {
+            // Argon2id with the default costs ran out of heap: the old costs still open the vault.
+            null
+        }
+        val result = OpenVault(
+            header ?: newVault.header,
+            newVault.dek.copyOf(),
+            newVault.layerKey.copyOf(),
+            newVault.data,
+            biometricEnabled = newVault.biometricEnabled,
+            otpOnDevice = newVault.otpOnDevice,
+            integrityWarning = newVault.integrityWarning,
+            deviceKeySecurityLevel = newVault.deviceKeySecurityLevel,
+            kdfUpgradeFailed = header == null,
+        )
+        newVault.wipe()
+        return result
     }
 
     /** Cipher for the fingerprint prompt, or null if fingerprint unlock is not available. */
@@ -1201,6 +1262,9 @@ class VaultSession private constructor(
         private const val SOFTWARE_KEY_WARNING =
             "La clave de este teléfono es solo de software: una copia de los archivos de la app " +
                 "sacada del teléfono podría abrirse en otro sitio con la contraseña maestra."
+        private const val KDF_UPGRADE_WARNING =
+            "La bóveda usa una derivación de clave más débil que la actual y no se pudo actualizar " +
+                "al abrirla. Se volverá a intentar en el próximo desbloqueo con contraseña."
 
         fun create(context: Context, scope: CoroutineScope): VaultSession {
             val appContext = context.applicationContext

@@ -15,7 +15,19 @@ data class KdfParams(val memoryKiB: Int, val iterations: Int, val parallelism: I
         /** RFC 9106, second recommended option: 64 MiB of memory, 3 passes, 4 lanes. */
         val DEFAULT = KdfParams(memoryKiB = 64 * 1024, iterations = 3, parallelism = 4)
 
-        /** Upper bounds keep a crafted file from exhausting memory or CPU when it is opened. */
+        /**
+         * Upper bounds keep a crafted file from exhausting memory or CPU when it is opened.
+         *
+         * Format policy: these ceilings are part of the vault format, not a tunable. Every reader
+         * of the current format version rejects a header above them ("parameters out of range"),
+         * so a future [DEFAULT] must stay within them. Raising a ceiling means that older apps
+         * can no longer open the files written with the new costs: it requires a new major
+         * version of the container format (`VaultContainer.FORMAT_VERSION`) and a
+         * `VaultCodec.MIN_READER_VERSION` that keeps older readers out, never a silent bump
+         * here. Raising [DEFAULT] within the ceilings needs no format change: vaults written
+         * with cheaper costs are moved to the new ones the next time they open with the
+         * password (see `VaultSession.unlock`).
+         */
         const val MAX_MEMORY_KIB = 256 * 1024
         const val MAX_ITERATIONS = 16
         const val MAX_PARALLELISM = 16

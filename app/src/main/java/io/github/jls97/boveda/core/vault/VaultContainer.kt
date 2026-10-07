@@ -96,6 +96,20 @@ object VaultContainer {
     fun changePassword(newPassword: CharArray, data: VaultData, params: KdfParams = KdfParams.DEFAULT): Opened =
         create(newPassword, data, params)
 
+    /**
+     * Wraps the same [dek] again under [password] with the costs in [params] (and a new salt):
+     * the vault moves to stronger Argon2id costs without changing its key, so the fingerprint
+     * copy of the DEK and the 2FA keys keep working; only the header changes. The body must be
+     * sealed again under the returned header, which is its AAD. The caller keeps [dek].
+     * Slow: runs Argon2id.
+     *
+     * @throws KdfMemoryException if [params] do not fit in this process, before deriving anything.
+     */
+    fun upgradeKdf(password: CharArray, dek: ByteArray, params: KdfParams = KdfParams.DEFAULT): Header {
+        ensureKdfFitsInMemory(params)
+        return buildHeader(password, dek, params)
+    }
+
     /** True if [password] unwraps this header's DEK. Slow: runs Argon2id. */
     fun verifyPassword(header: Header, password: CharArray): Boolean {
         ensureKdfFitsInMemory(header.kdfParams)

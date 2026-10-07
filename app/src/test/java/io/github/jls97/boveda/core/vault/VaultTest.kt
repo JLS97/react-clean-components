@@ -704,6 +704,38 @@ class VaultTest {
     }
 
     @Test
+    fun upgradeKdfKeepsTheDekAndRewrapsItUnderTheNewCosts() {
+        val created = VaultContainer.create("maestra".toCharArray(), sampleData, testParams)
+        val oldBlob = VaultContainer.seal(created.header, created.dek, created.data)
+        val stronger = KdfParams(memoryKiB = 128, iterations = 2, parallelism = 1)
+        val upgraded = VaultContainer.upgradeKdf("maestra".toCharArray(), created.dek, stronger)
+        val blob = VaultContainer.seal(upgraded, created.dek, created.data)
+
+        assertEquals(stronger, upgraded.kdfParams)
+        assertFalse("The salt must be fresh", upgraded.salt.contentEquals(created.header.salt))
+        // The same password opens it and gives back the very same DEK: the fingerprint copy still works.
+        val opened = VaultContainer.open(blob, "maestra".toCharArray())
+        assertEquals(sampleData, opened.data)
+        assertArrayEquals(created.dek, opened.dek)
+        assertEquals(sampleData, VaultContainer.openWithKey(blob, created.dek).data)
+        try {
+            VaultContainer.open(blob, "maestrA".toCharArray())
+            fail("A wrong password opened the upgraded vault")
+        } catch (expected: WrongPasswordException) {
+        }
+        // The body is bound to the header it was sealed under: neither one goes with the other's.
+        val oldBody = oldBlob.copyOfRange(created.header.encoded.size, oldBlob.size)
+        val newBody = blob.copyOfRange(upgraded.encoded.size, blob.size)
+        for (mixed in listOf(upgraded.encoded + oldBody, created.header.encoded + newBody)) {
+            try {
+                VaultContainer.openWithKey(mixed, created.dek)
+                fail("A body was accepted under a header it was not sealed with")
+            } catch (expected: CorruptedVaultException) {
+            }
+        }
+    }
+
+    @Test
     fun verifyPasswordChecksTheHeader() {
         val created = VaultContainer.create("buena".toCharArray(), sampleData, testParams)
         assertTrue(VaultContainer.verifyPassword(created.header, "buena".toCharArray()))

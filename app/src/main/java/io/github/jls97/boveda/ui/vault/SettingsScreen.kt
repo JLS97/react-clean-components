@@ -41,6 +41,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.jls97.boveda.core.crypto.KdfParams
 import io.github.jls97.boveda.core.vault.VaultSettings
 import io.github.jls97.boveda.data.ANTI_PHISHING_MAX_LENGTH
 import io.github.jls97.boveda.data.ANTI_PHISHING_MIN_LENGTH
@@ -64,6 +65,7 @@ import io.github.jls97.boveda.ui.components.durationLabel
 import io.github.jls97.boveda.ui.components.findActivity
 import io.github.jls97.boveda.ui.components.formatDate
 import io.github.jls97.boveda.ui.components.hasSecureLockScreen
+import io.github.jls97.boveda.ui.components.kdfLabel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -80,6 +82,9 @@ fun SettingsScreen(
     entryCount: Int,
     otpAccess: OtpAccess,
     otpCount: Int,
+    /** Parámetros Argon2id con los que está escrita la bóveda y, si no pudieron actualizarse, el aviso (I-09). */
+    kdfParams: KdfParams,
+    kdfUpgradeWarning: String?,
     onRecoverOtp: () -> Unit,
     onNewRecoveryCode: () -> Unit,
     onPickExportDestination: (String) -> Unit,
@@ -194,8 +199,9 @@ fun SettingsScreen(
         // Activarla es dar una llave permanente a cualquier dedo registrado en el teléfono: solo con la contraseña.
         reauth = Reauth(
             title = "Activar desbloqueo con huella",
-            text = "Cualquier huella registrada en este teléfono podrá abrir la bóveda sin la contraseña maestra. " +
-                "Escríbela para confirmar que eres tú.",
+            text = "Abrirá la bóveda cualquier huella ya registrada en este teléfono. Revisa las huellas en los " +
+                "ajustes del sistema antes de activarla. La clave se destruye al inscribir una huella nueva o " +
+                "quitar el bloqueo de pantalla. Escribe la contraseña maestra para confirmar que eres tú.",
             confirmLabel = "Continuar",
             onVerified = ::enrollBiometric,
         )
@@ -266,8 +272,10 @@ fun SettingsScreen(
                 supportingContent = {
                     Text(
                         if (biometricAvailable) {
-                            "Vale cualquier huella registrada en el teléfono (solo huellas fuertes); la clave se " +
-                                "invalida si añades otra. Activarla pide la contraseña maestra."
+                            "Abrirá la bóveda cualquier huella ya registrada en este teléfono (solo huellas " +
+                                "fuertes). Revisa las huellas en los ajustes del sistema antes de activarla. La " +
+                                "clave se destruye al inscribir una huella nueva o quitar el bloqueo de pantalla. " +
+                                "Activarla pide la contraseña maestra."
                         } else {
                             "No hay ninguna huella segura registrada en el teléfono."
                         },
@@ -284,6 +292,17 @@ fun SettingsScreen(
             ListItem(
                 headlineContent = { Text("Cambiar contraseña maestra") },
                 modifier = Modifier.clickable(enabled = !viewModel.busy) { changingPassword = true },
+            )
+            ListItem(
+                headlineContent = { Text("Derivación de la clave") },
+                supportingContent = {
+                    Column {
+                        Text(kdfLabel(kdfParams))
+                        if (kdfUpgradeWarning != null) {
+                            Text(kdfUpgradeWarning, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                },
             )
             ListItem(
                 headlineContent = { Text("Frase antiphishing") },
@@ -410,7 +429,7 @@ fun SettingsScreen(
             SectionTitle("Privacidad")
             Text(
                 "• Sin permiso de Internet: Android no deja que la app abra ninguna conexión.\n" +
-                    "• Cifrado AES-256-GCM con clave derivada por Argon2id (64 MiB, 3 pasadas).\n" +
+                    "• Cifrado AES-256-GCM con clave derivada por Argon2id (parámetros en «Derivación de la clave»).\n" +
                     "• Capa extra ligada al chip de seguridad del teléfono (Android Keystore).\n" +
                     "• Sin capturas de pantalla, sin copias en la nube y sin autorrelleno de terceros.\n" +
                     "• Consejo: desactiva la sincronización del portapapeles del teclado y de HyperOS.",
