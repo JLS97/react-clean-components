@@ -1,6 +1,5 @@
 package io.github.jls97.boveda.ui.lock
 
-import android.app.KeyguardManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -38,11 +37,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jls97.boveda.data.ANTI_PHISHING_MAX_LENGTH
 import io.github.jls97.boveda.data.ANTI_PHISHING_MIN_LENGTH
 import io.github.jls97.boveda.data.AntiPhishingPhrase
+import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
 import io.github.jls97.boveda.ui.components.StrengthMeter
+import io.github.jls97.boveda.ui.components.hasSecureLockScreen
 import io.github.jls97.boveda.ui.components.readBackup
 import kotlinx.coroutines.launch
 
@@ -134,12 +135,8 @@ fun SetupScreen(viewModel: LockViewModel) {
             } else {
                 Button(
                     onClick = {
-                        val keyguard = context.getSystemService(KeyguardManager::class.java)
-                        if (keyguard?.isDeviceSecure != true) {
-                            viewModel.showError(
-                                "Activa antes un bloqueo de pantalla (PIN, patrón o contraseña) en los ajustes " +
-                                    "del teléfono: la clave de hardware de la bóveda depende de él.",
-                            )
+                        if (!context.hasSecureLockScreen()) {
+                            viewModel.showError(VaultSession.SECURE_LOCK_SCREEN_REQUIRED)
                         } else {
                             viewModel.createVault(password, confirmation, phrase, phrases)
                         }
@@ -153,8 +150,14 @@ fun SetupScreen(viewModel: LockViewModel) {
             HorizontalDivider()
             TextButton(
                 onClick = {
-                    viewModel.expectExternalActivity()
-                    openBackup.launch(arrayOf("*/*"))
+                    // La misma comprobación que «Crear bóveda»: la clave de hardware de la bóveda
+                    // restaurada también depende del bloqueo de pantalla (B-43).
+                    if (!context.hasSecureLockScreen()) {
+                        viewModel.showError(VaultSession.SECURE_LOCK_SCREEN_REQUIRED)
+                    } else {
+                        viewModel.expectExternalActivity()
+                        openBackup.launch(arrayOf("*/*"))
+                    }
                 },
                 enabled = !ui.busy,
             ) {
@@ -170,7 +173,7 @@ fun SetupScreen(viewModel: LockViewModel) {
             confirmLabel = "Restaurar",
             onConfirm = { backupPassword ->
                 pendingBackup = null
-                viewModel.restoreBackup(backup, backupPassword)
+                viewModel.restoreBackupFirstRun(backup, backupPassword)
             },
             onDismiss = { pendingBackup = null },
         )

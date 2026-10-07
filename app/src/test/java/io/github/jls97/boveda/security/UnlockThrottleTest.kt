@@ -1,6 +1,7 @@
 package io.github.jls97.boveda.security
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -13,6 +14,7 @@ class UnlockThrottleTest {
     private class FakeStore : ThrottleStore {
         var state = ThrottleState()
         var saves = 0
+        var kept: ThrottleState? = null
 
         override fun load(): ThrottleState = state
 
@@ -23,6 +25,12 @@ class UnlockThrottleTest {
 
         override fun clear() {
             state = ThrottleState()
+        }
+
+        override fun loadKept(): ThrottleState? = kept
+
+        override fun saveKept(state: ThrottleState?) {
+            kept = state
         }
     }
 
@@ -235,6 +243,49 @@ class UnlockThrottleTest {
         assertEquals(0L, throttle.blockedUntil())
         assertEquals(cap, throttle.recordFailure() - clock.wall)
         assertEquals(cap, store.state.penaltyMs)
+    }
+
+    // (f) a forced restore keeps the count aside for the vault that may come back (R01-9)
+
+    @Test
+    fun stateKeptForUndoSurvivesAResetAndComesBackWithTheUndo() {
+        fail(5)
+        clock.tick(30_000L) // served: the count stays
+        assertEquals(0L, throttle.blockedUntil())
+        // Forced restore of another vault, then its owner unlocks it: the live state is cleared...
+        throttle.keepForUndo()
+        throttle.reset()
+        assertEquals(ThrottleState(), store.state)
+        assertEquals(0L, fail(4))
+        // ...but undoing the restore brings the original vault back with its own count: the next
+        // wrong password is the sixth, not the first.
+        throttle.restoreKept()
+        assertEquals(5, store.state.failures)
+        assertNull(store.kept)
+        assertEquals(60_000L, throttle.recordFailure() - clock.wall)
+    }
+
+    @Test
+    fun aPendingBlockKeptForUndoIsStillServedAfterTheUndo() {
+        fail(5)
+        throttle.keepForUndo()
+        throttle.reset()
+        clock.tick(10_000L)
+        throttle.restoreKept()
+        assertEquals(20_000L, remaining())
+    }
+
+    @Test
+    fun restoringWithNothingKeptChangesNothingAndDiscardEmptiesTheSlot() {
+        fail(3)
+        throttle.restoreKept()
+        assertEquals(3, store.state.failures)
+        throttle.keepForUndo()
+        throttle.discardKept()
+        assertNull(store.kept)
+        throttle.reset()
+        throttle.restoreKept()
+        assertEquals(ThrottleState(), store.state)
     }
 
     @Test

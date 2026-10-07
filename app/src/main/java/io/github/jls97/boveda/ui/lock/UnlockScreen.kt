@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,6 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,9 +44,11 @@ import io.github.jls97.boveda.data.AntiPhishingPhrase
 import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.ui.components.ConfirmDialog
 import io.github.jls97.boveda.ui.components.InsecureDeviceWarning
+import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
-import io.github.jls97.boveda.ui.components.PasswordPromptDialog
+import io.github.jls97.boveda.ui.components.RestoreBackupDialog
+import io.github.jls97.boveda.ui.components.SecureAlertDialog
 import io.github.jls97.boveda.ui.components.findActivity
 import io.github.jls97.boveda.ui.components.hasSecureLockScreen
 import io.github.jls97.boveda.ui.components.readBackup
@@ -70,9 +75,14 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true, request
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var confirmRestore by remember { mutableStateOf(false) }
     var pendingBackup by remember { mutableStateOf<ByteArray?>(null) }
+    // Copia y su contraseña a la espera de la confirmación fuerte de restaurar sin la actual (B-31).
+    var forcedRestore by remember { mutableStateOf<ForcedRestore?>(null) }
+    var confirmUndo by remember { mutableStateOf(false) }
     // Se comprueba cada vez que la pantalla vuelve al frente: el usuario puede haber quitado el PIN.
     val resumeTick by viewModel.resumeTicks.collectAsStateWithLifecycle()
     val deviceSecure = remember(resumeTick) { context.hasSecureLockScreen() }
+    // Tras cada operación (restaurar, deshacer) puede haber cambiado.
+    val canUndoRestore = remember(resumeTick, ui.busy) { allowRestore && viewModel.canUndoRestore() }
 
     val blocked = ui.blockedUntil > now
     LaunchedEffect(ui.blockedUntil) {
@@ -151,6 +161,7 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true, request
                 )
             } else {
                 ui.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                ui.notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
             }
             if (ui.busy) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -187,8 +198,28 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true, request
                 TextButton(onClick = { confirmRestore = true }, enabled = !ui.busy) {
                     Text("Restaurar una copia de seguridad")
                 }
+                if (canUndoRestore) {
+                    TextButton(onClick = { confirmUndo = true }, enabled = !ui.busy) {
+                        Text("Deshacer la última restauración")
+                    }
+                }
             }
         }
+    }
+
+    if (confirmUndo) {
+        ConfirmDialog(
+            title = "¿Volver a la bóveda anterior?",
+            text = "La bóveda de antes de la última restauración volverá a su sitio, bloqueada: se abre con " +
+                "su propia contraseña maestra y la huella quedará desactivada. La bóveda de ahora se guarda " +
+                "en su lugar, así que podrás volver a cambiar.",
+            confirmLabel = "Deshacer",
+            onConfirm = {
+                confirmUndo = false
+                viewModel.undoRestore()
+            },
+            onDismiss = { confirmUndo = false },
+        )
     }
 
     if (confirmRestore) {
@@ -206,18 +237,82 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true, request
         )
     }
 
+    // Con bóveda en el teléfono hace falta también su contraseña maestra actual, o confirmar
+    // expresamente que se restaura sin ella (B-31). Basta la actual aunque la bóveda ya no se
+    // pueda abrir en este teléfono: en ese caso no se comprueba.
     pendingBackup?.let { backup ->
-        PasswordPromptDialog(
-            title = "Restaurar copia",
-            text = "Escribe la contraseña maestra con la que se hizo la copia.",
-            confirmLabel = "Restaurar",
-            onConfirm = { backupPassword ->
+        RestoreBackupDialog(
+            text = "Escribe la contraseña maestra con la que se hizo la copia y la contraseña maestra " +
+                "actual de la bóveda de este teléfono. Al terminar, la contraseña maestra será la de la copia.",
+            onConfirm = { backupPassword, currentPassword ->
                 pendingBackup = null
-                viewModel.restoreBackup(backup, backupPassword)
+                viewModel.restoreBackup(backup, backupPassword, currentPassword, forceWithoutCurrent = false)
             },
             onDismiss = { pendingBackup = null },
+            onForgotCurrent = { backupPassword ->
+                pendingBackup = null
+                forcedRestore = ForcedRestore(backup, backupPassword)
+            },
         )
     }
+
+    forcedRestore?.let { pending ->
+        ForcedRestoreDialog(
+            onConfirm = {
+                forcedRestore = null
+                viewModel.restoreBackup(pending.backup, pending.backupPassword, currentPassword = null, forceWithoutCurrent = true)
+            },
+            onDismiss = { forcedRestore = null },
+        )
+    }
+}
+
+/** Copia elegida y su contraseña, a la espera de la confirmación fuerte de restaurar sin la actual. */
+private class ForcedRestore(val backup: ByteArray, val backupPassword: String)
+
+/**
+ * Confirmación fuerte de restaurar sin la contraseña maestra actual (B-31): hay que teclear la
+ * palabra [LockViewModel.FORCED_RESTORE_WORD] y esperar [LockViewModel.FORCED_RESTORE_DELAY_SECONDS]
+ * segundos, para que no baste con pulsar sin leer.
+ */
+@Composable
+private fun ForcedRestoreDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    var typed by remember { mutableStateOf("") }
+    var secondsLeft by remember { mutableIntStateOf(LockViewModel.FORCED_RESTORE_DELAY_SECONDS) }
+    LaunchedEffect(Unit) {
+        while (secondsLeft > 0) {
+            delay(1_000)
+            secondsLeft--
+        }
+    }
+    val confirmed = LockViewModel.forcedRestoreConfirmed(typed, secondsLeft)
+    SecureAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("¿Restaurar sin la contraseña actual?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "La bóveda de este teléfono se sustituirá sin comprobar que es tuya. Se guarda una copia " +
+                        "para poder deshacerlo, pero el freno de intentos fallidos no se reinicia y la " +
+                        "contraseña maestra pasará a ser la de la copia. Si solo has olvidado la contraseña, " +
+                        "la bóveda que se va seguirá sin poder abrirse.",
+                )
+                NoLearningTextField(
+                    value = typed,
+                    onValueChange = { typed = it },
+                    label = "Escribe ${LockViewModel.FORCED_RESTORE_WORD} para confirmar",
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = confirmed) {
+                Text(if (secondsLeft > 0) "Restaurar ($secondsLeft s)" else "Restaurar")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
 }
 
 /**

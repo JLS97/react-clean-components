@@ -87,6 +87,10 @@ class VaultViewModel(
     var busy by mutableStateOf(false)
         private set
 
+    /** Se conserva la bóveda que sustituyó la última restauración: se puede deshacer o descartar (B-31). */
+    var canUndoRestore by mutableStateOf(false)
+        private set
+
     val resumeTicks: StateFlow<Int> = session.resumeTicks
 
     /** Fecha de la última copia verificada y cambios desde entonces (B-38). */
@@ -112,6 +116,7 @@ class VaultViewModel(
         viewModelScope.launch {
             session.state.collect { state ->
                 if (state is VaultState.Unlocked) {
+                    canUndoRestore = session.canUndoRestore()
                     trackChanges(state.data)
                     if (state.integrityWarning && !integrityWarned) {
                         integrityWarned = true
@@ -480,22 +485,40 @@ class VaultViewModel(
         message("$reason Haz una copia de seguridad ahora.")
     }
 
-    fun restoreBackup(uri: Uri, password: String) {
+    /**
+     * Restaura una copia con la bóveda abierta. [currentPassword] es la contraseña maestra de la
+     * bóveda que hay ahora: con la bóveda abierta la sesión la exige siempre (B-31); aquí no hay
+     * vía forzada.
+     */
+    fun restoreBackup(uri: Uri, password: String, currentPassword: String) {
         launchBusy {
             val backup = readBackup(contentResolver, uri)
             if (backup == null) {
                 message("No se pudo leer el archivo.")
                 return@launchBusy
             }
-            when (val result = session.restoreBackup(backup, password.toCharArray())) {
+            val result = session.restoreBackup(
+                backup,
+                password.toCharArray(),
+                currentPassword.toCharArray(),
+                forceWithoutCurrent = false,
+            )
+            when (result) {
                 OperationResult.Success, is OperationResult.Restored -> {
                     backToList()
-                    val passwordNote = if ((result as? OperationResult.Restored)?.masterPasswordChanged == true) {
+                    canUndoRestore = session.canUndoRestore()
+                    val restored = result as? OperationResult.Restored
+                    val passwordNote = if (restored?.masterPasswordChanged == true) {
                         " La contraseña maestra es ahora la de la copia."
                     } else {
                         ""
                     }
-                    message("Copia restaurada.$passwordNote La huella se ha desactivado; vuelve a activarla si quieres.")
+                    val undoNote = if (restored?.hadUndo == true) {
+                        " Puedes deshacerlo desde Ajustes hasta la próxima restauración."
+                    } else {
+                        ""
+                    }
+                    message("Copia restaurada.$passwordNote La huella se ha desactivado; vuelve a activarla si quieres.$undoNote")
                 }
                 OperationResult.WrongPassword -> message("La contraseña de la copia no es correcta.")
                 OperationResult.WrongCurrentPassword -> message("La contraseña maestra actual no es correcta.")
@@ -503,6 +526,29 @@ class VaultViewModel(
                 is OperationResult.Throttled -> message("Espera antes de volver a intentarlo.")
             }
         }
+    }
+
+    /**
+     * Vuelve a la bóveda anterior a la última restauración. La sesión se bloquea (las claves en
+     * memoria son de la bóveda que se va) y [onUndone] avisa a la pantalla de bloqueo, que es la
+     * que queda a la vista; la huella se desactiva.
+     */
+    fun undoRestore(onUndone: () -> Unit) {
+        launchBusy {
+            when (val result = session.undoRestore()) {
+                OperationResult.Success -> onUndone()
+                is OperationResult.Failure -> message(result.message)
+                else -> message("No se pudo deshacer la restauración.")
+            }
+            canUndoRestore = session.canUndoRestore()
+        }
+    }
+
+    /** Borra la copia de la bóveda que sustituyó la última restauración: ya no se podrá deshacer. */
+    fun discardUndo() {
+        session.discardUndo()
+        canUndoRestore = session.canUndoRestore()
+        message("Copia de la bóveda anterior borrada.")
     }
 
     fun biometricEnrollmentCipher(): Cipher? = session.biometricEnrollmentCipher()

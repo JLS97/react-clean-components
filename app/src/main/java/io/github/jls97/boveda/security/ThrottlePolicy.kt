@@ -57,11 +57,21 @@ data class ThrottleState(
     val blockedWallUntil: Long = 0L,
 )
 
-/** Where the throttle keeps its state. Every write must be on disk before it returns. */
+/**
+ * Where the throttle keeps its state. Every write must be on disk before it returns. The second
+ * slot ([loadKept], [saveKept]) holds the state of the vault that a forced restore replaced, apart
+ * from the live one, until the restore is undone or its copy discarded; [clear] never touches it.
+ */
 interface ThrottleStore {
     fun load(): ThrottleState
 
     fun save(state: ThrottleState)
 
     fun clear()
+
+    /** The state kept aside, or null if none. */
+    fun loadKept(): ThrottleState?
+
+    /** Keeps [state] aside, or empties the slot with null. */
+    fun saveKept(state: ThrottleState?)
 }

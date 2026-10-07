@@ -2,6 +2,7 @@ package io.github.jls97.boveda.security
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.SystemClock
 import android.provider.Settings
 
@@ -89,31 +90,66 @@ internal class UnlockThrottle(
         store.clear()
     }
 
+    /**
+     * Keeps the current state aside: a forced restore replaces a vault without proving anything
+     * about its owner, so the count it had must not be cleared by an unlock of the restored copy.
+     */
+    fun keepForUndo() {
+        store.saveKept(store.load())
+    }
+
+    /**
+     * Puts back the state kept by [keepForUndo], if any, when the vault it protects comes back
+     * with an undo, and empties the slot. Never relaxes: with nothing kept the live state stays.
+     */
+    fun restoreKept() {
+        store.loadKept()?.let { store.save(it) }
+        store.saveKept(null)
+    }
+
+    /** Empties the slot: the vault that state belonged to is gone for good. */
+    fun discardKept() {
+        store.saveKept(null)
+    }
+
     // commit() on purpose: a failed attempt must be on disk before the app can be killed.
     @SuppressLint("ApplySharedPref")
     private class PrefsStore(context: Context) : ThrottleStore {
         private val prefs = context.getSharedPreferences("unlock_throttle", Context.MODE_PRIVATE)
 
-        override fun load(): ThrottleState = ThrottleState(
-            failures = prefs.getInt(KEY_FAILURES, 0),
-            penaltyMs = prefs.getLong(KEY_PENALTY_MS, 0L),
-            blockedElapsedUntil = prefs.getLong(KEY_BLOCKED_ELAPSED_UNTIL, 0L),
-            bootCount = prefs.getInt(KEY_BOOT_COUNT, 0),
-            blockedWallUntil = prefs.getLong(KEY_BLOCKED_WALL_UNTIL, 0L),
+        /** Its own file, so [clear] (every reset) cannot wipe the state kept aside. */
+        private val keptPrefs = context.getSharedPreferences("unlock_throttle_kept", Context.MODE_PRIVATE)
+
+        override fun load(): ThrottleState = read(prefs)
+
+        override fun save(state: ThrottleState) = write(prefs, state)
+
+        override fun clear() {
+            prefs.edit().clear().commit()
+        }
+
+        override fun loadKept(): ThrottleState? = if (keptPrefs.contains(KEY_FAILURES)) read(keptPrefs) else null
+
+        override fun saveKept(state: ThrottleState?) {
+            if (state == null) keptPrefs.edit().clear().commit() else write(keptPrefs, state)
+        }
+
+        private fun read(from: SharedPreferences): ThrottleState = ThrottleState(
+            failures = from.getInt(KEY_FAILURES, 0),
+            penaltyMs = from.getLong(KEY_PENALTY_MS, 0L),
+            blockedElapsedUntil = from.getLong(KEY_BLOCKED_ELAPSED_UNTIL, 0L),
+            bootCount = from.getInt(KEY_BOOT_COUNT, 0),
+            blockedWallUntil = from.getLong(KEY_BLOCKED_WALL_UNTIL, 0L),
         )
 
-        override fun save(state: ThrottleState) {
-            prefs.edit()
+        private fun write(to: SharedPreferences, state: ThrottleState) {
+            to.edit()
                 .putInt(KEY_FAILURES, state.failures)
                 .putLong(KEY_PENALTY_MS, state.penaltyMs)
                 .putLong(KEY_BLOCKED_ELAPSED_UNTIL, state.blockedElapsedUntil)
                 .putInt(KEY_BOOT_COUNT, state.bootCount)
                 .putLong(KEY_BLOCKED_WALL_UNTIL, state.blockedWallUntil)
                 .commit()
-        }
-
-        override fun clear() {
-            prefs.edit().clear().commit()
         }
 
         private companion object {
