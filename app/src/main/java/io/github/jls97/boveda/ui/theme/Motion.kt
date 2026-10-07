@@ -4,6 +4,7 @@ import android.provider.Settings
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 
 object Motion {
@@ -19,11 +20,18 @@ object Motion {
 }
 
 /**
+ * Fuerza el movimiento reducido por encima del ajuste del sistema (vistas previas, capturas de
+ * pantalla). null, lo normal, deja que mande el sistema.
+ */
+val LocalMovimientoReducido = staticCompositionLocalOf<Boolean?> { null }
+
+/**
  * true si el usuario ha desactivado las animaciones (Ajustes > Accesibilidad > Quitar animaciones).
  * Con reducción activa: sin sacudida, sin estampado, el anillo TOTP salta segundo a segundo.
  */
 @Composable
 fun rememberReducedMotion(): Boolean {
+    LocalMovimientoReducido.current?.let { return it }
     val context = LocalContext.current
     return remember {
         // Sin ajustes legibles (vistas previas, capturas) se animan como siempre.
