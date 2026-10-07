@@ -13,6 +13,9 @@ import android.view.autofill.AutofillManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import io.github.jls97.boveda.BovedaApplication
 import io.github.jls97.boveda.core.autofill.AutofillTarget
@@ -20,7 +23,7 @@ import io.github.jls97.boveda.core.autofill.TargetResolver
 import io.github.jls97.boveda.core.crypto.secureRandom
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
-import io.github.jls97.boveda.ui.theme.BovedaTheme
+import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
 import kotlinx.coroutines.launch
 
 /** What the system asked for when it opened [AutofillActivity]. */
@@ -34,7 +37,7 @@ internal sealed interface AutofillRequest {
 }
 
 /**
- * Opened by the system from the "Bóveda" suggestion (to fill) or from "Save to Bóveda". It shows
+ * Opened by the system from the "Contraseñora" suggestion (to fill) or from "Save to Contraseñora". It shows
  * the unlock screen if needed and then lets the user pick or save an entry. If the vault was
  * locked at any moment while this screen existed (when it opened, or meanwhile because of the
  * screen going off or the timer), it is locked again as soon as this screen closes: an unlock
@@ -72,8 +75,10 @@ class AutofillActivity : ComponentActivity() {
             return
         }
         saveToken = (request as? AutofillRequest.Save)?.token
+        val apariencia = (application as BovedaApplication).apariencia
         setContent {
-            BovedaTheme {
+            val ajustes by apariencia.ajustes.collectAsStateWithLifecycle()
+            ContrasenoraTheme(darkTheme = ajustes.oscuro(isSystemInDarkTheme()), personalidad = ajustes.personalidad) {
                 AutofillApp(
                     session = session,
                     request = request,

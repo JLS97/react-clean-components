@@ -121,7 +121,7 @@ fun SettingsScreen(
     fun openAutofillSettings() {
         if (autofillEnabled) {
             viewModel.message(
-                "Bóveda ya es tu servicio de autorrelleno. Para cambiarlo, busca «Servicio de autocompletar» " +
+                "Contraseñora ya es tu servicio de autorrelleno. Para cambiarlo, busca «Servicio de autocompletar» " +
                     "en los ajustes del teléfono.",
             )
             return
@@ -342,9 +342,9 @@ fun SettingsScreen(
                 supportingContent = {
                     Text(
                         if (autofillEnabled) {
-                            "Activado. Al tocar un campo de usuario o contraseña aparecerá «Bóveda» en el teclado."
+                            "Activado. Al tocar un campo de usuario o contraseña aparecerá «Contraseñora» en el teclado."
                         } else {
-                            "Desactivado. Toca aquí para elegir Bóveda como servicio de autorrelleno."
+                            "Desactivado. Toca aquí para elegir Contraseñora como servicio de autorrelleno."
                         },
                     )
                 },
@@ -353,7 +353,7 @@ fun SettingsScreen(
             )
             Text(
                 "En Chrome, además: Ajustes → Servicios de autocompletar → «Autocompletar con otro servicio». " +
-                    "El teclado solo ve la palabra «Bóveda»: la cuenta la eliges dentro de la app, con la huella.",
+                    "El teclado solo ve la palabra «Contraseñora»: la cuenta la eliges dentro de la app, con la huella.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -408,7 +408,7 @@ fun SettingsScreen(
             SectionTitle("Copias de seguridad")
             Text(
                 "La copia es un archivo cifrado con tu contraseña maestra actual: su seguridad fuera del " +
-                    "teléfono es la de esa contraseña. El selector intenta ocultar la nube y Bóveda rechaza " +
+                    "teléfono es la de esa contraseña. El selector intenta ocultar la nube y Contraseñora rechaza " +
                     "los servicios en la nube que conoce, pero si la guardas en Descargas y tienes activa una " +
                     "sincronización de carpetas podría subirse: pásala después a un USB o a un ordenador y " +
                     "bórrala del teléfono. Si pierdes el móvil, esa copia es la única forma de recuperar tus " +
@@ -613,7 +613,7 @@ private fun AntiPhishingPhraseDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "Una frase corta que solo tú conozcas. Bóveda la mostrará siempre antes de pedirte la " +
+                    "Una frase corta que solo tú conozcas. Contraseñora la mostrará siempre antes de pedirte la " +
                         "contraseña maestra, también al rellenar en otras apps: si no la ves, no escribas la contraseña.",
                 )
                 NoLearningTextField(
@@ -648,7 +648,7 @@ private fun RecoveryCodeCheckDialog(
         title = { Text("Comprobar el código de recuperación") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Escribe el código tal y como lo apuntaste. Bóveda solo te dirá si es el correcto.")
+                Text("Escribe el código tal y como lo apuntaste. Contraseñora solo te dirá si es el correcto.")
                 OutlinedTextField(
                     value = typed,
                     onValueChange = { typed = it },

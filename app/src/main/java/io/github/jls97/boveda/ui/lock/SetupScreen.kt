@@ -78,7 +78,7 @@ fun SetupScreen(viewModel: LockViewModel) {
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Bóveda", style = MaterialTheme.typography.displaySmall)
+            Text("Contraseñora", style = MaterialTheme.typography.displaySmall)
             Text(
                 "Crea tu contraseña maestra. Es la única llave de tus contraseñas: se usa para cifrarlas " +
                     "en este teléfono y no se guarda en ningún sitio. Si la olvidas, nadie puede recuperarla.",
@@ -107,9 +107,9 @@ fun SetupScreen(viewModel: LockViewModel) {
             HorizontalDivider()
             Text("Tu frase antiphishing", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Elige una frase corta que solo tú conozcas. Bóveda la mostrará siempre antes de pedirte " +
+                "Elige una frase corta que solo tú conozcas. Contraseñora la mostrará siempre antes de pedirte " +
                     "la contraseña maestra, también cuando rellene en otras apps. Una app que imite la " +
-                    "pantalla de Bóveda no la conoce: si no ves tu frase, no escribas la contraseña. " +
+                    "pantalla de Contraseñora no la conoce: si no ves tu frase, no escribas la contraseña. " +
                     "No es un secreto que cifre nada y podrás cambiarla en Ajustes.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

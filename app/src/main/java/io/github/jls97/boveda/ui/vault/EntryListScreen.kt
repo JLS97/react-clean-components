@@ -81,7 +81,7 @@ fun EntryListScreen(
         modifier = Modifier.testTag("entry_list"),
         topBar = {
             TopAppBar(
-                title = { Text("Bóveda") },
+                title = { Text("Tus claves") },
                 actions = {
                     IconButton(onClick = onLock) {
                         Icon(Icons.Filled.Lock, contentDescription = "Bloquear ahora")

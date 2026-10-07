@@ -8,7 +8,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.ui.BovedaApp
-import io.github.jls97.boveda.ui.theme.BovedaTheme
+import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 class MainActivity : ComponentActivity() {
     private val session: VaultSession get() = (application as BovedaApplication).session
@@ -26,8 +29,10 @@ class MainActivity : ComponentActivity() {
             // No autofill service (Google's or anyone's) may read or save what is typed here.
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         }
+        val apariencia = (application as BovedaApplication).apariencia
         setContent {
-            BovedaTheme {
+            val ajustes by apariencia.ajustes.collectAsStateWithLifecycle()
+            ContrasenoraTheme(darkTheme = ajustes.oscuro(isSystemInDarkTheme()), personalidad = ajustes.personalidad) {
                 BovedaApp(session)
             }
         }

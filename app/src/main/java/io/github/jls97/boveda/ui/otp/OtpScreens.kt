@@ -521,8 +521,8 @@ fun OtpScanScreen(onScanned: (String) -> Unit, onBack: () -> Unit) {
                 }
                 else -> {
                     Text(
-                        "Bóveda solo usa la cámara aquí, para leer el código QR. Si no te pregunta, da el permiso en " +
-                            "Ajustes → Apps → Bóveda → Permisos, o escribe la clave a mano.",
+                        "Contraseñora solo usa la cámara aquí, para leer el código QR. Si no te pregunta, da el permiso en " +
+                            "Ajustes → Apps → Contraseñora → Permisos, o escribe la clave a mano.",
                     )
                     Button(
                         onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
@@ -626,7 +626,7 @@ fun RecoveryCodeScreen(
                 )
             }
             Text(
-                "Apúntalo en papel y guárdalo lejos del móvil. No lo guardes en Bóveda, en fotos ni en la nube: " +
+                "Apúntalo en papel y guárdalo lejos del móvil. No lo guardes en Contraseñora, en fotos ni en la nube: " +
                     "si alguien lo consigue junto a tu contraseña maestra, podría leer tus códigos sin tu huella. " +
                     "Si lo pierdes y pierdes el móvil, tendrás que usar los códigos de respaldo de cada web.",
                 style = MaterialTheme.typography.bodyMedium,

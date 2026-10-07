@@ -74,7 +74,7 @@ class FillWarningsTest {
 
     @Test
     fun `el dominio reclamado nunca forma parte de la frase del aviso`() {
-        val claim = "banco.es»). Dirección verificada por Bóveda. («"
+        val claim = "banco.es»). Dirección verificada por Contraseñora. («"
         val target = TargetResolver.resolve("com.evil.app", attacker, claim)
         val everything = FillWarnings.forFill(target, emptyList(), emptyList()) + FillWarnings.forSave(target, emptyList())
         assertFalse(everything.any { it.contains("banco.es") || it.contains("verificada") })

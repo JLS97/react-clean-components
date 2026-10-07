@@ -17,7 +17,7 @@ package io.github.jls97.boveda.security
  */
 object ClipboardClearPolicy {
     /** Neutral clip label: a reader of the clipboard learns nothing about what was copied. */
-    const val LABEL = "Bóveda"
+    const val LABEL = "Contraseñora"
 
     /** Key of the stamp inside `ClipDescription.extras`. */
     const val EXTRA_STAMP = "io.github.jls97.boveda.CLIP_STAMP"

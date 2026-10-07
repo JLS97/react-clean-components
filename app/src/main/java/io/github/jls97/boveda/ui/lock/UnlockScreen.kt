@@ -122,7 +122,7 @@ fun UnlockScreen(
         // campo a la vista solo puede ser «Cancelar». Cerrar el diálogo (atrás) no cambia nada.
         BiometricPrompts.authenticate(
             activity,
-            "Desbloquear Bóveda",
+            "Desbloquear Contraseñora",
             "Confirma con tu huella",
             cipher,
             negativeLabel = if (usePassword) "Cancelar" else "Usar contraseña",
@@ -160,7 +160,7 @@ fun UnlockScreen(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Bóveda", style = MaterialTheme.typography.displaySmall)
+            Text("Contraseñora", style = MaterialTheme.typography.displaySmall)
             Text("Bloqueada", style = MaterialTheme.typography.titleMedium)
             if (requestContext != null) {
                 Text(requestContext, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -216,7 +216,7 @@ fun UnlockScreen(
                         }
                         if (onUsePasswordInApp != null) {
                             Text(
-                                "Se abrirá Bóveda: la contraseña maestra no se escribe en esta pantalla, que " +
+                                "Se abrirá Contraseñora: la contraseña maestra no se escribe en esta pantalla, que " +
                                     "aparece encima de otra app.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -356,7 +356,7 @@ private fun ForcedRestoreDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
 private fun AntiPhishingBanner(phrase: String?) {
     if (phrase == null) {
         Text(
-            "Esta bóveda no tiene frase antiphishing. Elígela en Ajustes → Seguridad: Bóveda la mostrará " +
+            "Esta bóveda no tiene frase antiphishing. Elígela en Ajustes → Seguridad: Contraseñora la mostrará " +
                 "siempre aquí y, si una app imita esta pantalla, no la conocerá.",
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,

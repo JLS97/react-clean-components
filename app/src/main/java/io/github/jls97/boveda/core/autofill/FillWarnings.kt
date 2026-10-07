@@ -18,7 +18,7 @@ object FillWarnings {
     const val UNUSUAL_ADDRESS = "La dirección de esta página no es un dominio web normal."
     const val NOT_A_BROWSER =
         "Esta app muestra una página web pero no es un navegador reconocido, " +
-            "así que Bóveda no se fía de esa dirección."
+            "así que Contraseñora no se fía de esa dirección."
     const val UNVERIFIED_SIGNATURE = "No se ha podido verificar la firma de esta app."
     const val NO_LINKED_WEB = "No hay ninguna entrada vinculada a esta web. Comprueba bien la dirección antes de elegir."
     const val NO_LINKED_APP =

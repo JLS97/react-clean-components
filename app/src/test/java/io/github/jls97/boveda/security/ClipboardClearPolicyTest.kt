@@ -15,7 +15,7 @@ class ClipboardClearPolicyTest {
 
     @Test
     fun labelIsNeutral() {
-        assertEquals("Bóveda", ClipboardClearPolicy.LABEL)
+        assertEquals("Contraseñora", ClipboardClearPolicy.LABEL)
     }
 
     @Test

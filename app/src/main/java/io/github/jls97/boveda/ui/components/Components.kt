@@ -16,20 +16,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -40,23 +33,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.platform.PlatformTextInputSession
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.github.jls97.boveda.R
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
-import io.github.jls97.boveda.core.generator.PasswordStrength
-import io.github.jls97.boveda.core.generator.StrengthLevel
+import io.github.jls97.boveda.ui.theme.ContrasenoraShapes
+import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
+import io.github.jls97.boveda.ui.theme.Sizes
+import io.github.jls97.boveda.ui.theme.Spacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -66,85 +58,10 @@ import java.io.IOException
 import java.text.DateFormat
 import java.util.Date
 
-/** Password input that hides its content until "Mostrar" is tapped. */
-@Composable
-fun PasswordField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    imeAction: ImeAction = ImeAction.Next,
-    onImeAction: (() -> Unit)? = null,
-    enabled: Boolean = true,
-) {
-    var visible by remember { mutableStateOf(false) }
-    // Al pasar a segundo plano vuelve a ocultarse: al regresar no debe seguir en claro (B-39).
-    OnAppBackground { visible = false }
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth(),
-        label = { Text(label) },
-        singleLine = true,
-        enabled = enabled,
-        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Password,
-            autoCorrectEnabled = false,
-            imeAction = imeAction,
-        ),
-        keyboardActions = KeyboardActions(
-            onAny = { if (onImeAction != null) onImeAction() else defaultKeyboardAction(imeAction) },
-        ),
-        trailingIcon = {
-            TextButton(onClick = { visible = !visible }) {
-                Text(if (visible) "Ocultar" else "Mostrar")
-            }
-        },
-    )
-}
-
-/**
- * Campo de texto cuyo teclado no aprende ni sugiere lo escrito.
- *
- * Compose nunca pone IME_FLAG_NO_PERSONALIZED_LEARNING ni lo expone en KeyboardOptions, así que en
- * un campo normal (nombre, usuario, notas) el teclado añade lo tecleado a su diccionario personal y
- * puede sincronizarlo con la nube de su fabricante. Aquí se interceptan los EditorInfo que Compose
- * entrega al IME y se añaden los flags que lo evitan; el resto del campo es un OutlinedTextField.
- */
-@OptIn(ExperimentalComposeUiApi::class)
-@Composable
-fun NoLearningTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    modifier: Modifier = Modifier,
-    singleLine: Boolean = false,
-    minLines: Int = 1,
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    enabled: Boolean = true,
-    /** Hint shown while the field is empty (for example the stored user when updating an entry). */
-    placeholder: String? = null,
-) {
-    InterceptPlatformTextInput(interceptor = NoLearningInterceptor) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = modifier.fillMaxWidth(),
-            label = { Text(label) },
-            placeholder = placeholder?.let { { Text(it) } },
-            singleLine = singleLine,
-            minLines = minLines,
-            enabled = enabled,
-            keyboardOptions = keyboardOptions,
-        )
-    }
-}
-
 /**
  * Ejecuta [onBackground] cada vez que la app pasa a segundo plano (ON_STOP de la Activity), para
  * que lo que estaba revelado (contraseña, código 2FA, campo con «Mostrar») vuelva a ocultarse y no
- * reaparezca en claro al volver a Bóveda dentro de la ventana de autobloqueo (B-39).
+ * reaparezca en claro al volver a Contraseñora dentro de la ventana de autobloqueo (B-39).
  */
 @Composable
 fun OnAppBackground(onBackground: () -> Unit) {
@@ -218,7 +135,7 @@ private class TypingInputConnection(target: InputConnection, private val onTypin
 
 /** Añade a cada sesión del IME los flags de «sin aprendizaje» y «sin sugerencias». */
 @OptIn(ExperimentalComposeUiApi::class)
-private val NoLearningInterceptor = object : PlatformTextInputInterceptor {
+internal val NoLearningInterceptor = object : PlatformTextInputInterceptor {
     override suspend fun interceptStartInputMethod(
         request: PlatformTextInputMethodRequest,
         nextHandler: PlatformTextInputSession,
@@ -236,45 +153,14 @@ private val NoLearningInterceptor = object : PlatformTextInputInterceptor {
 }
 
 @Composable
-fun StrengthMeter(password: String, modifier: Modifier = Modifier) {
-    if (password.isEmpty()) return
-    val level = PasswordStrength.level(PasswordStrength.estimateBits(password))
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        LinearProgressIndicator(
-            progress = { (level.ordinal + 1) / StrengthLevel.entries.size.toFloat() },
-            modifier = Modifier.fillMaxWidth(),
-            color = strengthColor(level),
-        )
-        Text(
-            text = "Fortaleza: ${strengthLabel(level)}",
-            style = MaterialTheme.typography.bodySmall,
-            color = strengthColor(level),
-        )
-    }
-}
-
-fun strengthLabel(level: StrengthLevel): String = when (level) {
-    StrengthLevel.VERY_WEAK -> "muy débil"
-    StrengthLevel.WEAK -> "débil"
-    StrengthLevel.FAIR -> "aceptable"
-    StrengthLevel.STRONG -> "fuerte"
-    StrengthLevel.VERY_STRONG -> "muy fuerte"
-}
-
-@Composable
-fun strengthColor(level: StrengthLevel): Color = when (level) {
-    StrengthLevel.VERY_WEAK, StrengthLevel.WEAK -> MaterialTheme.colorScheme.error
-    StrengthLevel.FAIR -> MaterialTheme.colorScheme.tertiary
-    StrengthLevel.STRONG, StrengthLevel.VERY_STRONG -> MaterialTheme.colorScheme.primary
-}
-
-@Composable
 fun BackButton(onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
-        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
-    }
+    BotonIcono(R.drawable.ic_atras, "Atrás", onClick, tinte = ContrasenoraTheme.colors.textPrimary)
 }
 
+/**
+ * Confirmación de una acción. Con [peligro] (borrar, sustituir, descartar) el botón va en el color
+ * de peligro; el tono es sobrio también en modo Contraseñora.
+ */
 @Composable
 fun ConfirmDialog(
     title: String,
@@ -282,13 +168,14 @@ fun ConfirmDialog(
     confirmLabel: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    peligro: Boolean = false,
 ) {
     SecureAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { Text(text) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(confirmLabel) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = { BotonFantasma(confirmLabel, onConfirm, peligro = peligro) },
+        dismissButton = { BotonFantasma("Cancelar", onDismiss) },
     )
 }
 
@@ -310,7 +197,7 @@ fun PasswordPromptDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.s4)) {
                 Text(text)
                 PasswordField(
                     value = password,
@@ -321,14 +208,12 @@ fun PasswordPromptDialog(
                 )
             }
         },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(password) }, enabled = password.isNotEmpty()) { Text(confirmLabel) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = { BotonFantasma(confirmLabel, { onConfirm(password) }, enabled = password.isNotEmpty()) },
+        dismissButton = { BotonFantasma("Cancelar", onDismiss) },
     )
 }
 
-/** Single-choice list in a dialog (auto-lock time, clipboard time...). */
+/** Lista de una sola elección en un diálogo (tiempo de bloqueo, de portapapeles...). Elegir la cierra. */
 @Composable
 fun <T> ChoiceDialog(
     title: String,
@@ -337,30 +222,39 @@ fun <T> ChoiceDialog(
     onSelect: (T) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val c = ContrasenoraTheme.colors
     SecureAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            Column(Modifier.selectableGroup()) {
                 options.forEach { (value, label) ->
+                    val elegida = value == selected
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .selectable(
-                                selected = value == selected,
-                                onClick = { onSelect(value) },
-                                role = Role.RadioButton,
-                            )
-                            .padding(vertical = 8.dp),
+                            .clip(ContrasenoraShapes.sm)
+                            .selectable(selected = elegida, onClick = { onSelect(value) }, role = Role.RadioButton)
+                            .heightIn(min = Sizes.touchTarget)
+                            .padding(horizontal = Spacing.s1),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        RadioButton(selected = value == selected, onClick = null)
-                        Text(label, modifier = Modifier.padding(start = 12.dp))
+                        RadioButton(
+                            selected = elegida,
+                            onClick = null,
+                            colors = RadioButtonDefaults.colors(selectedColor = c.brandPrimary, unselectedColor = c.borderStrong),
+                        )
+                        Text(
+                            label,
+                            style = ContrasenoraTheme.type.body,
+                            color = if (elegida) c.textPrimary else c.textSecondary,
+                            modifier = Modifier.padding(start = Spacing.s3),
+                        )
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+        confirmButton = { BotonFantasma("Cerrar", onDismiss) },
     )
 }
 
@@ -405,13 +299,12 @@ fun Context.hasSecureLockScreen(): Boolean =
  */
 @Composable
 fun InsecureDeviceWarning(modifier: Modifier = Modifier) {
-    Text(
-        "Este teléfono no tiene bloqueo de pantalla (PIN, patrón o contraseña). La capa de hardware de " +
-            "la bóveda solo protege con el teléfono bloqueado: ahora mismo cualquiera que lo coja llega " +
-            "hasta aquí y solo le separa de tus datos la contraseña maestra. Activa un bloqueo en los " +
-            "ajustes del teléfono.",
-        color = MaterialTheme.colorScheme.error,
-        style = MaterialTheme.typography.bodyMedium,
+    Aviso(
+        tipo = TipoAviso.Peligro,
+        titulo = "Este teléfono no tiene bloqueo de pantalla",
+        mensaje = "La capa de hardware de la bóveda solo protege con el teléfono bloqueado: ahora mismo " +
+            "cualquiera que lo coja llega hasta aquí y solo le separa de tus datos la contraseña maestra. " +
+            "Activa un PIN, un patrón o una contraseña en los ajustes del teléfono.",
         modifier = modifier,
     )
 }

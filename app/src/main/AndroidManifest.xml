@@ -30,7 +30,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.App">
+        android:theme="@style/Theme.Contrasenora">
         <!-- allowCrossUidActivitySwitchFromBelow="false" (Android 15+): una actividad de otra app que
              esté debajo en la misma tarea no puede lanzar nada encima de las de Bóveda (M-04). -->
         <activity

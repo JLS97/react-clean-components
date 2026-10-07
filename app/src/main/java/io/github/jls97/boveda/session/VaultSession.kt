@@ -1382,7 +1382,7 @@ class VaultSession internal constructor(
             "Este archivo pide más memoria de la que permite el teléfono para comprobar la contraseña. " +
                 "No se ha escrito nada."
         // Well formed, just above a ceiling of this version: the file is not accused of damage.
-        is OversizedFieldException -> "Una entrada tiene un campo demasiado grande para esta versión de Bóveda."
+        is OversizedFieldException -> "Una entrada tiene un campo demasiado grande para esta versión de Contraseñora."
         is UnsupportedVaultException -> "Formato de bóveda no compatible o archivo modificado."
         is VaultException -> "Error de la bóveda."
         is IOException -> "No se pudo leer o escribir el archivo."

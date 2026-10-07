@@ -75,7 +75,7 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
 
     /** Cipher of the 2FA key for the fingerprint prompt, or null (with an error shown) if it can't open. */
     fun otpCipher(): Cipher? = session.otpUnlockCipher().also {
-        if (it == null) error = "No se pudo preparar la huella. Abre Bóveda para revisar tus códigos 2FA."
+        if (it == null) error = "No se pudo preparar la huella. Abre Contraseñora para revisar tus códigos 2FA."
     }
 
     /** Opens the 2FA secret of [entry] with the fingerprint and hands over only its current code. */

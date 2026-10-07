@@ -7,7 +7,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
+import io.github.jls97.boveda.ui.theme.ContrasenoraShapes
+import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
 
 /**
  * AlertDialog de Material3 con la misma protección que la ventana de la Activity.
@@ -36,6 +39,11 @@ fun SecureAlertDialog(
         dismissButton = dismissButton,
         title = title,
         text = text,
+        shape = ContrasenoraShapes.lg,
+        containerColor = ContrasenoraTheme.colors.bgRaised,
+        titleContentColor = ContrasenoraTheme.colors.textPrimary,
+        textContentColor = ContrasenoraTheme.colors.textSecondary,
+        tonalElevation = 0.dp,
     )
 }
 

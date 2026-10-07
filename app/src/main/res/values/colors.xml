@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Colores de sistema (ventana, splash, icono). La interfaz en Compose usa ContrasenoraTheme, no estos recursos. -->
 <resources>
-    <color name="ic_launcher_background">#004F4F</color>
+    <color name="launcher_background">#F2A2BD</color>
+    <color name="splash_background">#FAF5FB</color>
+    <color name="window_background">#FAF5FB</color>
 </resources>

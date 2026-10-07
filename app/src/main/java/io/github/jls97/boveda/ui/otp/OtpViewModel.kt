@@ -371,14 +371,14 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
 /** What went wrong with a typed or scanned 2FA key, for the person reading it. */
 fun otpInputErrorText(error: OtpInputError): String = when (error) {
     OtpInputError.EMPTY -> "Escribe o escanea la clave."
-    OtpInputError.NOT_TIME_BASED -> "Es un código por contador (HOTP). Bóveda solo guarda códigos por tiempo (TOTP), los habituales."
+    OtpInputError.NOT_TIME_BASED -> "Es un código por contador (HOTP). Contraseñora solo guarda códigos por tiempo (TOTP), los habituales."
     OtpInputError.MIGRATION_EXPORT ->
         "Es una exportación de Google Authenticator. Escanea en su lugar el QR que da cada web al activar la verificación."
     OtpInputError.NOT_OTPAUTH -> "Eso es un enlace, no una clave 2FA."
     OtpInputError.MISSING_SECRET -> "El enlace no incluye la clave secreta."
     OtpInputError.INVALID_SECRET -> "La clave solo puede tener letras de la A a la Z y números del 2 al 7."
     OtpInputError.SECRET_TOO_SHORT -> "La clave es demasiado corta. Comprueba que la has copiado entera."
-    OtpInputError.UNSUPPORTED_ALGORITHM -> "Usa un algoritmo que Bóveda no admite."
-    OtpInputError.INVALID_DIGITS -> "Pide un número de cifras que Bóveda no admite (de 6 a 8)."
-    OtpInputError.INVALID_PERIOD -> "Pide un periodo que Bóveda no admite."
+    OtpInputError.UNSUPPORTED_ALGORITHM -> "Usa un algoritmo que Contraseñora no admite."
+    OtpInputError.INVALID_DIGITS -> "Pide un número de cifras que Contraseñora no admite (de 6 a 8)."
+    OtpInputError.INVALID_PERIOD -> "Pide un periodo que Contraseñora no admite."
 }

@@ -81,7 +81,7 @@ internal fun AutofillApp(
     when (val current = state) {
         VaultState.NoVault -> MessageScreen(
             title = "Todavía no hay bóveda",
-            text = "Abre Bóveda y crea tu bóveda antes de usar el autorrelleno.",
+            text = "Abre Contraseñora y crea tu bóveda antes de usar el autorrelleno.",
             onClose = onClose,
         )
         VaultState.Locked -> UnlockScreen(
@@ -107,7 +107,7 @@ internal fun AutofillApp(
             BackHandler { onClose() }
             when (request) {
                 is AutofillRequest.Fill -> PickEntryScreen(
-                    title = "Rellenar con Bóveda",
+                    title = "Rellenar con Contraseñora",
                     entries = current.data.entries,
                     target = request.target,
                     fillDescription = fillDescription(request),
@@ -135,7 +135,7 @@ internal fun AutofillApp(
                     MessageScreen(
                         title = "Códigos 2FA bloqueados",
                         text = "Este móvil no tiene la llave de huella de tus códigos 2FA (copia restaurada o huellas " +
-                            "cambiadas). Abre Bóveda y recupéralos con tu código de recuperación.",
+                            "cambiadas). Abre Contraseñora y recupéralos con tu código de recuperación.",
                         onClose = onClose,
                     )
                 } else {
@@ -144,7 +144,7 @@ internal fun AutofillApp(
                         entries = current.data.entries.filter { it.otp != null },
                         target = request.target,
                         fillDescription = "Se rellenará solo el código 2FA.",
-                        emptyText = "No tienes ningún código 2FA guardado. Añádelo en Bóveda, desde la entrada de la cuenta.",
+                        emptyText = "No tienes ningún código 2FA guardado. Añádelo en Contraseñora, desde la entrada de la cuenta.",
                         viewModel = viewModel,
                         onPick = { entry, rememberChoice ->
                             viewModel.pick(entry, request.target, rememberChoice, onLocked = onClose) { chosen ->
@@ -350,7 +350,7 @@ private fun SaveEntryScreen(
     val alreadyStored = remember(pending) { SaveCapture.alreadyStored(matches, typedUsername, pending.password) }
     if (alreadyStored != null) {
         MessageScreen(
-            title = "Ya está en Bóveda",
+            title = "Ya está en Contraseñora",
             text = "«${alreadyStored.title.ifBlank { "(sin nombre)" }}» ya guarda este usuario y esta contraseña " +
                 "para ${pending.target.label}. No hay nada que cambiar.",
             onClose = onCancel,
@@ -370,7 +370,7 @@ private fun SaveEntryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Guardar en Bóveda") },
+                title = { Text("Guardar en Contraseñora") },
                 navigationIcon = {
                     IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, contentDescription = "Cancelar") }
                 },

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import io.github.jls97.boveda.autofill.PendingSaves
 import io.github.jls97.boveda.core.autofill.PublicSuffixes
+import io.github.jls97.boveda.data.Apariencia
 import io.github.jls97.boveda.session.VaultSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +16,9 @@ import kotlinx.coroutines.SupervisorJob
 class BovedaApplication : Application() {
     lateinit var session: VaultSession
         private set
+
+    /** Personalidad y tema, compartidos por la app principal y la del autorrelleno. */
+    val apariencia: Apariencia by lazy { Apariencia(this) }
 
     override fun onCreate() {
         super.onCreate()

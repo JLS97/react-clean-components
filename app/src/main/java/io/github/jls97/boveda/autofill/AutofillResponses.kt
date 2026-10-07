@@ -29,7 +29,7 @@ import io.github.jls97.boveda.core.autofill.ParsedStructure
  * of the other app.
  */
 internal object AutofillResponses {
-    private const val TITLE = "Bóveda"
+    private const val TITLE = "Contraseñora"
     private const val SUBTITLE = "Toca para elegir cuenta"
     private const val OTP_SUBTITLE = "Toca para rellenar el código 2FA"
 
