@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
@@ -86,17 +87,20 @@ fun EntryListScreen(
     snackbar: SnackbarHostState,
     /** Aviso con las acciones sobre la última restauración, mientras se pueda deshacer (B-31). */
     restoreUndo: @Composable () -> Unit = {},
+    /** Estado del desplazamiento; si vive fuera, volver de una ficha deja la lista donde estaba. */
+    lista: LazyListState = rememberLazyListState(),
+    /** Entrada escalonada de las filas: solo la primera vez que se ve la lista tras abrir la bóveda. */
+    animarEntrada: Boolean = true,
 ) {
     val c = ContrasenoraTheme.colors
     val visible = remember(entries, query) { filtrar(entries, query) }
     val grupos = remember(visible) { visible.groupBy { letraDe(it.title) }.toList() }
-    val lista = rememberLazyListState()
     val umbral = with(LocalDensity.current) { 56.dp.toPx() }
     val desplazada by remember(lista, umbral) {
         derivedStateOf { lista.firstVisibleItemIndex > 0 || lista.firstVisibleItemScrollOffset > umbral }
     }
     val margen = margenLateral()
-    val entrada = entradaEscalonada()
+    val entrada = entradaEscalonada(animarEntrada)
 
     Scaffold(
         modifier = Modifier.testTag("entry_list"),
@@ -285,9 +289,9 @@ private fun SinResultados(query: String, onClear: () -> Unit) {
  * poco después de la anterior, solo las primeras doce. Devuelve el progreso de la fila n (0 a 1).
  */
 @Composable
-private fun entradaEscalonada(): (Int) -> Float {
+private fun entradaEscalonada(animar: Boolean): (Int) -> Float {
     val reduced = rememberReducedMotion()
-    val progreso = remember { Animatable(if (reduced) 1f else 0f) }
+    val progreso = remember { Animatable(if (reduced || !animar) 1f else 0f) }
     LaunchedEffect(Unit) { progreso.animateTo(1f, tween(DURACION_ENTRADA)) }
     return { n ->
         if (n >= 12) {

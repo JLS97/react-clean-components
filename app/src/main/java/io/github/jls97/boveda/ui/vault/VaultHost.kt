@@ -15,12 +15,14 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,6 +77,11 @@ fun VaultHost(
     val adelante = profundidad >= profundidadAnterior
     SideEffect { profundidadAnterior = profundidad }
 
+    // El fichero recuerda dónde estaba al volver de una ficha, y sus filas solo entran escalonadas
+    // la primera vez que se ve tras abrir la bóveda.
+    val listaEstado = rememberLazyListState()
+    var listaVista by remember { mutableStateOf(false) }
+
     /** Vuelve atrás solo si [route] sigue arriba: una pantalla que ya se está yendo no repite el gesto. */
     fun backFrom(route: Route) {
         if (viewModel.backStack.lastOrNull() == route) viewModel.back()
@@ -86,21 +93,26 @@ fun VaultHost(
         label = "pantallas de la bóveda",
     ) { route ->
         when (route) {
-            Route.EntryList -> EntryListScreen(
-                entries = entries,
-                // Con la bóveda vacía no hay nada que copiar todavía.
-                backupReminder = if (entries.isEmpty()) null else backupReminder(backupStatus, System.currentTimeMillis()),
-                query = viewModel.query,
-                onQueryChange = viewModel::updateQuery,
-                onOpen = { viewModel.navigate(Route.Detail(it.id)) },
-                onCopyPassword = { viewModel.copy("Contraseña", it.password) },
-                onAdd = viewModel::newEntry,
-                onGenerator = { viewModel.openGenerator(forEditor = false) },
-                onSettings = { viewModel.navigate(Route.Settings) },
-                onLock = viewModel::lock,
-                snackbar = snackbar,
-                restoreUndo = { RestoreUndoBanner(viewModel, onRestoreUndone) },
-            )
+            Route.EntryList -> {
+                EntryListScreen(
+                    entries = entries,
+                    // Con la bóveda vacía no hay nada que copiar todavía.
+                    backupReminder = if (entries.isEmpty()) null else backupReminder(backupStatus, System.currentTimeMillis()),
+                    query = viewModel.query,
+                    onQueryChange = viewModel::updateQuery,
+                    onOpen = { viewModel.navigate(Route.Detail(it.id)) },
+                    onCopyPassword = { viewModel.copy("Contraseña", it.password) },
+                    onAdd = viewModel::newEntry,
+                    onGenerator = { viewModel.openGenerator(forEditor = false) },
+                    onSettings = { viewModel.navigate(Route.Settings) },
+                    onLock = viewModel::lock,
+                    snackbar = snackbar,
+                    restoreUndo = { RestoreUndoBanner(viewModel, onRestoreUndone) },
+                    lista = listaEstado,
+                    animarEntrada = !listaVista,
+                )
+                LaunchedEffect(Unit) { listaVista = true }
+            }
 
             is Route.Detail -> {
                 val entry = entries.find { it.id == route.entryId }
