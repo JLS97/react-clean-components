@@ -195,8 +195,9 @@ fun SettingsScreen(
         // Activarla es dar una llave permanente a cualquier dedo registrado en el teléfono: solo con la contraseña.
         reauth = Reauth(
             title = "Activar desbloqueo con huella",
-            text = "Cualquier huella registrada en este teléfono podrá abrir la bóveda sin la contraseña maestra. " +
-                "Escríbela para confirmar que eres tú.",
+            text = "Abrirá la bóveda cualquier huella ya registrada en este teléfono. Revisa las huellas en los " +
+                "ajustes del sistema antes de activarla. La clave se destruye al inscribir una huella nueva o " +
+                "quitar el bloqueo de pantalla. Escribe la contraseña maestra para confirmar que eres tú.",
             confirmLabel = "Continuar",
             onVerified = ::enrollBiometric,
         )
@@ -252,8 +253,10 @@ fun SettingsScreen(
                 supportingContent = {
                     Text(
                         if (biometricAvailable) {
-                            "Vale cualquier huella registrada en el teléfono (solo huellas fuertes); la clave se " +
-                                "invalida si añades otra. Activarla pide la contraseña maestra."
+                            "Abrirá la bóveda cualquier huella ya registrada en este teléfono (solo huellas " +
+                                "fuertes). Revisa las huellas en los ajustes del sistema antes de activarla. La " +
+                                "clave se destruye al inscribir una huella nueva o quitar el bloqueo de pantalla. " +
+                                "Activarla pide la contraseña maestra."
                         } else {
                             "No hay ninguna huella segura registrada en el teléfono."
                         },

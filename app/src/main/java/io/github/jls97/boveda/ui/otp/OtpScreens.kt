@@ -494,7 +494,12 @@ fun OtpScanScreen(onScanned: (String) -> Unit, onBack: () -> Unit) {
                     QrCameraPreview(
                         onDecoded = { text ->
                             val trimmed = text.trim()
-                            if (!accepted && trimmed.startsWith("otpauth://", ignoreCase = true)) {
+                            // Las exportaciones de Google Authenticator (otpauth-migration://) siguen la misma ruta
+                            // que el campo de texto para que OtpInput.parse muestre su aviso específico (I-39).
+                            // Cualquier otro contenido no se enseña ni se pasa al ViewModel.
+                            val isOtpUri = trimmed.startsWith("otpauth://", ignoreCase = true) ||
+                                trimmed.startsWith("otpauth-migration://", ignoreCase = true)
+                            if (!accepted && isOtpUri) {
                                 accepted = true
                                 onScanned(trimmed)
                             } else if (!accepted) {
@@ -595,9 +600,12 @@ fun RecoveryCodeScreen(
         ) {
             if (purpose == RecoveryCodePurpose.SETUP) {
                 Text(
-                    "Cada código 2FA se cifra con una llave que solo se abre con tu huella. Esa llave no sale de este " +
-                        "móvil, así que para recuperar los códigos en otro teléfono (desde una copia) o si cambias tus " +
-                        "huellas necesitarás este código de recuperación:",
+                    "Cada código 2FA se cifra con una llave que solo se abre con tu huella. Abrirá la bóveda " +
+                        "cualquier huella ya registrada en este teléfono. Revisa las huellas en los ajustes del " +
+                        "sistema antes de activarla. Esa llave no sale de este móvil y se destruye al inscribir " +
+                        "una huella nueva o quitar el bloqueo de pantalla, así que para recuperar los códigos en " +
+                        "otro teléfono (desde una copia) o si cambias tus huellas necesitarás este código de " +
+                        "recuperación:",
                 )
             } else {
                 Text(
@@ -686,7 +694,8 @@ fun OtpRecoverScreen(otp: OtpViewModel, onDone: () -> Unit, onBack: () -> Unit, 
         ) {
             Text(
                 "Tus códigos 2FA están en la bóveda, pero este móvil no tiene la llave de huella que los abre. " +
-                    "Pasa al restaurar una copia, al estrenar móvil o al añadir o borrar una huella.",
+                    "Pasa al restaurar una copia, al estrenar móvil, al inscribir una huella nueva o al quitar el " +
+                    "bloqueo de pantalla.",
             )
             Text("Escribe el código de recuperación que apuntaste al guardar tu primer código 2FA.")
             OutlinedTextField(

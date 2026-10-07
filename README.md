@@ -89,9 +89,11 @@ Cómo se protegen:
 - **Huella en cada código.** Los secretos se cifran con una clave 2FA propia. En el teléfono, esa
   clave está envuelta por una clave de Android Keystore que exige una huella fuerte (clase 3) en
   cada uso. Desbloquear la bóveda con la contraseña maestra no basta para ver un código.
-- **Nuevas huellas.** Si añades o borras una huella, o quitas el bloqueo de pantalla, el sistema
-  destruye esa clave: nadie puede registrar su dedo para leer tus códigos. Los recuperas con el
-  código de recuperación.
+- **Nuevas huellas.** Si se inscribe una huella nueva o se quita el bloqueo de pantalla, el
+  sistema destruye esa clave: nadie puede registrar su dedo después para leer tus códigos. Los
+  recuperas con el código de recuperación. Borrar una huella dejando otras no la destruye: la
+  clave vale para **cualquier huella ya registrada en el teléfono** cuando la activas, así que
+  revisa las huellas en los ajustes del sistema antes de activarla.
 - **Código de recuperación.** Es aleatorio (100 bits) y protege, con Argon2id, la copia de la
   clave 2FA que va dentro de la bóveda y de las copias de seguridad. Sirve para recuperar los
   códigos en otro móvil o tras cambiar tus huellas. Guárdalo lejos del móvil y fuera de Bóveda: con
