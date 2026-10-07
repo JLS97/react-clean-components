@@ -1228,7 +1228,7 @@ VaultSession.kt:599-603 (exportBackup reutiliza current.header)
 #### B-34 · Borrado de entradas y de secretos 2FA irreversible, sin re-autenticación ni papelera
 
 - **Severidad:** Baja
-- **Estado:** Pendiente: Papelera e historial de versiones: funcionalidad nueva (hoja de ruta R-16); el borrado sigue pidiendo confirmación con el nombre y «No se puede deshacer.».
+- **Estado:** Diferido: Papelera e historial de versiones: funcionalidad nueva (hoja de ruta R-16); el borrado sigue pidiendo confirmación con el nombre y «No se puede deshacer.».
 - **Dónde:** `session/VaultSession.kt:599`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** atacante-acceso-fisico
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -3004,7 +3004,7 @@ VaultViewModel.kt:93-100 forgetEverything() solo se ejecuta al bloquear
 #### I-38 · Secretos revelados expuestos por completo al árbol de accesibilidad (sin alternativa de lectura controlada)
 
 - **Severidad:** Informativa
-- **Estado:** Pendiente: No corregido: ocultar los secretos revelados al árbol de accesibilidad impediría usar la app a quien depende de un lector de pantalla; se deja como decisión de producto.
+- **Estado:** Diferido: No corregido: ocultar los secretos revelados al árbol de accesibilidad impediría usar la app a quien depende de un lector de pantalla; se deja como decisión de producto.
 - **Dónde:** `ui/vault/EntryDetailScreen.kt:146`
 - **Categoría:** platform-hardening · **Dimensiones que lo detectaron:** ui
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -3145,7 +3145,7 @@ SecureClipboard.kt:22
 #### I-43 · Mostrar/copiar contraseñas y rellenar en otras apps no exige segundo factor con la bóveda abierta (mejora opcional)
 
 - **Severidad:** Informativa
-- **Estado:** Pendiente: No corregido: exigir huella para mostrar o copiar con la bóveda abierta es una opción de producto (hoja de ruta), no un fallo.
+- **Estado:** Diferido: No corregido: exigir huella para mostrar o copiar con la bóveda abierta es una opción de producto (hoja de ruta), no un fallo.
 - **Dónde:** `ui/vault/EntryDetailScreen.kt:279`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** atacante-acceso-fisico
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (informativa).
