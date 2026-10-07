@@ -280,7 +280,28 @@ app/src/main/java/io/github/jls97/boveda/
 ├── data/        # archivos en almacenamiento sin copia de seguridad, escritura atómica
 ├── session/     # estado bloqueado/desbloqueado, bloqueo automático
 └── ui/          # pantallas en Compose
+    ├── theme/       # ContrasenoraTheme: colores, tipografía, formas, movimiento y personalidad
+    └── components/  # la base de la marca: papel, avisos con sello, botones, campos, isotipo…
 ```
+
+### Diseño
+
+La interfaz sigue la guía de marca de Contraseñora: la ventanilla y el archivo de una señora muy
+ordenada. Fichas de papel sobre fondo claro (o noche ciruela en oscuro), títulos en Young Serif
+alineados a la izquierda, Atkinson Hyperlegible Next para el texto y Atkinson Hyperlegible Mono
+para contraseñas y códigos. Las pantallas largas se ordenan como un impreso, en apartados con
+numeral romano; los avisos son papeles con un sello de goma (Conforme, Ojo, Urgente, Nota) en
+lugar de cajas de color; el latón marca el tiempo y el 2FA. El color dinámico de Material You está
+desactivado a propósito.
+
+- Todo se construye con `ContrasenoraTheme.colors` y `ContrasenoraTheme.type`, nunca con la
+  paleta suelta ni con `MaterialTheme` directo. Los iconos son vectores propios (`res/drawable/ic_*`).
+- Los textos con humor pasan por `voz("Contraseñora", "Sobria")`: solo en estados vacíos, éxitos,
+  fallos y lo que «muere». Avisos importantes, botones y confirmaciones destructivas son iguales en
+  los dos registros.
+- El movimiento usa los tokens de `Motion` y respeta «Quitar animaciones»: el arco del candado sube
+  al desbloquear, las fichas se apilan al navegar, los sellos se estampan y el campo se sacude al
+  fallar la contraseña.
 
 ## Hoja de ruta
 
