@@ -665,8 +665,9 @@ private fun Seguridad(
         Renglon()
         Fila("Derivación de la clave", valor = kdfLabel(kdfParams))
         Aparece(kdfUpgradeWarning != null) {
+            // 🔒 Visible y en color de error, como en el original (I-09): sello «Urgente» y borde de peligro.
             Aviso(
-                TipoAviso.Aviso,
+                TipoAviso.Peligro,
                 "Derivación sin actualizar",
                 mensaje = kdfUpgradeWarning,
                 modifier = Modifier.padding(bottom = Spacing.s3),
@@ -1005,14 +1006,15 @@ private fun Pie() {
 /**
  * Placa de la clave de este teléfono: dónde vive (StrongBox, TEE, Software…) y para qué sirve, como
  * la chapa atornillada a una caja fuerte. Si la clave es solo de software, la placa lleva el sello
- * «Ojo» y dice el riesgo en lugar de la explicación general.
+ * «Urgente» y el borde de peligro (🔒 el aviso sigue en color de error, como en el original) y dice
+ * el riesgo en lugar de la explicación general.
  */
 @Composable
 private fun PlacaClave(nivel: String, aviso: String?, modifier: Modifier = Modifier) {
     val c = ContrasenoraTheme.colors
     val t = ContrasenoraTheme.type
     val donde = nivel.replaceFirstChar { it.uppercase() }
-    Ficha(modifier) {
+    Ficha(modifier, borde = if (aviso != null) tintaDe(TipoAviso.Peligro) else null) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.s3)) {
             Box(
                 Modifier.size(44.dp).clip(CircleShape).background(c.bgSunken),
@@ -1027,21 +1029,30 @@ private fun PlacaClave(nivel: String, aviso: String?, modifier: Modifier = Modif
             }
             Column(Modifier.weight(1f)) {
                 Text("Dónde se guarda la clave de este teléfono", style = t.label, color = c.textSecondary)
-                Row(
-                    modifier = Modifier.padding(top = Spacing.s0_5),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
-                ) {
+                val nivelTexto = @Composable { modificador: Modifier ->
                     Text(
                         donde,
                         style = serifMediana,
                         color = c.textPrimary,
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .semantics { if (aviso != null) contentDescription = "${TipoAviso.Aviso.palabra}. $donde" },
+                        modifier = modificador
+                            .semantics { if (aviso != null) contentDescription = "${TipoAviso.Peligro.palabra}. $donde" },
                     )
-                    if (aviso != null) {
-                        Sello(TipoAviso.Aviso.palabra, tintaDe(TipoAviso.Aviso), Modifier.clearAndSetSemantics { }, girado = 6f)
+                }
+                val sello = @Composable {
+                    Sello(TipoAviso.Peligro.palabra, tintaDe(TipoAviso.Peligro), Modifier.clearAndSetSemantics { }, girado = 6f)
+                }
+                if (aviso != null && LocalDensity.current.fontScale > 1.3f) {
+                    // Con la letra grande el sello no cabe al lado sin partir «Software»: se estampa debajo.
+                    nivelTexto(Modifier.padding(top = Spacing.s0_5))
+                    Box(Modifier.padding(top = Spacing.s1)) { sello() }
+                } else {
+                    Row(
+                        modifier = Modifier.padding(top = Spacing.s0_5),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
+                    ) {
+                        nivelTexto(Modifier.weight(1f, fill = false))
+                        if (aviso != null) sello()
                     }
                 }
             }
