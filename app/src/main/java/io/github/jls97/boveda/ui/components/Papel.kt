@@ -82,8 +82,8 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -96,6 +96,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -269,7 +270,10 @@ class Salida(
 
 /** Margen lateral: 16 dp, o 20 dp a partir de 400 dp de ancho. */
 @Composable
-fun margenLateral(): Dp = if (LocalConfiguration.current.screenWidthDp >= 400) Spacing.s5 else Spacing.s4
+fun margenLateral(): Dp {
+    val ancho = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() }
+    return if (ancho >= 400.dp) Spacing.s5 else Spacing.s4
+}
 
 /**
  * Fila superior de todas las pantallas: salida a la izquierda, acciones a la derecha y, cuando el
@@ -681,7 +685,7 @@ fun <T> SelectorSegmentado(
         )
         Box(
             Modifier
-                .offset(x = desplazamiento)
+                .offset { IntOffset(desplazamiento.roundToPx(), 0) }
                 .width(ancho)
                 .height(40.dp)
                 .sombraPapel(ContrasenoraShapes.full, c.isDark)
