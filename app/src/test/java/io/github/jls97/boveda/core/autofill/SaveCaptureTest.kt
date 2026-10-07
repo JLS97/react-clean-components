@@ -57,6 +57,20 @@ class SaveCaptureTest {
     }
 
     @Test
+    fun `en la web solo se preselecciona la entrada anclada al mismo host, no a un dominio padre`() {
+        val ana = entry("1", "ana@banco.es", "p1")
+        // La entrada de banco.es coincide con aviso.banco.es (subdominio abandonado o comprometido)
+        // pero no se ofrece sobrescribirla por defecto.
+        assertNull(SaveCapture.preselect(listOf(ana), "ana@banco.es", "aviso.banco.es"))
+        assertEquals(ana, SaveCapture.preselect(listOf(ana), "ana@banco.es", "banco.es"))
+        // Un vínculo web: al host exacto también vale.
+        val linked = entry("2", "ana@banco.es", "p2").copy(url = "", autofillTargets = listOf("web:aviso.banco.es"))
+        assertEquals(linked, SaveCapture.preselect(listOf(ana, linked), "ana@banco.es", "aviso.banco.es"))
+        // Sin host (una app) basta con el usuario, como antes.
+        assertEquals(ana, SaveCapture.preselect(listOf(ana), "ana@banco.es", null))
+    }
+
+    @Test
     fun `sin usuario tecleado no se preselecciona nada, ni una entrada sin usuario`() {
         assertNull(SaveCapture.preselect(listOf(entry("1", "", "p1"), entry("2", "ana", "p2")), ""))
         assertNull(SaveCapture.preselect(emptyList(), "ana"))

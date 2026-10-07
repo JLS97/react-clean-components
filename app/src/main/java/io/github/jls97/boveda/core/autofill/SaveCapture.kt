@@ -23,13 +23,23 @@ object SaveCapture {
     /**
      * The entry whose password would be replaced by default, or null to propose a new entry:
      * only an exact match of the destination ([matches]) whose user is the one typed. Without a
-     * typed user (a password change form rarely has one) nothing is preselected.
+     * typed user (a password change form rarely has one) nothing is preselected. For a web site
+     * ([targetHost] not null) the entry must also be anchored to that very host: a page on
+     * `aviso.banco.es` (an abandoned or hijacked subdomain) still matches an entry of `banco.es`,
+     * but it doesn't get to propose overwriting its password.
      */
-    fun preselect(matches: List<VaultEntry>, typedUsername: String): VaultEntry? {
+    fun preselect(matches: List<VaultEntry>, typedUsername: String, targetHost: String? = null): VaultEntry? {
         val typed = typedUsername.trim()
         if (typed.isEmpty()) return null
-        return matches.firstOrNull { it.username.trim().equals(typed, ignoreCase = true) }
+        return matches.firstOrNull { entry ->
+            entry.username.trim().equals(typed, ignoreCase = true) && (targetHost == null || anchoredTo(entry, targetHost))
+        }
     }
+
+    /** True when the entry's address or one of its web links names exactly [host]. */
+    private fun anchoredTo(entry: VaultEntry, host: String): Boolean =
+        Domains.host(entry.url) == host ||
+            entry.autofillTargets.any { it.startsWith(CredentialMatcher.WEB_PREFIX) && Domains.host(it.removePrefix(CredentialMatcher.WEB_PREFIX)) == host }
 
     /**
      * An exact match that already holds the typed password (and the typed user, when there is

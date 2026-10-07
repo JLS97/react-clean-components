@@ -7,7 +7,7 @@ import java.net.IDN
  * Public Suffix List (https://publicsuffix.org), ICANN and private sections: the suffixes under
  * which anyone can register a name (`es`, `co.uk`) or publish content (`github.io`, `blogspot.com`).
  * Loaded once from the `public_suffix_list.dat` asset at startup; while it isn't loaded the
- * queries return null and the callers keep their simpler behaviour.
+ * queries return null and the callers fall back to their strictest behaviour (see [Domains.covers]).
  *
  * Hosts are expected lowercase and in ASCII (punycode), as [Domains.host] returns them.
  */
@@ -18,6 +18,11 @@ object PublicSuffixes {
     private var rules: Rules? = null
 
     val isLoaded: Boolean get() = rules != null
+
+    /** Forgets the list, so tests can check what the callers do without it. */
+    internal fun unload() {
+        rules = null
+    }
 
     /** Reads the list in its official text format (UTF-8, one rule per line, `//` comments). */
     fun load(input: InputStream) {

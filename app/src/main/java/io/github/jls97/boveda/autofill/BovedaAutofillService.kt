@@ -48,7 +48,7 @@ class BovedaAutofillService : AutofillService() {
                 null
             } else {
                 val target = AppSigners.resolveTarget(this, parsed.packageName, parsed.reportedWebDomain, parsed.reportedWebScheme)
-                val token = PendingSaves.put(PendingSave(target, parsed.textOf(login.username).orEmpty(), password))
+                val token = PendingSaves.put(PendingSave(target, parsed.textOf(login.username).orEmpty(), password.toCharArray()))
                 AutofillActivity.saveIntentSender(this, token)
             }
         } catch (e: Throwable) {

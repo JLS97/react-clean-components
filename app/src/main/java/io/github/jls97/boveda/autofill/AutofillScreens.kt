@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,14 +54,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
 import io.github.jls97.boveda.core.autofill.ExternalText
+import io.github.jls97.boveda.core.autofill.FillWarnings
 import io.github.jls97.boveda.core.autofill.SaveCapture
-import io.github.jls97.boveda.core.autofill.TrustedBrowsers
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.security.BiometricPrompts
 import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
 import io.github.jls97.boveda.ui.components.NoLearningTextField
+import io.github.jls97.boveda.ui.components.OnAppBackground
 import io.github.jls97.boveda.ui.components.findActivity
 import io.github.jls97.boveda.ui.lock.LockViewModel
 import io.github.jls97.boveda.ui.lock.UnlockScreen
@@ -162,8 +164,10 @@ internal fun AutofillApp(
                     )
                 }
                 is AutofillRequest.Save -> {
-                    val pending = request.pending
-                    if (pending == null) {
+                    // Read again on every unlock: a lock meanwhile (screen off) wipes the store,
+                    // and wiped credentials must not reach the save screen.
+                    val pending = remember(request) { PendingSaves.get(request.token) }
+                    if (pending == null || pending.wiped) {
                         MessageScreen(
                             title = "Nada que guardar",
                             text = "Los datos que se iban a guardar ya no están disponibles. Vuelve a iniciar sesión en la app.",
@@ -243,21 +247,13 @@ private fun PickEntryScreen(
                         if (target.host != null) "Web: ${target.label}" else "App: ${target.label}",
                         style = MaterialTheme.typography.titleMedium,
                     )
+                    ClaimedAddress(target)
                     idnWarning(target)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
                     Text(fillDescription, style = MaterialTheme.typography.bodyMedium)
-                    if (impersonated.isNotEmpty()) {
-                        Text(
-                            impersonationWarning(impersonated),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    } else if (exact.isEmpty()) {
-                        // Always in the error color: an unlinked app or site is the realistic phishing case.
-                        Text(
-                            fillWarning(target),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error,
-                        )
+                    // Always in the error color: an unlinked app or site is the realistic phishing
+                    // case, and an unencrypted page is a warning even when an entry is linked.
+                    FillWarnings.forFill(target, exact, impersonated).forEach { warning ->
+                        Text(warning, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     }
                     OutlinedTextField(
                         value = query,
@@ -354,9 +350,12 @@ private fun SaveEntryScreen(
     }
     var title by remember { mutableStateOf(CredentialMatcher.suggestedTitle(pending.target, entries)) }
     var username by remember { mutableStateOf(typedUsername) }
-    // "Actualizar" only comes preselected for an exact match of the destination with the same user.
-    var replaceId by remember { mutableStateOf(SaveCapture.preselect(matches, typedUsername)?.id) }
+    // "Actualizar" only comes preselected for an exact match of the destination with the same
+    // user and, on the web, anchored to this very host, never to a parent domain of it.
+    var replaceId by remember { mutableStateOf(SaveCapture.preselect(matches, typedUsername, pending.target.host)?.id) }
     var revealed by remember { mutableStateOf(false) }
+    // Whatever was revealed hides again when the app goes to the background (B-39).
+    OnAppBackground { revealed = false }
     val existing = replaceId?.let { id -> matches.find { it.id == id } }
 
     Scaffold(
@@ -405,21 +404,10 @@ private fun SaveEntryScreen(
                     )
                 }
             }
+            ClaimedAddress(pending.target)
             idnWarning(pending.target)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-            if (impersonated.isNotEmpty()) {
-                Text(
-                    "${impersonationWarning(impersonated)} Se guardará sin vincular.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            } else {
-                unlinkableReason(pending.target)?.let { reason ->
-                    Text(
-                        "$reason Se guardará sin vincular: tendrás que elegirla a mano al rellenar.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+            FillWarnings.forSave(pending.target, impersonated).forEach { warning ->
+                Text(warning, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             }
             if (matches.isNotEmpty()) {
                 Text("¿Dónde la guardo?", style = MaterialTheme.typography.titleSmall)
@@ -432,12 +420,13 @@ private fun SaveEntryScreen(
                 }
             }
             if (replaceId == null) {
-                OutlinedTextField(
+                // The service's name often reads like the user: no keyboard learning here either (B-41).
+                NoLearningTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("Nombre") },
+                    label = "Nombre",
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = false),
                 )
             }
             NoLearningTextField(
@@ -502,26 +491,21 @@ private fun fillDescription(request: AutofillRequest.Fill): String = when {
 }
 
 /**
- * Why a target can't be linked to an entry, or null if it can. The claimed domain was sanitized
- * by TargetResolver; one left empty by that is named as such instead of echoing nothing.
+ * The address an app claims to show, on a line of its own in monospace and never inside a
+ * sentence: whatever it contains (quotes, a reassuring text) can't pass for part of a warning.
  */
-private fun unlinkableReason(target: AutofillTarget): String? {
-    val claimed = target.claimedWebDomain?.ifBlank { "dirección ilegible" }
-    val certificates = target.certificates
-    return when {
-        target.unencrypted ->
-            "Página sin cifrar: «$claimed» se abre por http, no https, así que cualquiera en la red " +
-                "podría estar sirviendo este formulario."
-        claimed != null && certificates != null && TrustedBrowsers.isTrusted(target.packageName, certificates) ->
-            "La dirección de esta página («$claimed») no es un dominio web normal."
-        claimed != null ->
-            "Esta app muestra una página web («$claimed») pero no es un navegador reconocido, " +
-                "así que Bóveda no se fía de esa dirección."
-        certificates == null -> "No se ha podido verificar la firma de esta app."
-        target.trustedBrowser ->
-            "El navegador no ha indicado qué web muestra, así que un vínculo a él alcanzaría " +
-                "cualquier página sin dirección que abra."
-        else -> null
+@Composable
+private fun ClaimedAddress(target: AutofillTarget) {
+    val claimed = FillWarnings.claimedAddress(target) ?: return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Muestra: ", style = MaterialTheme.typography.bodyMedium)
+        Text(
+            claimed,
+            style = MaterialTheme.typography.bodyMedium,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -534,22 +518,3 @@ private fun idnWarning(target: AutofillTarget): String? =
         null
     }
 
-/**
- * Shown when the app asking has the package name of an app linked to [entries] but another
- * signature: Android allows one signer per package name, so this is almost certainly a fake.
- */
-private fun impersonationWarning(entries: List<VaultEntry>): String {
-    val titles = entries.joinToString(", ") { "«${it.title.ifBlank { "(sin nombre)" }}»" }
-    return "Esta app tiene el mismo nombre que la vinculada a $titles pero OTRA firma digital: " +
-        "probablemente es falsa. No se podrá vincular."
-}
-
-/** Shown when no entry is linked to the app or site asking to be filled. */
-private fun fillWarning(target: AutofillTarget): String =
-    unlinkableReason(target)?.let { "$it Elige solo si sabes qué app es; no se podrá vincular." }
-        ?: if (target.host != null) {
-            "No hay ninguna entrada vinculada a esta web. Comprueba bien la dirección antes de elegir."
-        } else {
-            "No hay ninguna entrada vinculada a esta app. Una app falsa podría imitar a la de tu banco: " +
-                "comprueba que es la que esperas antes de elegir."
-        }

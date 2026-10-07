@@ -40,13 +40,14 @@ object Domains {
      * `banco.es` covers `banco.es` and its subdomains, such as `online.banco.es`, never `otrobanco.es`.
      * A saved host that is a public suffix (`github.io`, `blogspot.com`, `co.uk`: anyone can own a
      * name under it) covers nothing but itself, and IP addresses only match exactly. Without the
-     * Public Suffix List loaded every subdomain is covered, as before.
+     * Public Suffix List loaded nothing tells a shared suffix from an owned domain, so only the
+     * identical host is covered (fail closed).
      */
     fun covers(savedHost: String, requestHost: String): Boolean {
         if (requestHost == savedHost) return true
         if (!requestHost.endsWith(".$savedHost")) return false
         if (savedHost.all { it in '0'..'9' || it == '.' }) return false
-        return !PublicSuffixes.isLoaded || PublicSuffixes.registrableDomain(savedHost) != null
+        return PublicSuffixes.isLoaded && PublicSuffixes.registrableDomain(savedHost) != null
     }
 
     private const val IDN_PREFIX = "xn--"
@@ -192,7 +193,8 @@ object CredentialMatcher {
         val host = target.host
         return if (host != null) {
             Domains.host(entry.url)?.let { Domains.covers(it, host) } == true ||
-                entry.autofillTargets.any { it.startsWith(WEB_PREFIX) && Domains.covers(it.removePrefix(WEB_PREFIX), host) }
+                // Links saved by older versions may hold Unicode letters: compared in punycode, like the request.
+                entry.autofillTargets.any { it.startsWith(WEB_PREFIX) && webLinkHost(it)?.let { saved -> Domains.covers(saved, host) } == true }
         } else {
             entry.autofillTargets.any { appLinkMatches(it, target) }
         }
@@ -201,10 +203,12 @@ object CredentialMatcher {
     /**
      * `android:<package>@<certificate>` matches when both the package and the certificate do. Older
      * certificates of a key rotation are accepted so a link survives it, and [remember] then moves
-     * the link to the current certificate (see [migrateAppLinks]).
+     * the link to the current certificate (see [migrateLinks]). A trusted browser is never matched
+     * through an app link: older versions could save one, and it would reach every page without a
+     * domain (about:blank, data:, http://) the browser opens; such a legacy link stays inert.
      */
     private fun appLinkMatches(link: String, target: AutofillTarget): Boolean {
-        if (!link.startsWith(APP_PREFIX)) return false
+        if (!link.startsWith(APP_PREFIX) || target.trustedBrowser) return false
         val accepted = target.certificates?.accepted ?: return false
         val (packageName, certificate) = splitAppLink(link) ?: return false
         return packageName == target.packageName && certificate.isNotEmpty() && certificate in accepted
@@ -283,10 +287,11 @@ object CredentialMatcher {
     /**
      * The entry, remembering [target] so it is an exact match next time. Targets that must not be
      * remembered (see [AutofillTarget.key]) leave the entry unchanged, except that a link to the
-     * same app under an older certificate of its key rotation is moved to the current one.
+     * same app under an older certificate of its key rotation is moved to the current one and
+     * web links are rewritten in their punycode form (see [migrateLinks]).
      */
     fun remember(entry: VaultEntry, target: AutofillTarget): VaultEntry {
-        val migrated = migrateAppLinks(entry, target)
+        val migrated = migrateLinks(entry, target)
         val key = target.key ?: return migrated
         return if (isExactMatch(migrated, target)) migrated else migrated.copy(autofillTargets = migrated.autofillTargets + key)
     }
@@ -295,12 +300,15 @@ object CredentialMatcher {
      * Links to [target]'s app through an older certificate of its key rotation, rewritten to the
      * current one. The old key may have leaked (a usual reason to rotate), and Android lets an app
      * signed only with it keep the package name: once the link follows the current key, such an
-     * app no longer matches and is flagged by [impersonationWarnings] instead.
+     * app no longer matches and is flagged by [impersonationWarnings] instead. Web links saved
+     * with Unicode letters by older versions are rewritten to punycode, as [Domains.host] gives them.
      */
-    private fun migrateAppLinks(entry: VaultEntry, target: AutofillTarget): VaultEntry {
-        val certificates = target.certificates ?: return entry
+    private fun migrateLinks(entry: VaultEntry, target: AutofillTarget): VaultEntry {
+        val certificates = target.certificates
         val migrated = entry.autofillTargets
             .map { link ->
+                if (link.startsWith(WEB_PREFIX)) return@map webLinkHost(link)?.let { WEB_PREFIX + it } ?: link
+                if (certificates == null) return@map link
                 val (packageName, certificate) = splitAppLink(link) ?: return@map link
                 val outdated = packageName == target.packageName &&
                     certificate.isNotEmpty() &&
@@ -311,6 +319,9 @@ object CredentialMatcher {
             .distinct()
         return if (migrated == entry.autofillTargets) entry else entry.copy(autofillTargets = migrated)
     }
+
+    /** Host of a `web:<host>` link, normalized like a request host (lowercase, punycode), or null if malformed. */
+    private fun webLinkHost(link: String): String? = Domains.host(link.removePrefix(WEB_PREFIX))
 
     private fun words(title: String): List<String> =
         title.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 4 && it !in GENERIC_WORDS }
@@ -327,7 +338,7 @@ object CredentialMatcher {
     /** Hosts the entry is anchored to on the web: its address and its `web:` links. */
     private fun webHosts(entry: VaultEntry): List<String> =
         listOfNotNull(Domains.host(entry.url)) +
-            entry.autofillTargets.filter { it.startsWith(WEB_PREFIX) }.mapNotNull { Domains.host(it.removePrefix(WEB_PREFIX)) }
+            entry.autofillTargets.filter { it.startsWith(WEB_PREFIX) }.mapNotNull { webLinkHost(it) }
 
     /** eTLD+1 of [host]; the host itself when the Public Suffix List isn't loaded or the host is a suffix. */
     private fun registrableDomain(host: String): String = PublicSuffixes.registrableDomain(host) ?: host
