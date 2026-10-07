@@ -8,7 +8,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.time.LocalDate
-import java.time.Period
 
 class AutofillLogicTest {
 
@@ -340,6 +339,59 @@ class AutofillLogicTest {
     }
 
     @Test
+    fun legacyLinksToATrustedBrowserAreInert() {
+        // Older versions could link an entry to Chrome itself; such a link must reach no page.
+        val legacy = entry("Chrome", targets = listOf("android:com.android.chrome@$chromeCertificate"))
+        val chromeItself = TargetResolver.resolve("com.android.chrome", chrome, null)
+        val unencrypted = TargetResolver.resolve("com.android.chrome", chrome, "banco.es", "http")
+        assertTrue(unencrypted.unencrypted)
+        assertNull(unencrypted.host)
+        for (target in listOf(chromeItself, unencrypted)) {
+            assertFalse(CredentialMatcher.isExactMatch(legacy, target))
+            assertTrue(CredentialMatcher.exactMatches(listOf(legacy), target).isEmpty())
+            // The certificate is Chrome's own: not an impersonation either.
+            assertTrue(CredentialMatcher.impersonationWarnings(listOf(legacy), target).isEmpty())
+            assertEquals(legacy, CredentialMatcher.remember(legacy, target))
+        }
+        assertFalse(CredentialMatcher.isExactMatch(legacy, web("banco.es")))
+        // An app that isn't a browser keeps matching through its link without a domain.
+        val bank = entry("Banco", targets = listOf("android:com.bank.app@$bankCertificate"))
+        assertTrue(CredentialMatcher.isExactMatch(bank, TargetResolver.resolve("com.bank.app", bankApp, null)))
+    }
+
+    @Test
+    fun coversOnlyTheSameHostWithoutThePublicSuffixList() {
+        PublicSuffixes.unload()
+        try {
+            assertFalse(PublicSuffixes.isLoaded)
+            assertTrue(Domains.covers("banco.es", "banco.es"))
+            assertFalse(Domains.covers("banco.es", "online.banco.es"))
+            assertFalse(Domains.covers("github.io", "atacante.github.io"))
+            val bank = entry("Banco", url = "https://banco.es")
+            assertTrue(CredentialMatcher.isExactMatch(bank, web("banco.es")))
+            assertFalse(CredentialMatcher.isExactMatch(bank, web("online.banco.es")))
+        } finally {
+            loadRealPublicSuffixList()
+        }
+        assertTrue(Domains.covers("banco.es", "online.banco.es"))
+    }
+
+    @Test
+    fun matchesWebLinksSavedWithUnicodeLettersByOlderVersions() {
+        val legacy = entry("Ayuntamiento", targets = listOf("web:España.es", "web:münchen.de"))
+        val request = web("xn--espaa-rta.es")
+        assertEquals("xn--espaa-rta.es", request.host)
+        assertTrue(CredentialMatcher.isExactMatch(legacy, request))
+        assertTrue(CredentialMatcher.isExactMatch(legacy, web("sede.xn--espaa-rta.es")))
+        assertTrue(CredentialMatcher.isExactMatch(legacy, web("xn--mnchen-3ya.de")))
+        assertFalse(CredentialMatcher.isExactMatch(legacy, web("espana.es")))
+        // Remembering rewrites the links in punycode, without adding a duplicate.
+        val remembered = CredentialMatcher.remember(legacy, request)
+        assertEquals(listOf("web:xn--espaa-rta.es", "web:xn--mnchen-3ya.de"), remembered.autofillTargets)
+        assertEquals(remembered, CredentialMatcher.remember(remembered, request))
+    }
+
+    @Test
     fun genuineAppShowingAWebPageStillMatchesItsLink() {
         // A verified bank app whose login screen is a WebView reporting a domain.
         val linked = entry("Banco", targets = listOf("android:com.bank.app@$bankCertificate"))
@@ -549,14 +601,26 @@ class AutofillLogicTest {
     }
 
     @Test
-    fun trustedBrowserListIsRecentEnough() {
+    fun trustedBrowserListDateIsIsoAndItsAgeIsJudgedOnAnInjectedDate() {
+        // El formato es lo único que se comprueba contra el calendario real: la caducidad de la
+        // lista (18 meses) la vigila un paso de la CI que solo avisa, para que la suite no se ponga
+        // en rojo un día fijo sin que ningún commit lo provoque (R07-6, R07-7).
         val listDate = LocalDate.parse(TrustedBrowsers.LIST_DATE)
-        val age = Period.between(listDate, LocalDate.now())
-        val months = age.years * 12 + age.months
-        assertTrue(
-            "La lista de navegadores de confianza (TrustedBrowsers.LIST_DATE = ${TrustedBrowsers.LIST_DATE}) tiene $months meses: " +
-                "regenérala desde fido2_privileged_google.json, cúrala, y actualiza LIST_DATE, EXPECTED_SIZE y el README",
-            months <= 18,
-        )
+        assertEquals(TrustedBrowsers.LIST_DATE, listDate.toString())
+        assertEquals(18, TrustedBrowsers.MAX_LIST_AGE_MONTHS)
+
+        assertEquals(0, TrustedBrowsers.listAgeInMonths(listDate))
+        assertEquals(0, TrustedBrowsers.listAgeInMonths(listDate.plusDays(27)))
+        assertEquals(1, TrustedBrowsers.listAgeInMonths(listDate.plusMonths(1)))
+        assertEquals(18, TrustedBrowsers.listAgeInMonths(listDate.plusMonths(18)))
+        assertEquals(18, TrustedBrowsers.listAgeInMonths(listDate.plusMonths(19).minusDays(1)))
+        assertEquals(19, TrustedBrowsers.listAgeInMonths(listDate.plusMonths(19)))
+        assertEquals(-1, TrustedBrowsers.listAgeInMonths(listDate.minusMonths(1)))
+
+        assertTrue(TrustedBrowsers.listIsRecent(listDate))
+        assertTrue(TrustedBrowsers.listIsRecent(listDate.plusMonths(18)))
+        assertTrue(TrustedBrowsers.listIsRecent(listDate.plusMonths(19).minusDays(1)))
+        assertFalse(TrustedBrowsers.listIsRecent(listDate.plusMonths(19)))
+        assertFalse(TrustedBrowsers.listIsRecent(listDate.plusYears(5)))
     }
 }

@@ -6,6 +6,27 @@ import java.io.File
 import java.io.IOException
 
 /**
+ * Los archivos de la bóveda que [io.github.jls97.boveda.session.VaultSession] lee y escribe. Lo
+ * implementa [VaultStorage] sobre el disco del teléfono; los tests JVM de la sesión usan una
+ * implementación en memoria.
+ */
+interface VaultFiles {
+    fun vaultExists(): Boolean
+
+    fun readVault(): ByteArray
+
+    fun writeVault(bytes: ByteArray)
+
+    fun previousVaultExists(): Boolean
+
+    fun readPreviousVault(): ByteArray
+
+    fun writePreviousVault(bytes: ByteArray)
+
+    fun deletePreviousVault()
+}
+
+/**
  * Files of the vault. They live in no-backup storage, which neither cloud backups nor device
  * transfers copy, and the manifest excludes everything from backups as well. Every file name is
  * defined here and nowhere else.
@@ -20,7 +41,7 @@ import java.io.IOException
  * only way to hide it would be to pad and rewrite every file on every change, so the trade-off is
  * documented instead.
  */
-internal class VaultStorage(context: Context) {
+internal class VaultStorage(context: Context) : VaultFiles {
     private val directory = File(context.noBackupFilesDir, DIRECTORY_NAME)
 
     val vaultFile = File(directory, VAULT_FILE_NAME)
@@ -31,19 +52,19 @@ internal class VaultStorage(context: Context) {
     val biometricKeyFile = File(directory, BIOMETRIC_KEY_FILE_NAME)
     val otpKeyFile = File(directory, OTP_KEY_FILE_NAME)
 
-    fun vaultExists(): Boolean = vaultFile.exists()
+    override fun vaultExists(): Boolean = vaultFile.exists()
 
-    fun readVault(): ByteArray = readFile(vaultFile)
+    override fun readVault(): ByteArray = readFile(vaultFile)
 
-    fun writeVault(bytes: ByteArray) = writeFile(vaultFile, bytes)
+    override fun writeVault(bytes: ByteArray) = writeFile(vaultFile, bytes)
 
-    fun previousVaultExists(): Boolean = previousVaultFile.exists()
+    override fun previousVaultExists(): Boolean = previousVaultFile.exists()
 
-    fun readPreviousVault(): ByteArray = readFile(previousVaultFile)
+    override fun readPreviousVault(): ByteArray = readFile(previousVaultFile)
 
-    fun writePreviousVault(bytes: ByteArray) = writeFile(previousVaultFile, bytes)
+    override fun writePreviousVault(bytes: ByteArray) = writeFile(previousVaultFile, bytes)
 
-    fun deletePreviousVault() = deleteArtifact(previousVaultFile)
+    override fun deletePreviousVault() = deleteArtifact(previousVaultFile)
 
     /** Every file the app may keep in its directory, present or not. */
     fun artifacts(): List<File> = listOf(vaultFile, previousVaultFile, layerKeyFile, biometricKeyFile, otpKeyFile)

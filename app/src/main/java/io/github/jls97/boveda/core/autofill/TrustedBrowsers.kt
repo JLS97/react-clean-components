@@ -1,5 +1,8 @@
 package io.github.jls97.boveda.core.autofill
 
+import java.time.LocalDate
+import java.time.Period
+
 /**
  * Apps allowed to say which web site they are showing: browsers whose signing certificate
  * matches. Any other app that reports a web domain is not believed, because any app can put a
@@ -19,6 +22,22 @@ package io.github.jls97.boveda.core.autofill
 object TrustedBrowsers {
     /** Date of the source list this table was curated from (ISO-8601). Refresh the list regularly. */
     const val LIST_DATE = "2026-09-28"
+
+    /** Meses que la lista puede tener antes de que haga falta regenerarla ([listIsRecent]). */
+    const val MAX_LIST_AGE_MONTHS = 18
+
+    /** Meses completos entre [LIST_DATE] y [today]; negativo si [today] es anterior a la lista. */
+    fun listAgeInMonths(today: LocalDate): Int {
+        val age = Period.between(LocalDate.parse(LIST_DATE), today)
+        return age.years * 12 + age.months
+    }
+
+    /**
+     * True mientras la lista tenga como mucho [MAX_LIST_AGE_MONTHS] meses en [today]. La fecha la
+     * pone quien llama: así la regla se prueba con fechas fijas y el aviso de caducidad vive en la
+     * CI (un paso que no pone la build en rojo), no en un test que fallaría solo por calendario.
+     */
+    fun listIsRecent(today: LocalDate): Boolean = listAgeInMonths(today) <= MAX_LIST_AGE_MONTHS
 
     private val BROWSERS: Map<String, Set<String>> = mapOf(
         "ai.perplexity.comet" to setOf("8958a405401f69f5b0fb544424746c40dec30c091f401f951f613c4835c3e5ec"),

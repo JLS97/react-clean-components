@@ -104,6 +104,11 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
             error = "Ponle un nombre a la entrada."
             return
         }
+        // Wiped meanwhile (expired, screen off): never store what is no longer there.
+        if (pending.wiped) {
+            error = "Los datos que se iban a guardar ya no están disponibles. Vuelve a iniciar sesión en la app."
+            return
+        }
         busy = true
         viewModelScope.launch {
             val now = System.currentTimeMillis()

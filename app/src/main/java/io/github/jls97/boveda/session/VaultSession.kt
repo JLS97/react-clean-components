@@ -18,15 +18,20 @@ import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.core.vault.VaultException
 import io.github.jls97.boveda.core.vault.VaultSettings
 import io.github.jls97.boveda.core.vault.WrongPasswordException
+import io.github.jls97.boveda.data.VaultFiles
 import io.github.jls97.boveda.data.VaultStorage
 import io.github.jls97.boveda.security.BiometricKeyManager
 import io.github.jls97.boveda.security.DeviceKeyManager
+import io.github.jls97.boveda.security.FingerprintKeys
 import io.github.jls97.boveda.security.KeySecurityLevel
 import io.github.jls97.boveda.security.KeystoreKeys
 import io.github.jls97.boveda.security.KeystoreUnavailableException
+import io.github.jls97.boveda.security.LayerKeys
 import io.github.jls97.boveda.security.OtpKeyManager
+import io.github.jls97.boveda.security.OtpKeys
 import io.github.jls97.boveda.security.SecureClipboard
 import io.github.jls97.boveda.security.UnlockThrottle
+import io.github.jls97.boveda.security.VaultClipboard
 import io.github.jls97.boveda.security.VaultIntegrity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -123,16 +128,22 @@ sealed interface OperationResult {
  * Threading: every method must be called on the main thread. Heavy work (Argon2id, encryption,
  * disk) runs on background dispatchers with private copies of the keys, so [lock] can wipe the
  * keys at any moment without corrupting a save that is already running.
+ *
+ * El constructor recibe los archivos, las claves y el portapapeles como interfaces y el reloj
+ * monótono como función, para que los tests JVM construyan una sesión con dobles en memoria
+ * (`VaultSessionTest`) y ejerciten las carreras con [lock]; la app la crea con [create].
  */
-class VaultSession private constructor(
-    private val storage: VaultStorage,
-    private val deviceKeys: DeviceKeyManager,
-    private val biometricKeys: BiometricKeyManager,
-    private val otpKeys: OtpKeyManager,
+class VaultSession internal constructor(
+    private val storage: VaultFiles,
+    private val deviceKeys: LayerKeys,
+    private val biometricKeys: FingerprintKeys,
+    private val otpKeys: OtpKeys,
     private val throttle: UnlockThrottle,
     private val integrity: VaultIntegrity,
-    val clipboard: SecureClipboard,
+    val clipboard: VaultClipboard,
     private val scope: CoroutineScope,
+    /** Milisegundos desde el arranque ([SystemClock.elapsedRealtime] en la app). */
+    private val elapsedRealtime: () -> Long = SystemClock::elapsedRealtime,
 ) {
     private class OpenVault(
         val header: VaultContainer.Header,
@@ -166,7 +177,7 @@ class VaultSession private constructor(
     private val writeMutex = Mutex()
     private var open: OpenVault? = null
     private var lockCount = 0
-    private var lastInteraction = SystemClock.elapsedRealtime()
+    private var lastInteraction = elapsedRealtime()
     private var autoLockJob: Job? = null
 
     /** Monotonic deadline of the last [expectExternalActivity]; 0 when none. */
@@ -179,7 +190,7 @@ class VaultSession private constructor(
 
     /** Call on every user interaction; it postpones the inactivity lock. */
     fun touch() {
-        lastInteraction = SystemClock.elapsedRealtime()
+        lastInteraction = elapsedRealtime()
     }
 
     /**
@@ -191,11 +202,11 @@ class VaultSession private constructor(
      * without limit. The screen-off lock still applies.
      */
     fun expectExternalActivity() {
-        externalActivityExpectedUntil = AutoLockPolicy.externalActivityDeadline(SystemClock.elapsedRealtime())
+        externalActivityExpectedUntil = AutoLockPolicy.externalActivityDeadline(elapsedRealtime())
     }
 
     private fun isExternalActivityExpected(): Boolean =
-        AutoLockPolicy.isExternalActivityExpected(externalActivityExpectedUntil, SystemClock.elapsedRealtime())
+        AutoLockPolicy.isExternalActivityExpected(externalActivityExpectedUntil, elapsedRealtime())
 
     fun onAppForeground() {
         externalActivityExpectedUntil = 0L
@@ -206,7 +217,7 @@ class VaultSession private constructor(
             current.data.settings.autoLockSeconds,
             since,
             lastInteraction,
-            SystemClock.elapsedRealtime(),
+            elapsedRealtime(),
         )
         if (shouldLock) lock()
     }
@@ -216,7 +227,7 @@ class VaultSession private constructor(
     }
 
     fun onAppBackground() {
-        backgroundSince = SystemClock.elapsedRealtime()
+        backgroundSince = elapsedRealtime()
         val current = open ?: return
         if (AutoLockPolicy.shouldLockOnBackground(current.data.settings.autoLockSeconds, isExternalActivityExpected())) lock()
     }
@@ -246,7 +257,7 @@ class VaultSession private constructor(
                     current.data.settings.autoLockSeconds,
                     isExternalActivityExpected(),
                     lastInteraction,
-                    SystemClock.elapsedRealtime(),
+                    elapsedRealtime(),
                 )
                 if (shouldLock) {
                     lock()
