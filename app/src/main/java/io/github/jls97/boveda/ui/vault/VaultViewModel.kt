@@ -22,7 +22,9 @@ import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
 import io.github.jls97.boveda.ui.components.CloudAuthorities
-import io.github.jls97.boveda.ui.components.clipboardClearNotice
+import io.github.jls97.boveda.ui.components.copyNotice
+import io.github.jls97.boveda.ui.theme.Personalidad
+import io.github.jls97.boveda.ui.theme.elige
 import io.github.jls97.boveda.ui.components.deleteDocument
 import io.github.jls97.boveda.ui.components.readBackup
 import io.github.jls97.boveda.ui.components.writeBackup
@@ -80,6 +82,8 @@ class VaultViewModel(
     private val session: VaultSession,
     private val contentResolver: ContentResolver,
     private val backupLog: BackupLog,
+    /** Registro de voz elegido en Ajustes; se lee en cada mensaje. */
+    private val personalidad: () -> Personalidad = { Personalidad.Contrasenora },
 ) : ViewModel() {
     val backStack = mutableStateListOf<Route>(Route.EntryList)
     var query by mutableStateOf("")
@@ -263,7 +267,7 @@ class VaultViewModel(
                     back()
                     if (current.id == null) navigate(Route.Detail(entry.id))
                     draft = EntryDraft()
-                    message("Guardado.")
+                    message(personalidad().elige("Entrada guardada. De aquí no sale.", "Entrada guardada."))
                 }
                 is OperationResult.Failure -> message(result.message)
                 else -> message("No se pudo guardar.")
@@ -276,7 +280,7 @@ class VaultViewModel(
             when (val result = session.deleteEntry(id)) {
                 OperationResult.Success -> {
                     backToList()
-                    message("Entrada eliminada.")
+                    message(personalidad().elige("Entrada eliminada. Que en paz descanse.", "Entrada eliminada."))
                 }
                 is OperationResult.Failure -> message(result.message)
                 else -> message("No se pudo eliminar.")
@@ -284,11 +288,11 @@ class VaultViewModel(
         }
     }
 
-    /** [label] solo se usa en el aviso al usuario; el clip lleva siempre la etiqueta neutra «Bóveda» (I-42). */
+    /** [label] solo se usa en el aviso al usuario; el clip lleva siempre la etiqueta neutra de la app (I-42). */
     fun copy(label: String, value: String) {
         val seconds = settings.clipboardClearSeconds
         session.clipboard.copy(value, seconds)
-        message("$label copiado. ${clipboardClearNotice(seconds).replaceFirstChar { it.uppercase() }}.")
+        message(copyNotice(label, seconds, personalidad()))
     }
 
     // endregion
@@ -349,7 +353,12 @@ class VaultViewModel(
             }
             when (result) {
                 OperationResult.Success -> onVerified()
-                OperationResult.WrongPassword -> message("La contraseña maestra no es correcta.")
+                OperationResult.WrongPassword -> message(
+                    personalidad().elige(
+                        "Esa no es la contraseña maestra. Revisa mayúsculas y vuelve a intentarlo.",
+                        "La contraseña maestra no es correcta.",
+                    ),
+                )
                 is OperationResult.Throttled -> message(throttledMessage(result.untilMillis))
                 is OperationResult.Failure -> message(result.message)
                 else -> message("No se pudo comprobar la contraseña.")
@@ -458,7 +467,8 @@ class VaultViewModel(
                 val verified = writeBackup(contentResolver, uri, backup) && verifyWritten(uri, backup)
                 if (verified) {
                     backupLog.recordVerifiedBackup(System.currentTimeMillis())
-                    message("Copia verificada ($entries ${if (entries == 1) "entrada" else "entradas"}, ${(backup.size + 1023) / 1024} KB).")
+                    val detalle = "$entries ${if (entries == 1) "entrada" else "entradas"}, ${(backup.size + 1023) / 1024} KB"
+                    message(personalidad().elige("Copia verificada ($detalle). Precavida que es una.", "Copia verificada ($detalle)."))
                 } else {
                     val deleted = deleteDocument(contentResolver, uri)
                     message(
@@ -574,7 +584,9 @@ class VaultViewModel(
     fun enableBiometric(authorizedCipher: Cipher) {
         launchBusy {
             when (val result = session.enableBiometric(authorizedCipher)) {
-                OperationResult.Success -> message("Desbloqueo con huella activado.")
+                OperationResult.Success -> message(
+                    personalidad().elige("Huella activada. Ya te reconozco sin preguntarte.", "Desbloqueo con huella activado."),
+                )
                 is OperationResult.Failure -> message(result.message)
                 else -> message("No se pudo activar la huella.")
             }

@@ -1,5 +1,6 @@
 package io.github.jls97.boveda.ui.components
 
+import io.github.jls97.boveda.ui.theme.Personalidad
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -20,14 +21,36 @@ class ClipboardNoticeTest {
     }
 
     @Test
-    fun noticeFitsAfterTheCopyLabelAndInsideTheOtpMessage() {
+    fun soberCopyNoticeAgreesInGenderAndNamesTheClear() {
         assertEquals(
-            "Contraseña copiado. Se borrará del portapapeles en 45 s o al bloquearse la bóveda.",
-            "Contraseña copiado. ${clipboardClearNotice(45).replaceFirstChar { it.uppercase() }}.",
+            "Contraseña copiada. Se borrará del portapapeles en 45 s o al bloquearse la bóveda.",
+            copyNotice("Contraseña", 45, Personalidad.Sobria),
         )
+        assertEquals(
+            "Usuario copiado. Se borrará del portapapeles en 45 s o al bloquearse la bóveda.",
+            copyNotice("Usuario", 45, Personalidad.Sobria),
+        )
+        assertEquals(
+            "Dirección copiada. Se borrará del portapapeles en 45 s o al bloquearse la bóveda.",
+            copyNotice("Dirección", 45, Personalidad.Sobria),
+        )
+    }
+
+    @Test
+    fun contrasenoraCopyNoticeKeepsTheClearPromise() {
+        val notice = copyNotice("Contraseña", 30, Personalidad.Contrasenora)
+        assertEquals(true, notice.startsWith("Contraseña copiada. La borro del portapapeles en 30 s o al bloquearse la bóveda"))
+        assertEquals("Usuario copiado. Lo borro", copyNotice("Usuario", 30, Personalidad.Contrasenora).substring(0, 25))
+    }
+
+    @Test
+    fun codeCopyNoticeNamesBothTimes() {
         assertEquals(
             "Código copiado: cambia en 12 s y se borrará del portapapeles en 45 s o al bloquearse la bóveda.",
-            "Código copiado: cambia en 12 s y ${clipboardClearNotice(45)}.",
+            codeCopyNotice(12, 45, Personalidad.Sobria),
         )
+        val withHumor = codeCopyNotice(12, 45, Personalidad.Contrasenora)
+        assertEquals(true, withHumor.contains("caduca en 12 s") && withHumor.contains("45 s o al bloquearse la bóveda"))
+        assertEquals(false, withHumor.contains("al salir"))
     }
 }

@@ -18,7 +18,9 @@ import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
-import io.github.jls97.boveda.ui.components.clipboardClearNotice
+import io.github.jls97.boveda.ui.components.codeCopyNotice
+import io.github.jls97.boveda.ui.theme.Personalidad
+import io.github.jls97.boveda.ui.theme.elige
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -43,7 +45,11 @@ class RevealedOtp(val entryId: String, val secret: OtpSecret, val revealedAt: Lo
  * fingerprint. Secrets only stay here while they are on screen, and everything is wiped when the
  * vault locks.
  */
-class OtpViewModel(private val session: VaultSession) : ViewModel() {
+class OtpViewModel(
+    private val session: VaultSession,
+    /** Registro de voz elegido en Ajustes; se lee en cada mensaje. */
+    private val personalidad: () -> Personalidad = { Personalidad.Contrasenora },
+) : ViewModel() {
     var busy by mutableStateOf(false)
         private set
 
@@ -150,7 +156,12 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
             when (val result = session.addOtp(authorized, entryId, secret)) {
                 OperationResult.Success -> {
                     clearDraft()
-                    message("Código 2FA guardado. Solo se abre con tu huella.")
+                    message(
+                        personalidad().elige(
+                            "Código 2FA guardado. Ahora sí que no entra ni el cartero: solo se abre con tu huella.",
+                            "Código 2FA guardado. Solo se abre con tu huella.",
+                        ),
+                    )
                     onDone()
                 }
                 is OperationResult.Failure -> message(result.message)
@@ -323,7 +334,7 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
         val now = System.currentTimeMillis()
         val seconds = clipboardSeconds
         session.clipboard.copy(secret.code(now), seconds)
-        message("Código copiado: cambia en ${secret.secondsLeft(now)} s y ${clipboardClearNotice(seconds)}.")
+        message(codeCopyNotice(secret.secondsLeft(now), seconds, personalidad()))
     }
 
     /** Hides the revealed code (only if it belongs to [entryId], when given) and wipes its secret. */
@@ -338,7 +349,9 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
         hide(entryId)
         launchBusy {
             when (val result = session.removeOtp(entryId)) {
-                OperationResult.Success -> message("Código 2FA quitado de la entrada.")
+                OperationResult.Success -> message(
+                    personalidad().elige("Código 2FA quitado. Que en paz descanse.", "Código 2FA quitado de la entrada."),
+                )
                 is OperationResult.Failure -> message(result.message)
                 else -> message("No se pudo quitar el código 2FA.")
             }

@@ -7,14 +7,18 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -34,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.res.painterResource
@@ -46,6 +51,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.github.jls97.boveda.R
@@ -405,5 +411,68 @@ fun CampoCodigo(
                 null
             },
         )
+    }
+}
+
+/**
+ * Búsqueda en píldora hundida, con su lupa y una cruz para borrar. Tampoco deja que el teclado
+ * aprenda lo buscado: suelen ser nombres de bancos y servicios.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun CampoBusqueda(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+) {
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    val seleccion = TextSelectionColors(handleColor = c.brandPrimary, backgroundColor = c.brandPrimary.copy(alpha = 0.25f))
+    CompositionLocalProvider(LocalTextSelectionColors provides seleccion) {
+        InterceptPlatformTextInput(interceptor = NoLearningInterceptor) {
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = modifier.heightIn(min = Sizes.touchTarget),
+                singleLine = true,
+                textStyle = t.body.copy(color = c.textPrimary),
+                cursorBrush = SolidColor(c.brandPrimary),
+                keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Search),
+                decorationBox = { campo ->
+                    Row(
+                        modifier = Modifier
+                            .clip(ContrasenoraShapes.full)
+                            .background(c.bgSunken)
+                            .heightIn(min = Sizes.touchTarget)
+                            .padding(start = Spacing.s4, end = Spacing.s1),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_buscar),
+                            contentDescription = null,
+                            tint = c.textSecondary,
+                            modifier = Modifier.size(Sizes.iconMd),
+                        )
+                        Box(Modifier.weight(1f).padding(horizontal = Spacing.s3)) {
+                            if (value.isEmpty()) {
+                                Text(placeholder, style = t.body, color = c.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            campo()
+                        }
+                        if (value.isNotEmpty()) {
+                            BotonIcono(
+                                R.drawable.ic_cerrar,
+                                "Borrar búsqueda",
+                                { onValueChange("") },
+                                tamanoIcono = Sizes.iconMd,
+                            )
+                        } else {
+                            Spacer(Modifier.width(Spacing.s3))
+                        }
+                    }
+                },
+            )
+        }
     }
 }

@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -31,6 +34,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import io.github.jls97.boveda.R
 import io.github.jls97.boveda.ui.theme.ContrasenoraShapes
 import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
 import io.github.jls97.boveda.ui.theme.Motion
@@ -176,4 +180,31 @@ fun tintaDe(tipo: TipoAviso): Color {
         TipoAviso.Peligro -> c.dangerFg
         TipoAviso.Info -> c.infoFg
     }
+}
+
+/**
+ * Un error sin campo al que pegarse (por ejemplo, de la huella o de una operación): con su icono,
+ * nunca solo el color, y anunciado a TalkBack cuando aparece.
+ */
+@Composable
+fun TextoError(texto: String, modifier: Modifier = Modifier) {
+    val c = ContrasenoraTheme.colors
+    Row(
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            painterResource(R.drawable.ic_alerta),
+            contentDescription = null,
+            tint = c.dangerFg,
+            modifier = Modifier.padding(top = 3.dp, end = 6.dp).size(Sizes.iconSm),
+        )
+        Text(texto, style = ContrasenoraTheme.type.small, color = c.dangerFg)
+    }
+}
+
+/** «Primera frase. Lo demás.» → título de un aviso y su mensaje (null si solo hay una frase). */
+fun partirEnAviso(texto: String): Pair<String, String?> {
+    val corte = texto.indexOf(". ")
+    return if (corte < 0) texto to null else texto.substring(0, corte + 1) to texto.substring(corte + 2)
 }

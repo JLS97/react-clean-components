@@ -42,9 +42,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -249,7 +249,8 @@ fun textoSecreto(secreto: String): AnnotatedString {
             when {
                 caracter.isDigit() -> withStyle(SpanStyle(color = c.brassText)) { append(caracter) }
                 !caracter.isLetterOrDigit() -> withStyle(SpanStyle(color = c.textLink)) { append(caracter) }
-                else -> append(caracter)
+                // Las letras llevan su color: el secreto se lee igual dentro o fuera de una ficha.
+                else -> withStyle(SpanStyle(color = c.textPrimary)) { append(caracter) }
             }
         }
     }

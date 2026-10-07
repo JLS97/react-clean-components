@@ -8,6 +8,8 @@ import io.github.jls97.boveda.data.antiPhishingPhraseProblem
 import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
+import io.github.jls97.boveda.ui.theme.Personalidad
+import io.github.jls97.boveda.ui.theme.elige
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,10 +23,16 @@ data class LockUiState(
     val blockedUntil: Long = 0L,
     /** Algo que salió bien y la pantalla debe contar (una restauración deshecha, por ejemplo). */
     val notice: String? = null,
+    /** Contraseñas incorrectas desde que se abrió la pantalla: cada una sacude el campo. */
+    val wrongPasswords: Int = 0,
 )
 
 /** Drives the screens shown while the vault is closed: first-run setup and unlock. */
-class LockViewModel(private val session: VaultSession) : ViewModel() {
+class LockViewModel(
+    private val session: VaultSession,
+    /** Registro de voz elegido en Ajustes; se lee en cada mensaje. */
+    private val personalidad: () -> Personalidad = { Personalidad.Contrasenora },
+) : ViewModel() {
     private val _ui = MutableStateFlow(LockUiState())
     val ui: StateFlow<LockUiState> = _ui.asStateFlow()
 
@@ -103,22 +111,34 @@ class LockViewModel(private val session: VaultSession) : ViewModel() {
     }
 
     private fun launchOperation(successNotice: String? = null, operation: suspend () -> OperationResult) {
-        _ui.value = LockUiState(busy = true)
+        val wrongPasswords = _ui.value.wrongPasswords
+        _ui.value = LockUiState(busy = true, wrongPasswords = wrongPasswords)
         viewModelScope.launch {
             _ui.value = when (val result = operation()) {
-                OperationResult.Success -> LockUiState(notice = successNotice)
+                OperationResult.Success -> LockUiState(notice = successNotice, wrongPasswords = wrongPasswords)
                 // La pantalla desaparece al desbloquearse; el aviso solo importa si la bóveda se
                 // bloqueó mientras se escribía la copia y sigue aquí (R01-5).
                 is OperationResult.Restored -> LockUiState(
                     notice = restoredWhileLocked(result).takeIf { session.state.value is VaultState.Locked },
+                    wrongPasswords = wrongPasswords,
                 )
-                OperationResult.WrongPassword -> LockUiState(error = "Contraseña incorrecta.")
-                OperationResult.WrongCurrentPassword -> LockUiState(error = "La contraseña maestra actual no es correcta.")
+                OperationResult.WrongPassword -> LockUiState(
+                    error = personalidad().elige(
+                        "Esa no es. Revisa mayúsculas y vuelve a intentarlo.",
+                        "Contraseña incorrecta. Revisa mayúsculas y vuelve a intentarlo.",
+                    ),
+                    wrongPasswords = wrongPasswords + 1,
+                )
+                OperationResult.WrongCurrentPassword -> LockUiState(
+                    error = "La contraseña maestra actual no es correcta.",
+                    wrongPasswords = wrongPasswords + 1,
+                )
                 is OperationResult.Throttled -> LockUiState(
                     error = "Demasiados intentos fallidos.",
                     blockedUntil = result.untilMillis,
+                    wrongPasswords = wrongPasswords,
                 )
-                is OperationResult.Failure -> LockUiState(error = result.message)
+                is OperationResult.Failure -> LockUiState(error = result.message, wrongPasswords = wrongPasswords)
             }
         }
     }

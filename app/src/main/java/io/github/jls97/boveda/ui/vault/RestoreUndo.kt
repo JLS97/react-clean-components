@@ -1,23 +1,17 @@
 package io.github.jls97.boveda.ui.vault
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import io.github.jls97.boveda.ui.components.Aviso
 import io.github.jls97.boveda.ui.components.ConfirmDialog
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
+import io.github.jls97.boveda.ui.components.TipoAviso
+import io.github.jls97.boveda.ui.theme.Spacing
 
 /** Qué se pidió sobre la última restauración, a la espera de confirmación. */
 enum class UndoAction { UNDO, DISCARD }
@@ -31,31 +25,18 @@ enum class UndoAction { UNDO, DISCARD }
 fun RestoreUndoBanner(viewModel: VaultViewModel, onRestoreUndone: () -> Unit) {
     if (!viewModel.canUndoRestore) return
     var action by remember { mutableStateOf<UndoAction?>(null) }
-    Surface(
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        shape = MaterialTheme.shapes.small,
-        modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Text(
-                "Este teléfono conserva la bóveda anterior: la que estaba en su sitio antes de la última " +
-                    "restauración o del último cambio. Cada una se abre con su propia contraseña maestra y, " +
-                    "al cambiar de una a otra, la huella se desactiva.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { action = UndoAction.UNDO }, enabled = !viewModel.busy) {
-                    Text("Volver a la anterior")
-                }
-                TextButton(onClick = { action = UndoAction.DISCARD }, enabled = !viewModel.busy) {
-                    Text("Descartar la anterior")
-                }
-            }
-        }
-    }
+    Aviso(
+        TipoAviso.Info,
+        "Se conserva la bóveda anterior",
+        mensaje = "La que estaba en su sitio antes de la última restauración o del último cambio. Cada una se " +
+            "abre con su propia contraseña maestra y, al cambiar de una a otra, la huella se desactiva.",
+        accion = "Volver a la anterior",
+        onAccion = { action = UndoAction.UNDO },
+        accionSecundaria = "Descartarla",
+        onAccionSecundaria = { action = UndoAction.DISCARD },
+        accionesActivas = !viewModel.busy,
+        modifier = Modifier.padding(bottom = Spacing.s4),
+    )
     RestoreUndoDialogs(action, viewModel, onRestoreUndone) { action = null }
 }
 
@@ -106,6 +87,7 @@ fun RestoreUndoDialogs(
                 viewModel.discardUndo()
             },
             onDismiss = onDismiss,
+            peligro = true,
         )
     }
 }

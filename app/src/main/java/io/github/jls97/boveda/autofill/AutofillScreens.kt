@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.jls97.boveda.BovedaApplication
 import io.github.jls97.boveda.MainActivity
 import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
@@ -85,7 +86,10 @@ internal fun AutofillApp(
             onClose = onClose,
         )
         VaultState.Locked -> UnlockScreen(
-            viewModel { LockViewModel(session) },
+            viewModel {
+                val apariencia = (appContext as BovedaApplication).apariencia
+                LockViewModel(session) { apariencia.ajustes.value.personalidad }
+            },
             allowRestore = false,
             // Who asked for the fill, shown under the title so a fake "unlock" screen drawn by the
             // requesting app cannot pretend the request came from somewhere else (M-04).
