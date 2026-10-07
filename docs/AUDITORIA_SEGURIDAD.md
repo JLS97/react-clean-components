@@ -1212,6 +1212,7 @@ Correcciones aplicadas tras la auditoría, en orden de severidad, con un subagen
 | e05-biometric-prompt-compat | Revisión final | Corregido y verificado | `1621c71` | 5 hallazgos de la revisión final: En el desbloqueo con la contraseña plegada, el botón «Usar contraseña»; El prompt de huella al activarla ofrece «Usar contraseña» cuando la co; Los límites nuevos por campo convierten bóvedas antiguas válidas en «a… |
 | e06-build-supply-chain | Revisión final | Corregido y verificado | `e0cd1fa` | 4 hallazgos de la revisión final: Acciones de GitHub referenciadas por tag mutable (@v4) y sin Dependabo; assembleRelease produce un APK sin firmar en silencio si falta cualqui; SECURITY.md remite a `keystore.properties` para las credenciales de fi… |
 | e07-tests-sincerity | Revisión final | Corregido y verificado | `945e36e` | 0 hallazgos de la revisión final:  |
+| g01-cierre | Cierre | Corregido y verificado | `fa0c8ca` | Tres fallos detectados al documentar la app: la pantalla de desbloqueo se cerraba si el almacén de claves no respondía al consultar la huella (test JVM que falla sin el arreglo); el aviso de deshacer una restauración decía que la bóveda abierta era la de la copia también después de deshacer; el aviso de página sin cifrar apuntaba a una dirección «de abajo» que está arriba. Verificados con la batería completa (314 tests, lint sin errores). |
 
 Hallazgos tratados fuera de las tareas anteriores:
 
