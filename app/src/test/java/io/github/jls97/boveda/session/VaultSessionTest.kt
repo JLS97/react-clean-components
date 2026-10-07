@@ -163,6 +163,8 @@ class VaultSessionTest {
     /** [onClear] se ejecuta dentro de `throttle.reset()`: el primer punto observable tras verificar la contraseña. */
     private class FakeThrottleStore : ThrottleStore {
         private var state = ThrottleState()
+        /** Ranura «conservada» ligada a la bóveda guardada para deshacer una restauración. */
+        private var kept: ThrottleState? = null
         var onClear: (() -> Unit)? = null
 
         override fun load(): ThrottleState = state
@@ -174,6 +176,12 @@ class VaultSessionTest {
         override fun clear() {
             state = ThrottleState()
             onClear?.invoke()
+        }
+
+        override fun loadKept(): ThrottleState? = kept
+
+        override fun saveKept(state: ThrottleState?) {
+            kept = state
         }
     }
 
@@ -347,7 +355,7 @@ class VaultSessionTest {
         // La clave de capa está intacta pero el Keystore no contesta: es un fallo transitorio, así
         // que no se crea una clave nueva (que dejaría ilegible la copia para deshacer) ni se escribe.
         layerKeys.failWith = KeystoreUnavailableException("Keystore ocupado")
-        val result = session.restoreBackup(backup, chars(BACKUP_PASSWORD), currentPassword = chars(PASSWORD))
+        val result = session.restoreBackup(backup, chars(BACKUP_PASSWORD), currentPassword = chars(PASSWORD), forceWithoutCurrent = false)
         assertEquals(OperationResult.Failure(KEYSTORE_DID_NOT_ANSWER), result)
         assertEquals(writesBefore, files.vaultWrites)
         assertArrayEquals(fileBefore, files.vault)
@@ -361,7 +369,7 @@ class VaultSessionTest {
 
         // En cuanto el Keystore responde, la misma restauración sale con la misma clave de capa.
         layerKeys.failWith = null
-        val restored = session.restoreBackup(backup, chars(BACKUP_PASSWORD), currentPassword = chars(PASSWORD))
+        val restored = session.restoreBackup(backup, chars(BACKUP_PASSWORD), currentPassword = chars(PASSWORD), forceWithoutCurrent = false)
         assertEquals(OperationResult.Restored(masterPasswordChanged = true, hadUndo = true), restored)
         assertEquals(backupData, unlocked(session).data)
         assertEquals(backupData, assertOpensWith(BACKUP_PASSWORD, portableOnDisk()))
@@ -376,7 +384,7 @@ class VaultSessionTest {
         assertFalse(unlocked(session).integrityWarning)
         val original = checkNotNull(files.vault).copyOf()
 
-        val restored = session.restoreBackup(backup, chars(BACKUP_PASSWORD), currentPassword = chars(PASSWORD))
+        val restored = session.restoreBackup(backup, chars(BACKUP_PASSWORD), currentPassword = chars(PASSWORD), forceWithoutCurrent = false)
         assertEquals(OperationResult.Restored(masterPasswordChanged = true, hadUndo = true), restored)
         assertArrayEquals("La bóveda sustituida se guarda tal cual", original, files.previous)
         assertFalse(original.contentEquals(files.vault))
