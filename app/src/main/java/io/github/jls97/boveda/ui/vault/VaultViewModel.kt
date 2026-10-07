@@ -21,6 +21,7 @@ import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
 import io.github.jls97.boveda.ui.components.CloudAuthorities
+import io.github.jls97.boveda.ui.components.clipboardClearNotice
 import io.github.jls97.boveda.ui.components.deleteDocument
 import io.github.jls97.boveda.ui.components.readBackup
 import io.github.jls97.boveda.ui.components.writeBackup
@@ -281,9 +282,7 @@ class VaultViewModel(
     fun copy(label: String, value: String) {
         val seconds = settings.clipboardClearSeconds
         session.clipboard.copy(value, seconds)
-        // Con «Al salir de la app», el bloqueo borra el portapapeles antes de que venza el temporizador.
-        val until = if (settings.autoLockSeconds == 0) "al salir de la app" else "en $seconds s"
-        message("$label copiado. Se borrará del portapapeles $until.")
+        message("$label copiado. ${clipboardClearNotice(seconds).replaceFirstChar { it.uppercase() }}.")
     }
 
     // endregion

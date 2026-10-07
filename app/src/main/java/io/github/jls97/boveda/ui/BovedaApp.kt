@@ -26,7 +26,8 @@ fun BovedaApp(session: VaultSession) {
     // archivo vacío que el sistema ya había creado se puede borrar (M-10).
     val vaultViewModel = viewModel {
         val app = context.applicationContext
-        VaultViewModel(session, app.contentResolver, BackupLog(app))
+        // Una bóveda anterior al registro de copias no cuenta como «nunca copiada» (R03-7).
+        VaultViewModel(session, app.contentResolver, BackupLog(app, vaultExists = session.state.value !is VaultState.NoVault))
     }
     val exportLauncher = rememberLauncherForActivityResult(CreateLocalDocument("application/octet-stream")) { uri ->
         vaultViewModel.finishExport(uri)

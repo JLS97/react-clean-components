@@ -188,10 +188,11 @@ class VaultSession private constructor(
     /**
      * Call right before opening a system screen on purpose (the file picker for backups, the
      * autofill settings), so "lock when leaving the app" does not lock in the middle of the
-     * operation. The exception lasts [AutoLockPolicy.EXTERNAL_ACTIVITY_GRACE_MS] at most and,
-     * while it lasts, that same time applies as inactivity timeout even with "lock when leaving"
-     * ([AutoLockPolicy]): a picker abandoned with the Home button cannot leave the vault open
-     * without limit. The screen-off lock still applies.
+     * operation. The exception lasts [AutoLockPolicy.EXTERNAL_ACTIVITY_GRACE_MS] at most: when
+     * it expires with the app still in the background, the auto-lock timer locks right then
+     * ([AutoLockPolicy.shouldLockOnAnnouncementExpiry]), so a picker abandoned with the Home
+     * button cannot leave the vault open without limit. Coming back to the front, as the picker
+     * does when it returns, clears the announcement. The screen-off lock still applies.
      */
     fun expectExternalActivity() {
         externalActivityExpectedUntil = AutoLockPolicy.externalActivityDeadline(SystemClock.elapsedRealtime())
@@ -231,6 +232,8 @@ class VaultSession private constructor(
         lockCount++
         autoLockJob?.cancel()
         autoLockJob = null
+        // An announcement made before locking must not survive into the next unlock.
+        externalActivityExpectedUntil = 0L
         open?.wipe()
         open = null
         clipboard.clearIfPending()
@@ -245,12 +248,10 @@ class VaultSession private constructor(
                 val current = open ?: break
                 // Against the monotonic clock, not the count of ticks: a frozen process (cached
                 // apps freezer, doze) misses ticks but not the time that went by.
-                val shouldLock = AutoLockPolicy.shouldLockForInactivity(
-                    current.data.settings.autoLockSeconds,
-                    isExternalActivityExpected(),
-                    lastInteraction,
-                    SystemClock.elapsedRealtime(),
-                )
+                val now = SystemClock.elapsedRealtime()
+                val autoLockSeconds = current.data.settings.autoLockSeconds
+                val shouldLock = AutoLockPolicy.shouldLockForInactivity(autoLockSeconds, lastInteraction, now) ||
+                    AutoLockPolicy.shouldLockOnAnnouncementExpiry(autoLockSeconds, externalActivityExpectedUntil, backgroundSince, now)
                 if (shouldLock) {
                     lock()
                     break
@@ -487,6 +488,12 @@ class VaultSession private constructor(
      * the state is then [VaultState.Locked], so retrying would only write the restored copy over
      * the vault kept for the undo.
      *
+     * A backup whose header has cheaper Argon2id costs than the app's default is written with
+     * the default ones, by the same rule as [unlock] ([KdfUpgradePolicy]) and the same mechanics
+     * ([VaultContainer.upgradeKdf]): the backup's DEK is kept and only the header changes. The
+     * DEK is not rotated on purpose: the user keeps the file it came from, so a new DEK would
+     * add nothing the backup does not already give away, and the one rule decides both paths.
+     *
      * Refused without a secure lock screen, as [create] is (B-43).
      */
     suspend fun restoreBackup(
@@ -545,12 +552,14 @@ class VaultSession private constructor(
                 } ?: return@withContext null
                 // A backup with cheaper Argon2 costs than the app's own would otherwise turn this
                 // vault, and every backup made from it, into an easier offline target for good.
-                // The password is at hand, so the DEK is wrapped again under the default costs.
-                val restored = if (opened.header.kdfParams.isWeakerThan(KdfParams.DEFAULT)) {
+                // Same rule and same mechanics as unlock: the password is at hand, so the DEK is
+                // wrapped again under the default costs and nothing else changes.
+                val restored = if (KdfUpgradePolicy.shouldUpgrade(opened.header.kdfParams)) {
                     try {
-                        VaultContainer.changePassword(password, opened.data)
-                    } finally {
+                        VaultContainer.Opened(VaultContainer.upgradeKdf(password, opened.dek), opened.dek, opened.data)
+                    } catch (e: Throwable) {
                         opened.dek.wipe()
+                        throw e
                     }
                 } else {
                     opened

@@ -1,6 +1,5 @@
 package io.github.jls97.boveda.security
 
-import android.security.keystore.KeyPermanentlyInvalidatedException
 import io.github.jls97.boveda.core.crypto.randomBytes
 import io.github.jls97.boveda.core.vault.DeviceBindingException
 import io.github.jls97.boveda.data.readFile
@@ -9,8 +8,6 @@ import java.io.File
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.ProviderException
-import java.security.UnrecoverableKeyException
-import javax.crypto.AEADBadTagException
 
 /**
  * Manages the key of the device layer ([io.github.jls97.boveda.core.vault.DeviceLayer]). The key is
@@ -83,9 +80,12 @@ internal class DeviceKeyManager(private val keys: KeystoreKeys, private val file
      * Permanent failures (the key will never open this file again) become [DeviceBindingException];
      * everything else, including `UserNotAuthenticatedException`, `KeyStoreException`,
      * `ProviderException` and `IllegalBlockSizeException`, is the Keystore not answering right now.
+     * `UnrecoverableKeyException` is permanent only when the keystore's own error code says the
+     * key is gone ([KeystoreFailurePolicy]): Android throws it for transient failures too.
      */
-    private fun classify(e: Exception): Exception = when (e) {
-        is UnrecoverableKeyException, is KeyPermanentlyInvalidatedException, is AEADBadTagException ->
+    private fun classify(e: Exception): Exception = when {
+        e is KeystoreUnavailableException -> e
+        KeystoreFailurePolicy.classify(e, KeystoreFailurePolicy.keystoreErrorCode(e)) == KeystoreFailurePolicy.Kind.PERMANENT ->
             DeviceBindingException("Keystore can no longer unwrap the device key", e)
         else -> KeystoreUnavailableException("Keystore did not respond", e)
     }

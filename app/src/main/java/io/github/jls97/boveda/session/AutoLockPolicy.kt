@@ -6,21 +6,23 @@ package io.github.jls97.boveda.session
  * keeps running while the process is frozen or the phone sleeps, so a comparison against it
  * catches the time the process could not count.
  *
- * Three rules, combined:
+ * Four rules, combined:
  * - Inactivity: `autoLockSeconds` without the user touching the app. With the "lock when leaving
- *   the app" setting (`autoLockSeconds == 0`) there is no inactivity timer, except while a system
- *   screen opened on purpose (file picker, autofill settings) is excused from the leaving rule:
- *   then [EXTERNAL_ACTIVITY_GRACE_MS] applies as inactivity timeout, so that mode never leaves the
- *   vault open without limit.
+ *   the app" setting (`autoLockSeconds == 0`) there is no inactivity timer at all.
  * - Leaving the app: with `autoLockSeconds == 0` the vault locks when the app goes to the
  *   background, unless an external screen was announced and the announcement is still fresh
- *   ([EXTERNAL_ACTIVITY_GRACE_MS]). An announcement never outlives its deadline, so a picker
- *   abandoned with the Home button cannot keep the exception alive.
+ *   ([EXTERNAL_ACTIVITY_GRACE_MS]).
+ * - Expiry of the announcement: with `autoLockSeconds == 0`, an announcement never outlives its
+ *   deadline. If the app is still in the background when the deadline comes (the user left the
+ *   picker with the Home button, or stayed in it), the vault locks right then
+ *   ([shouldLockOnAnnouncementExpiry]), so that mode never leaves the vault open without limit.
+ *   Coming back to the front clears the announcement, so a picker that returns normally never
+ *   triggers it, and neither does an announcement whose screen never opened.
  * - Coming back: locks if the time in the background exceeded `autoLockSeconds` (whatever the
  *   last interaction says) and, with any setting, if it exceeded [MAX_BACKGROUND_MS].
  */
 object AutoLockPolicy {
-    /** How long an announced system screen excuses the "lock when leaving" rule, and the inactivity timeout meanwhile. */
+    /** How long an announced system screen excuses the "lock when leaving" rule. */
     const val EXTERNAL_ACTIVITY_GRACE_MS = 90_000L
 
     /** Hard cap: after this long in the background the vault locks on return, with any setting. */
@@ -33,23 +35,29 @@ object AutoLockPolicy {
     fun isExternalActivityExpected(expectedUntilMs: Long, nowMs: Long): Boolean =
         expectedUntilMs > 0L && nowMs < expectedUntilMs
 
-    /** Inactivity timeout in effect, in millis, or 0 when there is none. */
-    fun inactivityTimeoutMs(autoLockSeconds: Int, externalActivityExpected: Boolean): Long = when {
-        autoLockSeconds > 0 -> autoLockSeconds * 1_000L
-        externalActivityExpected -> EXTERNAL_ACTIVITY_GRACE_MS
-        else -> 0L
-    }
+    /** Inactivity timeout in effect, in millis, or 0 when there is none ("lock when leaving"). */
+    fun inactivityTimeoutMs(autoLockSeconds: Int): Long = if (autoLockSeconds > 0) autoLockSeconds * 1_000L else 0L
 
     /** True once [nowMs] is at least the inactivity timeout past [lastInteractionMs]. */
-    fun shouldLockForInactivity(
-        autoLockSeconds: Int,
-        externalActivityExpected: Boolean,
-        lastInteractionMs: Long,
-        nowMs: Long,
-    ): Boolean {
-        val timeout = inactivityTimeoutMs(autoLockSeconds, externalActivityExpected)
+    fun shouldLockForInactivity(autoLockSeconds: Int, lastInteractionMs: Long, nowMs: Long): Boolean {
+        val timeout = inactivityTimeoutMs(autoLockSeconds)
         return timeout > 0L && nowMs - lastInteractionMs >= timeout
     }
+
+    /**
+     * Whether to lock because the announcement of an external screen (deadline [expectedUntilMs],
+     * 0 when none) has expired while the app is still in the background ([backgroundSinceMs] is
+     * when it went there, `null` while it is in front). Only with "lock when leaving"
+     * (`autoLockSeconds == 0`): with any other setting the inactivity timer already applies.
+     * Measured from the announcement, not from the last touch, which happens at almost the same
+     * instant and would leave no window to lock in.
+     */
+    fun shouldLockOnAnnouncementExpiry(
+        autoLockSeconds: Int,
+        expectedUntilMs: Long,
+        backgroundSinceMs: Long?,
+        nowMs: Long,
+    ): Boolean = autoLockSeconds == 0 && expectedUntilMs > 0L && backgroundSinceMs != null && nowMs >= expectedUntilMs
 
     /** Whether to lock the moment the app goes to the background. */
     fun shouldLockOnBackground(autoLockSeconds: Int, externalActivityExpected: Boolean): Boolean =
