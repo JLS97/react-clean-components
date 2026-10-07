@@ -1223,8 +1223,8 @@ Hallazgos tratados fuera de las tareas anteriores:
 Hallazgos no corregidos en esta ronda (y por qué):
 
 - **B-34**: Papelera e historial de versiones: funcionalidad nueva (hoja de ruta R-16); el borrado sigue pidiendo confirmación con el nombre y «No se puede deshacer.».
-- **I-38**: No corregido: ocultar los secretos revelados al árbol de accesibilidad impediría usar la app a quien depende de un lector de pantalla; se deja como decisión de producto.
-- **I-43**: No corregido: exigir huella para mostrar o copiar con la bóveda abierta es una opción de producto (hoja de ruta), no un fallo.
+- **I-38**: Ocultar los secretos revelados al árbol de accesibilidad impediría usar la app a quien depende de un lector de pantalla; se deja como decisión de producto.
+- **I-43**: Exigir huella para mostrar o copiar con la bóveda abierta es una opción de producto (hoja de ruta), no un fallo.
 
 ## Anexo A. Comprobaciones ejecutadas en el entorno de auditoría
 
