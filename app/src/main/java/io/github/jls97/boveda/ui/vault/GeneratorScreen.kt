@@ -6,28 +6,49 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,12 +59,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -66,12 +96,13 @@ import io.github.jls97.boveda.ui.components.Salida
 import io.github.jls97.boveda.ui.components.TextoError
 import io.github.jls97.boveda.ui.components.TipoAviso
 import io.github.jls97.boveda.ui.components.sombraPapel
-import io.github.jls97.boveda.ui.components.strengthLabel
 import io.github.jls97.boveda.ui.components.textoSecreto
+import io.github.jls97.boveda.ui.theme.ContrasenoraShapes
 import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
+import io.github.jls97.boveda.ui.theme.Elevation
 import io.github.jls97.boveda.ui.theme.Motion
+import io.github.jls97.boveda.ui.theme.Sizes
 import io.github.jls97.boveda.ui.theme.Spacing
-import io.github.jls97.boveda.ui.theme.YoungSerif
 import io.github.jls97.boveda.ui.theme.rememberReducedMotion
 import io.github.jls97.boveda.ui.theme.voz
 import kotlinx.coroutines.delay
@@ -109,7 +140,7 @@ fun GeneratorScreen(
 
 /**
  * El generador, sin estado. Con [forEditor] (se llega desde el formulario de una entrada) el
- * mostrador ofrece «Usar esta contraseña».
+ * mostrador ofrece «Usar esta contraseña»; si no, la acción principal es «Copiar».
  */
 @Composable
 internal fun GeneradorContenido(
@@ -136,10 +167,7 @@ internal fun GeneradorContenido(
     Pantalla(
         titulo = "Generador",
         salida = Salida(onBack),
-        entradilla = voz(
-            "Una contraseña al azar, recién sacada del bombo. Ni yo la había visto antes.",
-            "Contraseñas al azar, generadas en este teléfono.",
-        ),
+        entradilla = "Contraseñas al azar, generadas en este teléfono.",
         snackbar = snackbar,
         scroll = scroll,
         mostrador = if (forEditor) {
@@ -158,13 +186,11 @@ internal fun GeneradorContenido(
             null
         },
     ) {
-        Resguardo(password, entropy)
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = Spacing.s4),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
-        ) {
-            BotonSecundario("Otra", onRegenerate, Modifier.weight(1f), enabled = canGenerate, icono = R.drawable.ic_generar)
-            BotonCopiarContrasena(onCopy, Modifier.weight(1f), enabled = password.isNotEmpty())
+        Resguardo(password, entropy, flojo = warning != null)
+        BotonesALaPar(Modifier.padding(top = Spacing.s4)) {
+            BotonSecundario("Generar otra", onRegenerate, enabled = canGenerate, icono = R.drawable.ic_generar)
+            // Fuera del formulario, copiar es a lo que se viene: es la acción principal.
+            BotonCopiarContrasena(onCopy, principal = !forEditor, enabled = password.isNotEmpty())
         }
 
         Apartado("Longitud", numero = "I")
@@ -201,25 +227,35 @@ internal fun GeneradorContenido(
     }
 }
 
-/** La contraseña en el resguardo: grande, en Atkinson Mono, con las cifras en latón. */
+/**
+ * La contraseña en el resguardo: Atkinson Mono a 22 sp, con las cifras en latón. El tema no tiene
+ * un token para este tamaño (`secret` es de 18 sp), así que sale de él aquí.
+ */
 private val EstiloResguardo = TextStyle(fontSize = 22.sp, lineHeight = 32.sp)
 
 /**
  * El resguardo: arriba, la contraseña, que se cambia rodando hacia arriba al pedir otra; bajo la
- * perforación, la matriz con los bits y el medidor.
+ * perforación, la matriz con los bits y el medidor. Si [flojo] (por debajo de [LOW_ENTROPY_BITS]),
+ * los bits van en el color de aviso (I-40). Sin tipos de carácter no hay contraseña y el hueco lo
+ * dice con palabras.
  */
 @Composable
-private fun Resguardo(password: String, entropy: Double) {
+private fun Resguardo(password: String, entropy: Double, flojo: Boolean) {
     val c = ContrasenoraTheme.colors
     val t = ContrasenoraTheme.type
     val reduced = rememberReducedMotion()
     val estilo = t.secret.merge(EstiloResguardo)
+    val colorBits by animateColorAsState(
+        targetValue = if (flojo) c.warningFg else c.textSecondary,
+        animationSpec = if (reduced) snap() else tween(Motion.BASE, easing = Motion.Standard),
+        label = "bits",
+    )
     PapelResguardo(
         arriba = {
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = Spacing.s5, end = Spacing.s5, top = Spacing.s4, bottom = Spacing.s5)
+                    .padding(start = Spacing.s4, end = Spacing.s4, top = Spacing.s4, bottom = Spacing.s4)
                     .semantics(mergeDescendants = true) { },
             ) {
                 Text("Tu contraseña", style = t.label, color = c.textSecondary)
@@ -231,7 +267,11 @@ private fun Resguardo(password: String, entropy: Double) {
                     label = "contraseña generada",
                 ) { actual ->
                     if (actual.isEmpty()) {
-                        Text("—", style = estilo, color = c.textDisabled)
+                        Text(
+                            voz("Sin letras, cifras ni símbolos no hay bombo que valga.", "Sin contraseña."),
+                            style = t.body,
+                            color = c.textTertiary,
+                        )
                     } else {
                         SecretoEnRenglones(actual, estilo)
                     }
@@ -239,21 +279,45 @@ private fun Resguardo(password: String, entropy: Double) {
             }
         },
         matriz = {
-            Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.s5, vertical = Spacing.s4)) {
+            Column(Modifier.fillMaxWidth().padding(start = Spacing.s4, end = Spacing.s4, top = Spacing.s4, bottom = Spacing.s3)) {
                 if (password.isEmpty()) {
-                    Text("Sin tipos de carácter no hay contraseña.", style = t.label, color = c.textTertiary)
+                    Text("0 bits de entropía", style = t.label, color = c.textTertiary)
                 } else {
-                    val level = PasswordStrength.level(entropy)
-                    Text(
-                        "≈ ${entropy.roundToInt()} bits · ${strengthLabel(level)}",
-                        style = t.label,
-                        color = c.textSecondary,
-                    )
-                    MedidorFuerza(level, Modifier.padding(top = Spacing.s3))
+                    // El nivel ya lo dice el medidor, debajo: aquí solo los bits.
+                    Text("≈ ${entropy.roundToInt()} bits de entropía", style = t.label, color = colorBits)
+                    MedidorFuerza(PasswordStrength.level(entropy), Modifier.padding(top = Spacing.s3))
                 }
             }
         },
     )
+}
+
+/**
+ * Dos botones a medias, con el mismo ancho y el mismo alto. Si alguno no cabe en su mitad sin
+ * partir el texto (letra grande), van uno debajo del otro, a todo lo ancho.
+ */
+@Composable
+private fun BotonesALaPar(modifier: Modifier = Modifier, botones: @Composable () -> Unit) {
+    Layout(content = botones, modifier = modifier.fillMaxWidth()) { medibles, restricciones ->
+        val ancho = restricciones.maxWidth
+        val mitad = (ancho - Spacing.s3.roundToPx()) / 2
+        val caben = medibles.all { it.maxIntrinsicWidth(Constraints.Infinity) <= mitad }
+        if (caben) {
+            val alto = medibles.maxOf { it.minIntrinsicHeight(mitad) }
+            val piezas = medibles.map { it.measure(Constraints(mitad, mitad, alto, alto)) }
+            layout(ancho, alto) { piezas.forEachIndexed { i, pieza -> pieza.place(if (i == 0) 0 else ancho - mitad, 0) } }
+        } else {
+            val hueco = Spacing.s2.roundToPx()
+            val piezas = medibles.map { it.measure(Constraints(ancho, ancho, 0, Constraints.Infinity)) }
+            layout(ancho, piezas.sumOf { it.height } + hueco * (piezas.size - 1)) {
+                var y = 0
+                piezas.forEach { pieza ->
+                    pieza.place(0, y)
+                    y += pieza.height + hueco
+                }
+            }
+        }
+    }
 }
 
 /** La nueva sube desde abajo mientras la anterior se va por arriba; el resguardo crece con suavidad. */
@@ -330,11 +394,22 @@ private fun FondoResguardo(corte: Dp) {
 }
 
 /**
- * «Copiar» con su respuesta, como [io.github.jls97.boveda.ui.components.BotonCopiar]: el icono se
- * convierte un momento en una marca de conforme y vuelve solo.
+ * «Copiar» con su palabra y la misma respuesta que [io.github.jls97.boveda.ui.components.BotonCopiar]
+ * (que es solo de icono): al pulsar, el icono pasa a una marca de conforme con un pequeño salto, la
+ * palabra a «Copiada» (TalkBack la oye por la región viva) y a los 1,4 s vuelve solo. La marca va
+ * en verde ciprés sobre papel; sobre el ciruela del botón principal, en su mismo color de texto.
+ * Imita el alto, la forma y el hundido de los botones de la base, que no tiene esta variante.
  */
 @Composable
-private fun BotonCopiarContrasena(onCopy: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+private fun BotonCopiarContrasena(
+    onCopy: () -> Unit,
+    principal: Boolean,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    val reduced = rememberReducedMotion()
     var copiada by remember { mutableStateOf(false) }
     LaunchedEffect(copiada) {
         if (copiada) {
@@ -342,28 +417,104 @@ private fun BotonCopiarContrasena(onCopy: () -> Unit, modifier: Modifier = Modif
             copiada = false
         }
     }
-    BotonSecundario(
-        "Copiar",
-        {
-            onCopy()
-            copiada = true
-        },
-        modifier,
-        enabled = enabled,
-        icono = if (copiada) R.drawable.ic_check else R.drawable.ic_copiar,
+    val interaccion = remember { MutableInteractionSource() }
+    val pulsado by interaccion.collectIsPressedAsState()
+    val escala by animateFloatAsState(
+        targetValue = if (pulsado && !reduced) 0.97f else 1f,
+        animationSpec = tween(Motion.FAST, easing = Motion.Standard),
+        label = "hundir",
     )
+    val alPulsar = {
+        onCopy()
+        copiada = true
+    }
+    val forma = Modifier
+        .heightIn(min = Sizes.buttonHeight)
+        .graphicsLayer {
+            scaleX = escala
+            scaleY = escala
+        }
+        .semantics { liveRegion = LiveRegionMode.Polite }
+    val contenido: @Composable RowScope.() -> Unit = {
+        AnimatedContent(
+            targetState = copiada,
+            transitionSpec = {
+                if (reduced) {
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    (fadeIn(tween(Motion.FAST)) + scaleIn(tween(Motion.BASE, easing = Motion.Emphasized), initialScale = 0.6f)) togetherWith
+                        fadeOut(tween(Motion.FAST))
+                }
+            },
+            label = "copiar",
+        ) { hecha ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    painterResource(if (hecha) R.drawable.ic_check else R.drawable.ic_copiar),
+                    contentDescription = null,
+                    tint = if (hecha && !principal) c.successFg else LocalContentColor.current,
+                    modifier = Modifier.size(Sizes.iconMd),
+                )
+                Spacer(Modifier.width(Spacing.s2))
+                Text(if (hecha) "Copiada" else "Copiar", style = t.bodyStrong, textAlign = TextAlign.Center)
+            }
+        }
+    }
+    if (principal) {
+        Button(
+            onClick = alPulsar,
+            modifier = modifier.then(forma),
+            enabled = enabled,
+            shape = ContrasenoraShapes.sm,
+            contentPadding = PaddingValues(horizontal = Spacing.s5),
+            interactionSource = interaccion,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = c.brandPrimary,
+                contentColor = c.brandOnPrimary,
+                disabledContainerColor = c.bgSunken,
+                disabledContentColor = c.textDisabled,
+            ),
+            content = contenido,
+        )
+    } else {
+        OutlinedButton(
+            onClick = alPulsar,
+            modifier = modifier.then(forma),
+            enabled = enabled,
+            shape = ContrasenoraShapes.sm,
+            contentPadding = PaddingValues(horizontal = Spacing.s5),
+            interactionSource = interaccion,
+            border = BorderStroke(Sizes.inputBorder, if (enabled) c.borderStrong else c.borderSubtle),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = c.textPrimary, disabledContentColor = c.textDisabled),
+            content = contenido,
+        )
+    }
 }
 
-/** La longitud: el número grande en latón y un deslizador con los colores de la marca. */
+/** Valores de la regla del deslizador: los extremos y las longitudes de siempre. */
+private val MarcasLongitud = listOf(GeneratorOptions.MIN_LENGTH, 16, 32, 64, GeneratorOptions.MAX_LENGTH)
+
+/** Diámetro del pulgar del deslizador: la pista empieza y acaba en su centro. */
+private val PulgarLongitud = 22.dp
+
+/**
+ * La longitud: el número grande en Young Serif y, debajo, un deslizador de la marca hecho regla de
+ * impreso: pista redondeada de 6 dp (ciruela hasta el pulgar), marcas en 8, 16, 32, 64 y 128 con su
+ * cifra debajo, y un pulgar de papel que crece un poco al cogerlo. TalkBack lo lee como
+ * «Longitud, 24 caracteres», no como un porcentaje. (Los huecos thumb y track del deslizador aún
+ * son API experimental de Material 3.)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Longitud(longitud: Int, onCambio: (Int) -> Unit) {
     val c = ContrasenoraTheme.colors
     val t = ContrasenoraTheme.type
+    val interaccion = remember { MutableInteractionSource() }
     Row(Modifier.padding(top = Spacing.s2), verticalAlignment = Alignment.Bottom) {
         Text(
             "$longitud",
-            style = t.display2.copy(fontFamily = YoungSerif),
-            color = c.brassText,
+            style = t.display2,
+            color = c.textPrimary,
             modifier = Modifier.alignByBaseline(),
         )
         Text(
@@ -379,21 +530,107 @@ private fun Longitud(longitud: Int, onCambio: (Int) -> Unit) {
             val nueva = valor.roundToInt()
             if (nueva != longitud) onCambio(nueva)
         },
-        valueRange = GeneratorOptions.MIN_LENGTH.toFloat()..GeneratorOptions.MAX_LENGTH.toFloat(),
+        modifier = Modifier.fillMaxWidth().semantics {
+            contentDescription = "Longitud"
+            stateDescription = "$longitud caracteres"
+        },
+        interactionSource = interaccion,
         steps = GeneratorOptions.MAX_LENGTH - GeneratorOptions.MIN_LENGTH - 1,
-        colors = SliderDefaults.colors(
-            thumbColor = c.brandPrimary,
-            activeTrackColor = c.brandPrimary,
-            inactiveTrackColor = c.bgSunken,
-            // Ciento y pico pasos: las marcas de cada uno solo serían ruido sobre la pista.
-            activeTickColor = Color.Transparent,
-            inactiveTickColor = Color.Transparent,
-        ),
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Longitud" },
+        thumb = { Pulgar(interaccion) },
+        track = { estado -> Pista(estado.coercedValueAsFraction) },
+        valueRange = GeneratorOptions.MIN_LENGTH.toFloat()..GeneratorOptions.MAX_LENGTH.toFloat(),
     )
-    Row(Modifier.fillMaxWidth()) {
-        Text("${GeneratorOptions.MIN_LENGTH}", style = t.caption, color = c.textTertiary, modifier = Modifier.weight(1f))
-        Text("${GeneratorOptions.MAX_LENGTH}", style = t.caption, color = c.textTertiary)
+    CifrasDeLaRegla()
+}
+
+/** Fracción de la pista en la que cae [longitud]. */
+private fun fraccionDe(longitud: Int): Float =
+    (longitud - GeneratorOptions.MIN_LENGTH).toFloat() / (GeneratorOptions.MAX_LENGTH - GeneratorOptions.MIN_LENGTH)
+
+/** El pulgar: un círculo ciruela con borde de papel y su sombra; al cogerlo crece un poco. */
+@Composable
+private fun Pulgar(interaccion: MutableInteractionSource) {
+    val c = ContrasenoraTheme.colors
+    val reduced = rememberReducedMotion()
+    val pulsado by interaccion.collectIsPressedAsState()
+    val arrastrado by interaccion.collectIsDraggedAsState()
+    val escala by animateFloatAsState(
+        targetValue = if ((pulsado || arrastrado) && !reduced) 1.18f else 1f,
+        animationSpec = tween(Motion.FAST, easing = Motion.Standard),
+        label = "pulgar",
+    )
+    Box(
+        Modifier
+            .size(PulgarLongitud)
+            .graphicsLayer {
+                scaleX = escala
+                scaleY = escala
+            }
+            .sombraPapel(CircleShape, c.isDark, Elevation.md)
+            .background(c.brandPrimary, CircleShape)
+            .border(3.dp, c.bgSurface, CircleShape),
+    )
+}
+
+/** La pista: el resto en gris de borde, lo elegido en ciruela y las marcas de la regla debajo. */
+@Composable
+private fun Pista(fraccion: Float) {
+    val c = ContrasenoraTheme.colors
+    Canvas(Modifier.fillMaxWidth().height(PulgarLongitud)) {
+        val grosor = 6.dp.toPx()
+        val y = size.height / 2
+        val marca = 1.5.dp.toPx()
+        MarcasLongitud.forEach { valor ->
+            val x = (fraccionDe(valor) * size.width).coerceIn(marca, size.width - marca)
+            drawLine(
+                c.borderStrong,
+                Offset(x, y + grosor / 2 + 3.dp.toPx()),
+                Offset(x, y + grosor / 2 + 7.dp.toPx()),
+                strokeWidth = marca,
+                cap = StrokeCap.Round,
+            )
+        }
+        drawLine(c.borderDefault, Offset(grosor / 2, y), Offset(size.width - grosor / 2, y), strokeWidth = grosor, cap = StrokeCap.Round)
+        val hasta = fraccion * size.width
+        if (hasta > grosor / 2) {
+            drawLine(c.brandPrimary, Offset(grosor / 2, y), Offset(hasta, y), strokeWidth = grosor, cap = StrokeCap.Round)
+        }
+    }
+}
+
+/**
+ * Las cifras de la regla, cada una centrada bajo su marca (la pista va de centro a centro del
+ * pulgar) y sin salirse por los lados. Decorativas: TalkBack ya lee la longitud en el deslizador.
+ */
+@Composable
+private fun CifrasDeLaRegla() {
+    val c = ContrasenoraTheme.colors
+    val t = ContrasenoraTheme.type
+    Layout(
+        content = { MarcasLongitud.forEach { Text("$it", style = t.caption, color = c.textTertiary) } },
+        modifier = Modifier.fillMaxWidth().clearAndSetSemantics { },
+    ) { medibles, restricciones ->
+        val cifras = medibles.map { it.measure(restricciones.copy(minWidth = 0, minHeight = 0)) }
+        val ancho = restricciones.maxWidth
+        val radio = PulgarLongitud.roundToPx() / 2
+        val x = cifras.mapIndexed { i, cifra ->
+            val centro = radio + fraccionDe(MarcasLongitud[i]) * (ancho - 2 * radio)
+            (centro - cifra.width / 2f).roundToInt().coerceIn(0, (ancho - cifra.width).coerceAtLeast(0))
+        }
+        // Con letra grande no caben todas: se salta la que pisaría a la anterior (los extremos se quedan).
+        val hueco = Spacing.s2.roundToPx()
+        val quedan = mutableListOf(0)
+        for (i in 1 until cifras.size) {
+            val anterior = quedan.last()
+            val libre = x[i] >= x[anterior] + cifras[anterior].width + hueco
+            when {
+                libre -> quedan += i
+                i == cifras.lastIndex && anterior != 0 -> quedan[quedan.lastIndex] = i
+            }
+        }
+        layout(ancho, cifras.maxOf { it.height }) {
+            quedan.forEach { i -> cifras[i].place(x[i], 0) }
+        }
     }
 }
 

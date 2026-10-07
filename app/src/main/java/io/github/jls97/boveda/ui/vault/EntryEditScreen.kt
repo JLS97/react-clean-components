@@ -1,5 +1,13 @@
 package io.github.jls97.boveda.ui.vault
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,24 +16,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Icon
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import io.github.jls97.boveda.R
+import io.github.jls97.boveda.core.autofill.CredentialMatcher
 import io.github.jls97.boveda.core.vault.EntryLimits
 import io.github.jls97.boveda.ui.components.Apartado
-import io.github.jls97.boveda.ui.components.BotonFantasma
+import io.github.jls97.boveda.ui.components.BotonIcono
 import io.github.jls97.boveda.ui.components.BotonPrimario
 import io.github.jls97.boveda.ui.components.BotonSecundario
 import io.github.jls97.boveda.ui.components.Ficha
@@ -38,8 +44,10 @@ import io.github.jls97.boveda.ui.components.Salida
 import io.github.jls97.boveda.ui.components.StrengthMeter
 import io.github.jls97.boveda.ui.components.autofillTargetLabel
 import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
+import io.github.jls97.boveda.ui.theme.Motion
 import io.github.jls97.boveda.ui.theme.Sizes
 import io.github.jls97.boveda.ui.theme.Spacing
+import io.github.jls97.boveda.ui.theme.rememberReducedMotion
 
 /** Alta y edición de una entrada: un impreso en apartados con «Guardar» en el mostrador. */
 @Composable
@@ -81,9 +89,19 @@ internal fun EdicionContenido(
     snackbar: SnackbarHostState? = null,
     scroll: ScrollState = rememberScrollState(),
 ) {
+    val reduced = rememberReducedMotion()
+    // Al editar, el título es el nombre con el que se abrió la ficha (no cambia mientras se escribe).
+    val nombre = remember(draft.id) { draft.title.trim() }
     Pantalla(
-        titulo = if (isNew) "Nueva entrada" else "Editar entrada",
-        salida = Salida(onBack),
+        titulo = when {
+            isNew -> "Nueva clave"
+            nombre.isEmpty() -> "Editar clave"
+            nombre.length > MAX_TITULO -> nombre.take(MAX_TITULO).trimEnd() + "…"
+            else -> nombre
+        },
+        // Volver descarta lo escrito: es «Cancelar», con la cruz de los formularios.
+        salida = Salida(onBack, R.drawable.ic_cerrar, "Cancelar"),
+        antetitulo = if (isNew) "Ficha nueva" else "Editando la ficha",
         entradilla = "Solo el nombre es obligatorio.",
         snackbar = snackbar,
         ocupado = busy,
@@ -125,7 +143,14 @@ internal fun EdicionContenido(
                 label = "Contraseña",
                 error = EntryLimits.passwordError(draft.password),
             )
-            StrengthMeter(draft.password)
+            // Con el error de límite debajo del campo, el medidor (y su comentario) sobran.
+            AnimatedVisibility(
+                visible = EntryLimits.passwordError(draft.password) == null,
+                enter = if (reduced) EnterTransition.None else fadeIn(tween(Motion.FAST)) + expandVertically(tween(Motion.BASE, easing = Motion.Standard)),
+                exit = if (reduced) ExitTransition.None else fadeOut(tween(Motion.FAST)) + shrinkVertically(tween(Motion.BASE, easing = Motion.Standard)),
+            ) {
+                StrengthMeter(draft.password)
+            }
             BotonSecundario(
                 "Generar una contraseña segura",
                 onGenerate,
@@ -175,7 +200,10 @@ private fun Campos(content: @Composable () -> Unit) {
     Column(Modifier.padding(top = Spacing.s2), verticalArrangement = Arrangement.spacedBy(Spacing.s4)) { content() }
 }
 
-/** «Autorrelleno vinculado a»: una fila por destino, con su llave y «Quitar». */
+/**
+ * «Autorrelleno vinculado a»: una fila por destino, con su llave, el tipo («Web», «App») encima
+ * del valor y la cruz para quitarlo. El valor solo se parte tras «.», «@» o «/».
+ */
 @Composable
 private fun DestinosEditables(destinos: List<String>, onQuitar: (String) -> Unit) {
     val c = ContrasenoraTheme.colors
@@ -186,22 +214,44 @@ private fun DestinosEditables(destinos: List<String>, onQuitar: (String) -> Unit
     ) {
         destinos.forEachIndexed { i, destino ->
             if (i > 0) LineaPunteada(Modifier.padding(end = Spacing.s3))
+            val etiqueta = autofillTargetLabel(destino)
+            val (tipo, valor) = partesDeDestino(destino, etiqueta)
             Row(
                 modifier = Modifier.fillMaxWidth().heightIn(min = Sizes.listItemHeight),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
             ) {
-                val etiqueta = autofillTargetLabel(destino)
-                Icon(painterResource(R.drawable.ic_llave), contentDescription = null, tint = c.textLink, modifier = Modifier.size(Sizes.iconMd))
-                Text(etiqueta, style = t.body, color = c.textPrimary, modifier = Modifier.weight(1f).padding(vertical = Spacing.s3))
-                // Con varios «Quitar» seguidos, TalkBack dice cuál quita cada uno.
-                BotonFantasma(
-                    "Quitar",
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(vertical = Spacing.s3)
+                        .semantics(mergeDescendants = true) { },
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
+                ) {
+                    LlaveDeDestino(t.label)
+                    Column(Modifier.weight(1f)) {
+                        Text(tipo, style = t.label, color = c.textSecondary)
+                        Text(conCortes(valor), style = t.body, color = c.textPrimary)
+                    }
+                }
+                // Con varios seguidos, TalkBack dice cuál quita cada uno.
+                BotonIcono(
+                    R.drawable.ic_cerrar,
+                    "Quitar $etiqueta",
                     { onQuitar(destino) },
-                    Modifier.semantics { contentDescription = "Quitar $etiqueta" },
-                    peligro = true,
+                    tinte = c.dangerFg,
+                    tamanoIcono = Sizes.iconMd,
                 )
             }
         }
     }
 }
+
+/** «Web: banco.es» → «Web» y «banco.es»; lo que no sea web ni app va entero como «Destino». */
+private fun partesDeDestino(destino: String, etiqueta: String): Pair<String, String> {
+    val conocido = destino.startsWith(CredentialMatcher.WEB_PREFIX) || destino.startsWith(CredentialMatcher.APP_PREFIX)
+    val corte = etiqueta.indexOf(": ")
+    return if (conocido && corte > 0) etiqueta.substring(0, corte) to etiqueta.substring(corte + 2) else "Destino" to etiqueta
+}
+
+/** Más largo que esto, el nombre del título se corta con «…» (en la ficha y el fichero va entero). */
+private const val MAX_TITULO = 60
