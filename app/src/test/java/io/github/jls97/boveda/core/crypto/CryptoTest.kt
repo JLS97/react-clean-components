@@ -104,6 +104,9 @@ class CryptoTest {
         assertTrue(default.copy(iterations = default.iterations - 1).isWeakerThan(default))
         assertFalse(default.copy(memoryKiB = default.memoryKiB * 2).isWeakerThan(default))
         assertFalse(default.copy(iterations = default.iterations + 1).isWeakerThan(default))
+        // Either cost below the other's makes it weaker, whatever the rest: more memory does not buy back a pass.
+        assertTrue(default.copy(memoryKiB = default.memoryKiB * 2, iterations = default.iterations - 1).isWeakerThan(default))
+        assertTrue(default.copy(memoryKiB = default.memoryKiB / 2, iterations = default.iterations + 1).isWeakerThan(default))
         // More lanes are not a cheaper derivation on their own.
         assertFalse(default.copy(parallelism = default.parallelism * 2).isWeakerThan(default))
         assertEquals(64L * 1024 * 1024, default.memoryBytes)

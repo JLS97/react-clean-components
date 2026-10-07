@@ -15,6 +15,13 @@ import kotlin.math.abs
  * [MIN_READER_VERSION] instead: a reader that understands less than that refuses the vault, so
  * it can never open it, drop the fields it doesn't know and save the mutilated result over the
  * good one. Fields that an older reader may safely ignore are added without raising it.
+ *
+ * The same policy covers the Argon2id ceilings ([KdfParams.MAX_MEMORY_KIB], 256 MiB, and the
+ * iteration and lane caps): every reader of the current format rejects a header above them, so
+ * they are part of the format. Raising one needs a new major version of the container
+ * (`VaultContainer.FORMAT_VERSION`) together with a [MIN_READER_VERSION] that keeps older readers
+ * out; raising [KdfParams.DEFAULT] within them needs nothing here, since older vaults are moved
+ * to the new costs when they next open with the password.
  */
 object VaultCodec {
     private const val PAYLOAD_VERSION = 1

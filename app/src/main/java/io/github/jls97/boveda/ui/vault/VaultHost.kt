@@ -118,6 +118,8 @@ fun VaultHost(
             entryCount = entries.size,
             otpAccess = state.otpAccess,
             otpCount = entries.count { it.otp != null },
+            kdfParams = state.kdfParams,
+            kdfUpgradeWarning = state.kdfUpgradeWarning,
             onRecoverOtp = { viewModel.navigate(Route.OtpRecover) },
             onNewRecoveryCode = {
                 otp.beginRecoveryCode()
