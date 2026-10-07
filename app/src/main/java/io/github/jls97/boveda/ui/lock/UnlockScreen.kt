@@ -232,7 +232,7 @@ fun UnlockScreen(
                 }
                 if (canUndoRestore) {
                     TextButton(onClick = { confirmUndo = true }, enabled = !ui.busy) {
-                        Text("Deshacer la última restauración")
+                        Text("Volver a la bóveda anterior")
                     }
                 }
             }

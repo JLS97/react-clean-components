@@ -10,7 +10,7 @@ import io.github.jls97.boveda.core.vault.VaultEntry
  */
 object FillWarnings {
     const val UNENCRYPTED =
-        "Página sin cifrar: la dirección de abajo se abre por http, no https, así que cualquiera en " +
+        "Página sin cifrar: la dirección de arriba se abre por http, no https, así que cualquiera en " +
             "la red podría estar sirviendo este formulario."
     const val BROWSER_WITHOUT_DOMAIN =
         "El navegador no ha indicado qué web muestra, así que un vínculo a él alcanzaría " +

@@ -127,7 +127,13 @@ class VaultSessionTest {
     }
 
     private inner class FakeFingerprintKeys(var enabled: Boolean) : FingerprintKeys {
-        override fun isEnabled(): Boolean = enabled
+        /** Lo que lanza el Keystore al consultarlo, como un StrongBox ocupado. */
+        var failure: Exception? = null
+
+        override fun isEnabled(): Boolean {
+            failure?.let { throw it }
+            return enabled
+        }
 
         override fun enrollmentCipher(): Cipher = throw GeneralSecurityException("Sin huella en la JVM")
 
@@ -241,6 +247,17 @@ class VaultSessionTest {
         deviceSecure = { true },
         elapsedRealtime = { now },
     )
+
+    @Test
+    fun aKeystoreThatDoesNotAnswerReadsAsFingerprintOffInsteadOfCrashing() {
+        // La pantalla de desbloqueo consulta la huella mientras se compone: una excepción ahí cerraría la app.
+        val session = newSession()
+        fingerprint.enabled = true
+        fingerprint.failure = KeystoreUnavailableException("Keystore ocupado")
+        assertFalse(session.isBiometricEnabled())
+        fingerprint.failure = null
+        assertTrue(session.isBiometricEnabled())
+    }
 
     @After
     fun stopAutoLockTimers() {

@@ -40,17 +40,18 @@ fun RestoreUndoBanner(viewModel: VaultViewModel, onRestoreUndone: () -> Unit) {
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Text(
-                "Has restaurado una copia: la contraseña maestra es la de la copia y la huella está " +
-                    "desactivada. La bóveda anterior se conserva hasta la próxima restauración.",
+                "Este teléfono conserva la bóveda anterior: la que estaba en su sitio antes de la última " +
+                    "restauración o del último cambio. Cada una se abre con su propia contraseña maestra y, " +
+                    "al cambiar de una a otra, la huella se desactiva.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { action = UndoAction.UNDO }, enabled = !viewModel.busy) {
-                    Text("Deshacer restauración")
+                    Text("Volver a la anterior")
                 }
                 TextButton(onClick = { action = UndoAction.DISCARD }, enabled = !viewModel.busy) {
-                    Text("Descartar copia anterior")
+                    Text("Descartar la anterior")
                 }
             }
         }
@@ -98,7 +99,7 @@ fun RestoreUndoDialogs(
         }
         UndoAction.DISCARD -> ConfirmDialog(
             title = "¿Descartar la bóveda anterior?",
-            text = "Se borrará la copia de la bóveda que sustituyó la última restauración. No se puede deshacer.",
+            text = "Se borrará para siempre la bóveda anterior que se conserva en este teléfono. No se puede deshacer.",
             confirmLabel = "Descartar",
             onConfirm = {
                 onDismiss()

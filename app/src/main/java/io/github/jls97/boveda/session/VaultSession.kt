@@ -238,7 +238,20 @@ class VaultSession internal constructor(
         if (AutoLockPolicy.shouldLockOnBackground(current.data.settings.autoLockSeconds, isExternalActivityExpected())) lock()
     }
 
-    fun isBiometricEnabled(): Boolean = biometricKeys.isEnabled()
+    /**
+     * Whether fingerprint unlock is set up. Only a hint for the unlock screen, which calls it while
+     * composing: a Keystore that does not answer (busy StrongBox, daemon restarting) must not crash
+     * the app there, so it reads as "off" and the password field shows; the fingerprint comes back
+     * on the next unlock screen once the Keystore answers.
+     */
+    fun isBiometricEnabled(): Boolean =
+        try {
+            biometricKeys.isEnabled()
+        } catch (e: GeneralSecurityException) {
+            false
+        } catch (e: ProviderException) {
+            false
+        }
 
     /** Forgets every key and decrypted value. Safe to call at any time and more than once. */
     fun lock() {

@@ -437,15 +437,15 @@ fun SettingsScreen(
                     headlineContent = { Text("Volver a la bóveda anterior") },
                     supportingContent = {
                         Text(
-                            "Deshace la última restauración: la bóveda de antes vuelve, bloqueada y sin huella, " +
-                                "y la de ahora se guarda en su lugar. Pide la contraseña maestra.",
+                            "Pone en su sitio la bóveda que había antes de la última restauración o del último " +
+                                "cambio, bloqueada y sin huella, y guarda la de ahora en su lugar. Pide la contraseña maestra.",
                         )
                     },
                     modifier = Modifier.clickable(enabled = !viewModel.busy) { undoAction = UndoAction.UNDO },
                 )
                 ListItem(
                     headlineContent = { Text("Descartar la bóveda anterior") },
-                    supportingContent = { Text("Borra la copia de la bóveda que sustituyó la última restauración. No se puede deshacer.") },
+                    supportingContent = { Text("Borra para siempre la bóveda anterior que se conserva en este teléfono. No se puede deshacer.") },
                     modifier = Modifier.clickable(enabled = !viewModel.busy) { undoAction = UndoAction.DISCARD },
                 )
             }
