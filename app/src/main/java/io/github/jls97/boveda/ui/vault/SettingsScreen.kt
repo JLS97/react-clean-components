@@ -188,10 +188,13 @@ fun SettingsScreen(
             viewModel.message("No se pudo preparar la huella. Comprueba que tienes una registrada.")
             return
         }
-        BiometricPrompts.authenticate(activity, "Activar huella", "Confirma con tu huella", cipher) { authorized, error ->
+        // La contraseña maestra acaba de comprobarse: el botón negativo solo puede ser «Cancelar».
+        BiometricPrompts.authenticate(activity, "Activar huella", "Confirma con tu huella", cipher, negativeLabel = "Cancelar") { authorized, error ->
             when {
                 authorized != null -> viewModel.enableBiometric(authorized)
                 error != null -> viewModel.message(error)
+                // «Cancelar» o cierre del diálogo: la huella sigue desactivada y se dice.
+                else -> viewModel.message("Activación cancelada. El desbloqueo con huella sigue desactivado.")
             }
         }
     }

@@ -214,26 +214,30 @@ class VaultTest {
             6 to VaultCodec.MAX_NOTES_BYTES,
             9 to VaultCodec.MAX_AUTOFILL_TARGETS_BYTES,
         )
-        assertEquals(mapOf(2 to 1_024, 3 to 1_024, 4 to 4_096, 5 to 2_048, 6 to 65_536, 9 to 16_384), limits)
+        // Format ceilings (R05-3): 256 KiB per field, 1 MiB for the notes. What a person may type
+        // is bounded far lower by EntryLimits, which the editor and the autofill save enforce.
+        assertEquals(mapOf(2 to 262_144, 3 to 262_144, 4 to 262_144, 5 to 262_144, 6 to 1_048_576, 9 to 262_144), limits)
         for ((tag, limit) in limits) {
             val atLimit = rawPayload(entries = listOf(mapOf(entryId to "a1", tag to "x".repeat(limit))))
             assertEquals(1, VaultCodec.decode(atLimit).entries.size)
             try {
                 VaultCodec.decode(rawPayload(entries = listOf(mapOf(entryId to "a1", tag to "x".repeat(limit + 1)))))
                 fail("A field of tag $tag with ${limit + 1} bytes was accepted")
-            } catch (expected: CorruptedVaultException) {
+            } catch (expected: OversizedFieldException) {
+                // Not "damaged": the file is well formed, only too large for this version.
+                assertTrue(expected is UnsupportedVaultException)
             }
         }
         // Multi-byte characters count in UTF-8 bytes, not in chars.
         try {
             VaultCodec.decode(rawPayload(entries = listOf(mapOf(entryId to "a1", 2 to "ñ".repeat(VaultCodec.MAX_TITLE_BYTES / 2 + 1)))))
             fail("A title above the limit in UTF-8 bytes was accepted")
-        } catch (expected: CorruptedVaultException) {
+        } catch (expected: OversizedFieldException) {
         }
         try {
             VaultCodec.decode(rawPayload(entries = listOf(mapOf(entryId to "i".repeat(VaultCodec.MAX_ID_BYTES + 1)))))
             fail("An id above the limit was accepted")
-        } catch (expected: CorruptedVaultException) {
+        } catch (expected: OversizedFieldException) {
         }
 
         val base = sampleData.entries[0]
@@ -251,6 +255,8 @@ class VaultTest {
                 VaultCodec.encode(VaultData(entries = listOf(entry)))
                 fail("An oversized field was encoded")
             } catch (expected: IllegalArgumentException) {
+                // Its own type, so the session can name the cause instead of "error interno".
+                assertTrue(expected is FieldTooLongException)
             }
         }
         val atLimits = base.copy(
@@ -259,6 +265,31 @@ class VaultTest {
             password = "p".repeat(VaultCodec.MAX_PASSWORD_BYTES),
         )
         assertEquals(atLimits, VaultCodec.decode(VaultCodec.encode(VaultData(entries = listOf(atLimits)))).entries[0])
+    }
+
+    /**
+     * Vaults written by 0.1 and 0.2 had no field limits. One with a field above what the editor
+     * accepts today (EntryLimits) but under the format ceiling must still open, and must save
+     * again without the encoder refusing it (R05-3).
+     */
+    @Test
+    fun oldVaultsWithFieldsAboveTheTypingLimitsStillOpenAndSaveAgain() {
+        val notes = "n".repeat(70 * 1_024)
+        val password = "p".repeat(EntryLimits.PASSWORD_BYTES + 1)
+        val title = "ñ".repeat(EntryLimits.TITLE_BYTES)
+        assertTrue(notes.length > EntryLimits.NOTES_BYTES && notes.length <= VaultCodec.MAX_NOTES_BYTES)
+        assertTrue(EntryLimits.utf8Size(title) > EntryLimits.TITLE_BYTES)
+        val old = rawPayload(entries = listOf(mapOf(entryId to "a1", 2 to title, 4 to password, 6 to notes)))
+
+        val decoded = VaultCodec.decode(old)
+        assertEquals(1, decoded.entries.size)
+        assertEquals(notes, decoded.entries[0].notes)
+        assertEquals(password, decoded.entries[0].password)
+        assertEquals(title, decoded.entries[0].title)
+        // Nothing is truncated on the way out either, and saving it again is not an error.
+        assertEquals(decoded, VaultCodec.decode(VaultCodec.encode(decoded)))
+        // The same entry is what the interface refuses to produce, with a message naming the field.
+        assertEquals("El nombre supera 1 KB; recórtalo.", EntryLimits.oversizedField(decoded.entries[0]))
     }
 
     @Test
@@ -625,22 +656,35 @@ class VaultTest {
     fun containerRejectsKdfCostsAboveTheMemoryOfTheProcess() {
         val created = VaultContainer.create("clave".toCharArray(), sampleData, testParams)
         val blob = VaultContainer.seal(created.header, created.dek, created.data)
-        // The 64 KiB of testParams do not fit in half of a 64 KiB heap: refused before Argon2 runs.
+        // A header asking for 65 MiB (above DEFAULT) does not fit in half of a 128 MiB heap:
+        // refused before Argon2 runs. memoryKiB lives right after magic, version and kdf id (bytes 6..9).
+        val aboveDefault = KdfParams(KdfParams.DEFAULT.memoryKiB + 1024, 3, 4)
+        val hostile = blob.copyOf()
+        hostile[6] = (aboveDefault.memoryKiB ushr 24).toByte()
+        hostile[7] = (aboveDefault.memoryKiB ushr 16).toByte()
+        hostile[8] = (aboveDefault.memoryKiB ushr 8).toByte()
+        hostile[9] = aboveDefault.memoryKiB.toByte()
         try {
-            VaultContainer.open(blob, "clave".toCharArray(), maxHeapBytes = 64 * 1024L)
+            VaultContainer.open(hostile, "clave".toCharArray(), maxHeapBytes = 128L * 1024 * 1024)
             fail("A KDF above the memory of the process was run")
         } catch (expected: KdfMemoryException) {
             assertTrue(expected is UnsupportedVaultException)
         }
-        assertEquals(sampleData, VaultContainer.open(blob, "clave".toCharArray(), maxHeapBytes = 128 * 1024L).data)
+        // Costs the app itself writes open on any heap (R05-4): a 96 MiB heap, as on Android Go,
+        // used to refuse every vault and backup made with KdfParams.DEFAULT.
+        assertEquals(sampleData, VaultContainer.open(blob, "clave".toCharArray(), maxHeapBytes = 64 * 1024L).data)
+        VaultContainer.ensureKdfFitsInMemory(KdfParams.DEFAULT, 96L * 1024 * 1024)
+        VaultContainer.ensureKdfFitsInMemory(KdfParams.DEFAULT, 1L)
+        VaultContainer.ensureKdfFitsInMemory(testParams, 1L)
 
-        // The default costs (64 MiB) need a heap of at least 128 MiB; the hard cap holds regardless.
-        VaultContainer.ensureKdfFitsInMemory(KdfParams.DEFAULT, 128L * 1024 * 1024)
+        // Above DEFAULT the relative check applies: 65 MiB needs a heap of at least 130 MiB.
+        VaultContainer.ensureKdfFitsInMemory(aboveDefault, 130L * 1024 * 1024)
         try {
-            VaultContainer.ensureKdfFitsInMemory(KdfParams.DEFAULT, 128L * 1024 * 1024 - 1)
-            fail("The default costs were accepted for a heap too small for them")
+            VaultContainer.ensureKdfFitsInMemory(aboveDefault, 130L * 1024 * 1024 - 1)
+            fail("Costs above the default were accepted for a heap too small for them")
         } catch (expected: KdfMemoryException) {
         }
+        // The hard cap holds regardless of the heap.
         val cap = KdfParams(KdfParams.MAX_MEMORY_KIB, 1, 1)
         VaultContainer.ensureKdfFitsInMemory(cap, Long.MAX_VALUE)
     }

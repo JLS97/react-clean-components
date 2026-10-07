@@ -59,9 +59,19 @@ import kotlinx.coroutines.launch
  * Pantalla de desbloqueo. [requestContext] es, en el autorrelleno, para quién se va a rellenar
  * (p. ej. «Para: com.ejemplo.app»); se muestra bajo el título para que la pantalla no sea genérica
  * (M-04). En la app principal queda a null.
+ *
+ * [onUsePasswordInApp], solo en el autorrelleno: con la huella activada, «Usar contraseña» no
+ * despliega el campo en esta pantalla, que vive dentro de la tarea de la app que pide el relleno,
+ * sino que abre Bóveda desde su propia tarea y cierra esta (M-04). Así la contraseña maestra no se
+ * teclea nunca encima de otra app mientras haya huella.
  */
 @Composable
-fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true, requestContext: String? = null) {
+fun UnlockScreen(
+    viewModel: LockViewModel,
+    allowRestore: Boolean = true,
+    requestContext: String? = null,
+    onUsePasswordInApp: (() -> Unit)? = null,
+) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -93,6 +103,11 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true, request
         now = System.currentTimeMillis()
     }
 
+    /** «Usar contraseña»: en la app, despliega el campo; en el autorrelleno, abre Bóveda (M-04). */
+    fun usePasswordInstead() {
+        if (onUsePasswordInApp != null) onUsePasswordInApp() else usePassword = true
+    }
+
     fun promptFingerprint() {
         val activity = context.findActivity() ?: return
         val cipher = viewModel.biometricCipher()
@@ -103,7 +118,16 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true, request
             )
             return
         }
-        BiometricPrompts.authenticate(activity, "Desbloquear Bóveda", "Confirma con tu huella", cipher) { authorized, error ->
+        // Con el campo plegado el botón negativo promete la contraseña y debe cumplirlo; con el
+        // campo a la vista solo puede ser «Cancelar». Cerrar el diálogo (atrás) no cambia nada.
+        BiometricPrompts.authenticate(
+            activity,
+            "Desbloquear Bóveda",
+            "Confirma con tu huella",
+            cipher,
+            negativeLabel = if (usePassword) "Cancelar" else "Usar contraseña",
+            onNegative = { if (!usePassword) usePasswordInstead() },
+        ) { authorized, error ->
             when {
                 authorized != null -> viewModel.unlockWithBiometric(authorized)
                 error != null -> viewModel.showError(error)
@@ -187,8 +211,16 @@ fun UnlockScreen(viewModel: LockViewModel, allowRestore: Boolean = true, request
                         Button(onClick = { promptFingerprint() }, modifier = Modifier.fillMaxWidth()) {
                             Text("Usar huella")
                         }
-                        TextButton(onClick = { usePassword = true }, modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { usePasswordInstead() }, modifier = Modifier.fillMaxWidth()) {
                             Text("Usar contraseña")
+                        }
+                        if (onUsePasswordInApp != null) {
+                            Text(
+                                "Se abrirá Bóveda: la contraseña maestra no se escribe en esta pantalla, que " +
+                                    "aparece encima de otra app.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }

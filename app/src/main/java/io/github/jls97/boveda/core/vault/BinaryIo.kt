@@ -117,12 +117,13 @@ internal fun ByteWriter.putBytesField(tag: Int, value: ByteArray) {
 
 /**
  * Writes a string field. [maxBytes] is the limit the reader will enforce on this tag, so nothing
- * gets persisted that could not be read back; exceeding it is a programming error.
+ * gets persisted that could not be read back; exceeding it is a programming error
+ * ([FieldTooLongException], an [IllegalArgumentException]).
  */
 internal fun ByteWriter.putStringField(tag: Int, value: String, maxBytes: Int = Int.MAX_VALUE) {
     val encoded = value.toByteArray(Charsets.UTF_8)
     try {
-        require(encoded.size <= maxBytes) { "Field $tag exceeds $maxBytes bytes" }
+        if (encoded.size > maxBytes) throw FieldTooLongException("Field $tag exceeds $maxBytes bytes")
         putBytesField(tag, encoded)
     } finally {
         encoded.wipe()

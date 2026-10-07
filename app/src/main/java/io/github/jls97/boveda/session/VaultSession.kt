@@ -11,7 +11,9 @@ import io.github.jls97.boveda.core.otp.WrongRecoveryCodeException
 import io.github.jls97.boveda.core.vault.CorruptedVaultException
 import io.github.jls97.boveda.core.vault.DeviceBindingException
 import io.github.jls97.boveda.core.vault.DeviceLayer
+import io.github.jls97.boveda.core.vault.FieldTooLongException
 import io.github.jls97.boveda.core.vault.KdfMemoryException
+import io.github.jls97.boveda.core.vault.OversizedFieldException
 import io.github.jls97.boveda.core.vault.UnsupportedVaultException
 import io.github.jls97.boveda.core.vault.VaultContainer
 import io.github.jls97.boveda.core.vault.VaultData
@@ -1355,10 +1357,14 @@ class VaultSession private constructor(
         is KdfMemoryException ->
             "Este archivo pide más memoria de la que permite el teléfono para comprobar la contraseña. " +
                 "No se ha escrito nada."
+        // Well formed, just above a ceiling of this version: the file is not accused of damage.
+        is OversizedFieldException -> "Una entrada tiene un campo demasiado grande para esta versión de Bóveda."
         is UnsupportedVaultException -> "Formato de bóveda no compatible o archivo modificado."
         is VaultException -> "Error de la bóveda."
         is IOException -> "No se pudo leer o escribir el archivo."
         is GeneralSecurityException, is ProviderException -> "El almacén de claves del sistema rechazó la operación."
+        // The codec refused a field above the format ceiling before sealing anything.
+        is FieldTooLongException -> "Un campo de la entrada es demasiado largo para guardarlo. No se ha escrito nada."
         // AesGcm refused a wiped (all-zero) key before sealing anything: the file is untouched.
         is IllegalArgumentException -> "Error interno: no se ha escrito nada"
         else -> "Error inesperado."

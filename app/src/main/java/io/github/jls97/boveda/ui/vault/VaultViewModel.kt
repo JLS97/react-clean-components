@@ -12,6 +12,7 @@ import io.github.jls97.boveda.core.crypto.wipe
 import io.github.jls97.boveda.core.generator.GeneratorOptions
 import io.github.jls97.boveda.core.generator.PasswordGenerator
 import io.github.jls97.boveda.core.otp.RecoveryCode
+import io.github.jls97.boveda.core.vault.EntryLimits
 import io.github.jls97.boveda.core.vault.VaultData
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.core.vault.VaultSettings
@@ -251,6 +252,11 @@ class VaultViewModel(
             // The 2FA secret is edited from its own screens and never goes through the form.
             otp = existing?.otp,
         )
+        // Límites de uso, en bytes UTF-8, antes de que el códec los rechace sin decir qué campo.
+        EntryLimits.oversizedField(entry)?.let { oversized ->
+            message(oversized)
+            return
+        }
         launchBusy {
             when (val result = session.saveEntry(entry)) {
                 OperationResult.Success -> {
