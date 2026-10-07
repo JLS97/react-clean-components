@@ -1,8 +1,13 @@
 package io.github.jls97.boveda.ui.components
 
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -21,20 +26,25 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import io.github.jls97.boveda.R
 import io.github.jls97.boveda.ui.theme.ContrasenoraShapes
 import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
 import io.github.jls97.boveda.ui.theme.Motion
 import io.github.jls97.boveda.ui.theme.Sizes
 import io.github.jls97.boveda.ui.theme.Spacing
 import io.github.jls97.boveda.ui.theme.rememberReducedMotion
+import kotlinx.coroutines.delay
 
 // El texto de un botón dice exactamente lo que hace («Guardar contraseña»), nunca un chiste.
 
@@ -195,5 +205,54 @@ fun BotonIcono(
         ),
     ) {
         Icon(painterResource(icono), contentDescription = descripcion, modifier = Modifier.size(tamanoIcono))
+    }
+}
+
+/**
+ * Botón de copiar con respuesta: al pulsarlo, el icono se convierte un momento en una marca de
+ * conforme (en verde ciprés) y vuelve solo. TalkBack oye «Copiada» mientras dura.
+ */
+@Composable
+fun BotonCopiar(
+    descripcion: String,
+    onCopiar: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    tamanoIcono: Dp = Sizes.iconMd,
+) {
+    val c = ContrasenoraTheme.colors
+    var copiado by remember { mutableStateOf(false) }
+    LaunchedEffect(copiado) {
+        if (copiado) {
+            delay(1_400)
+            copiado = false
+        }
+    }
+    val interaccion = remember { MutableInteractionSource() }
+    IconButton(
+        onClick = {
+            onCopiar()
+            copiado = true
+        },
+        modifier = modifier.size(Sizes.touchTarget).hundir(interaccion),
+        enabled = enabled,
+        interactionSource = interaccion,
+        colors = IconButtonDefaults.iconButtonColors(contentColor = c.textSecondary, disabledContentColor = c.textDisabled),
+    ) {
+        AnimatedContent(
+            targetState = copiado,
+            transitionSpec = {
+                (fadeIn(tween(Motion.FAST)) + scaleIn(tween(Motion.BASE, easing = Motion.Emphasized), initialScale = 0.6f)) togetherWith
+                    fadeOut(tween(Motion.FAST))
+            },
+            label = "copiar",
+        ) { hecho ->
+            Icon(
+                painterResource(if (hecho) R.drawable.ic_check else R.drawable.ic_copiar),
+                contentDescription = if (hecho) "Copiada" else descripcion,
+                tint = if (hecho) c.successFg else c.textSecondary,
+                modifier = Modifier.size(tamanoIcono),
+            )
+        }
     }
 }

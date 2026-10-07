@@ -41,6 +41,7 @@ import io.github.jls97.boveda.R
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.ui.components.Aviso
 import io.github.jls97.boveda.ui.components.BarraSuperior
+import io.github.jls97.boveda.ui.components.BotonCopiar
 import io.github.jls97.boveda.ui.components.BotonFantasma
 import io.github.jls97.boveda.ui.components.BotonIcono
 import io.github.jls97.boveda.ui.components.BotonSecundario
@@ -258,7 +259,7 @@ private fun FilaFichero(
                 Etiqueta("2FA", Modifier.padding(start = Spacing.s2), icono = R.drawable.ic_reloj)
             }
             if (entry.password.isNotEmpty()) {
-                BotonIcono(R.drawable.ic_copiar, "Copiar contraseña de $nombre", onCopyPassword, tamanoIcono = Sizes.iconMd)
+                BotonCopiar("Copiar contraseña de $nombre", onCopyPassword)
             } else {
                 Spacer(Modifier.width(Spacing.s3))
             }
