@@ -9,6 +9,7 @@ Complemento de `AUDITORIA_SEGURIDAD.md`. Mismos identificadores (B‑xx, I‑xx)
 #### B-01 · No se detecta ni avisa de «mismo paquete, firma distinta»: la señal más fuerte de app suplantada se pierde en un aviso genérico
 
 - **Severidad:** Baja (los auditores proponían media; ajustada tras la verificación)
+- **Estado:** Corregido (a04-phishing-signals-ui)
 - **Dónde:** `core/autofill/CredentialMatcher.kt:114`
 - **Categoría:** autofill-phishing · **Dimensiones que lo detectaron:** atacante-app-maliciosa
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -34,6 +35,7 @@ AutofillScreens.kt:428-429  texto: «No hay ninguna entrada vinculada a esta app
 #### B-02 · Un navegador de confianza sin dominio se trata como app vinculable: el vínculo alcanza cualquier página sin webDomain
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a03-domain-matching-psl)
 - **Dónde:** `core/autofill/CredentialMatcher.kt:52`
 - **Categoría:** autofill-phishing · **Dimensiones que lo detectaron:** autofill
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -66,6 +68,7 @@ AutofillLogicTest.kt:168-171
 #### B-03 · Domains.host no normaliza IDN: acepta letras Unicode (homógrafos, mixed-script) sin convertir a punycode; www. simple y hosts numéricos
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a03-domain-matching-psl)
 - **Dónde:** `core/autofill/CredentialMatcher.kt:18`
 - **Categoría:** autofill-phishing · **Dimensiones que lo detectaron:** parsing, autofill
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -100,6 +103,7 @@ AutofillScreens.kt:215
 #### B-04 · La lista «de navegadores» es la de apps privilegiadas FIDO de Google: incluye apps que no son navegadores y un paquete .debug, en contra del README («63 navegadores»)
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a01-trusted-browsers)
 - **Dónde:** `core/autofill/TrustedBrowsers.kt:43`
 - **Categoría:** docs-mismatch · **Dimensiones que lo detectaron:** autofill, docs
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -136,6 +140,7 @@ README.md:43-45
 #### B-05 · La lista de navegadores de confianza caduca: una rotación de certificado degrada el antiphishing a avisos permanentes
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a01-trusted-browsers)
 - **Dónde:** `core/autofill/TrustedBrowsers.kt:14`
 - **Categoría:** autofill-phishing · **Dimensiones que lo detectaron:** operador-y-futuro
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -181,6 +186,7 @@ CredentialMatcher.kt:71-75
 #### B-06 · Argon2id se ejecuta con los parámetros KDF del archivo hostil (hasta 256 MiB × 16 pasadas) antes de validar nada más: OutOfMemoryError no capturado o cuelgue al restaurar una copia
 
 - **Severidad:** Baja
+- **Estado:** Corregido (b07-parser-robustness)
 - **Dónde:** `core/vault/VaultContainer.kt:72`
 - **Categoría:** parsing · **Dimensiones que lo detectaron:** parsing, crypto
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -228,6 +234,7 @@ AndroidManifest.xml:25-33: <application ...> sin android:largeHeap
 #### B-07 · VaultCodec.decode no exige ids de entrada únicos: una copia con ids duplicados hace que LazyColumn lance excepción en cada desbloqueo
 
 - **Severidad:** Baja
+- **Estado:** Corregido (b07-parser-robustness)
 - **Dónde:** `core/vault/VaultCodec.kt:122`
 - **Categoría:** parsing · **Dimensiones que lo detectaron:** parsing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -261,6 +268,7 @@ VaultSession.kt:316-318 (restoreBackup escribe el archivo antes de publicar)
 #### B-08 · Los ajustes leídos del archivo (autoLockSeconds, clipboardClearSeconds) no se validan: un valor negativo desactiva el bloqueo por inactividad
 
 - **Severidad:** Baja
+- **Estado:** Corregido (b07-parser-robustness)
 - **Dónde:** `core/vault/VaultCodec.kt:82`
 - **Categoría:** parsing · **Dimensiones que lo detectaron:** parsing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -293,6 +301,7 @@ Components.kt:223-228 autoLockLabel: seconds < 60 -> "$seconds segundos"
 #### B-09 · Sin límite de longitud por campo: un título o notas de decenas de MB en una copia se persisten y cuelgan la interfaz en cada desbloqueo
 
 - **Severidad:** Baja
+- **Estado:** Corregido (b07-parser-robustness)
 - **Dónde:** `core/vault/BinaryIo.kt:136`
 - **Categoría:** parsing · **Dimensiones que lo detectaron:** parsing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -329,6 +338,7 @@ EntryDetailScreen.kt:103
 #### B-10 · Campos de contraseña «visibles» pero ocultos (alfa 0, 0 px, fuera de pantalla) se rellenan sin avisar qué campos recibirán datos
 
 - **Severidad:** Baja (los auditores proponían media; ajustada tras la verificación)
+- **Estado:** Corregido (a02-structure-parser-origin)
 - **Dónde:** `autofill/StructureParser.kt:43`
 - **Categoría:** autofill-phishing · **Dimensiones que lo detectaron:** atacante-app-maliciosa
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -354,6 +364,7 @@ AutofillScreens.kt:212-241  la cabecera de PickEntryScreen muestra «App: …»,
 #### B-11 · No se comprueba webScheme: las credenciales de un dominio se ofrecen también en páginas http:// del mismo host
 
 - **Severidad:** Baja (los auditores proponían media; ajustada tras la verificación)
+- **Estado:** Corregido (a02-structure-parser-origin)
 - **Dónde:** `autofill/StructureParser.kt:41`
 - **Categoría:** autofill-phishing · **Dimensiones que lo detectaron:** autofill
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -380,6 +391,7 @@ CredentialMatcher.kt:45
 #### B-12 · Guardado por autorrelleno preselecciona sobrescribir la entrada vinculada sin mostrar la contraseña capturada, sin historial ni deshacer
 
 - **Severidad:** Baja (los auditores proponían media; ajustada tras la verificación)
+- **Estado:** Corregido (a05-save-flow)
 - **Dónde:** `autofill/AutofillScreens.kt:301`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** ui, atacante-app-maliciosa
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -415,6 +427,7 @@ VaultModel.kt:6-19  VaultEntry no tiene campo de contraseñas anteriores.
 #### B-13 · StructureParser.visit es recursivo sin cota y onFillRequest solo captura Exception: un árbol de vistas profundo provoca StackOverflowError y mata el proceso
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a02-structure-parser-origin)
 - **Dónde:** `autofill/StructureParser.kt:51`
 - **Categoría:** parsing · **Dimensiones que lo detectaron:** parsing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -448,6 +461,7 @@ BovedaAutofillService.kt:28-31
 #### B-14 · El dominio «reclamado» por una app no navegador se muestra en el aviso sin sanear (RTL, control, saltos de línea): spoofing textual dentro de la propia advertencia
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a04-phishing-signals-ui)
 - **Dónde:** `autofill/AutofillScreens.kt:415`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** parsing, autofill
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -479,6 +493,7 @@ StructureParser.kt:41
 #### B-15 · AutofillActivity no vuelve a bloquear si el desbloqueo ocurrió dentro de ella pero la bóveda estaba abierta al crearse
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a06-autofill-activity-hardening)
 - **Dónde:** `autofill/AutofillActivity.kt:107`
 - **Categoría:** session · **Dimensiones que lo detectaron:** session
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -506,6 +521,7 @@ README.md:55-56  "Se vuelve a bloquear. Si la bóveda estaba bloqueada, se bloqu
 #### B-16 · AutofillViewModel.pick entrega usuario y contraseña a la otra app aunque la bóveda se haya bloqueado durante el guardado del vínculo
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a05-save-flow)
 - **Dónde:** `autofill/AutofillViewModel.kt:42`
 - **Categoría:** session · **Dimensiones que lo detectaron:** session
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -537,6 +553,7 @@ VaultSession.kt:629-632 (contraste, revealOtp sí comprueba)  if (lockCount != l
 #### B-17 · PendingSaves retiene en memoria credenciales en claro de otras apps sin caducidad efectiva ni límite de tamaño; el README promete que caducan a los 5 minutos
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a05-save-flow)
 - **Dónde:** `autofill/PendingSaves.kt:43`
 - **Categoría:** memory · **Dimensiones que lo detectaron:** session, ui, docs, privacy, atacante-app-maliciosa
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -583,6 +600,7 @@ README.md:57-59
 #### B-18 · La identidad del solicitante viaja en extras de un PendingIntent mutable que recibe la app rellenada: el antiphishing descansa en la precedencia de Intent.fillIn y en que todos los extras estén prefijados
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a06-autofill-activity-hardening)
 - **Dónde:** `autofill/AutofillActivity.kt:152`
 - **Categoría:** platform-hardening · **Dimensiones que lo detectaron:** autofill, atacante-app-maliciosa
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -621,6 +639,7 @@ AutofillActivity.kt:189-196  readRequest MODE_FILL confía en `EXTRA_PACKAGE` y 
 #### B-19 · Avisos antiphishing debilitados: color atenuado en el caso más común y prompt biométrico 2FA sin destino
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a04-phishing-signals-ui)
 - **Dónde:** `autofill/AutofillScreens.kt:222`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** autofill
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -650,6 +669,7 @@ AutofillScreens.kt:126-131
 #### B-20 · Se aceptan certificados antiguos del historial de firma para confiar en navegadores y vínculos de apps
 
 - **Severidad:** Baja
+- **Estado:** Corregido (a06-autofill-activity-hardening)
 - **Dónde:** `autofill/AppSigners.kt:32`
 - **Categoría:** autofill-phishing · **Dimensiones que lo detectaron:** autofill
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -679,6 +699,7 @@ CredentialMatcher.kt:114
 #### B-21 · Cualquier huella ya registrada en el teléfono abre la bóveda y los códigos 2FA; el README afirma además que borrar una huella destruye la clave
 
 - **Severidad:** Baja
+- **Estado:** Corregido (d03-android-test-otp-migration-biometric-warning)
 - **Dónde:** `README.md:85`
 - **Categoría:** docs-mismatch · **Dimensiones que lo detectaron:** atacante-acceso-fisico, bruteforce, crypto, docs
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -730,6 +751,7 @@ OtpScreens.kt:638-639: «Pasa al restaurar una copia, al estr
 #### B-22 · Sin verificación de integridad de dependencias de Gradle (verification-metadata.xml) ni lockfiles; repositorios sin filtro de contenido
 
 - **Severidad:** Baja
+- **Estado:** Corregido (c04-supply-chain-build)
 - **Dónde:** `settings.gradle.kts:15`
 - **Categoría:** supply-chain · **Dimensiones que lo detectaron:** platform, supplychain
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -767,6 +789,7 @@ app/build.gradle.kts:29-32:
 #### B-23 · Clave de firma release sin plan de custodia: perderla obliga a desinstalar (pérdida de bóveda, claves Keystore y 2FA); filtrarla permite actualizaciones troyanizadas
 
 - **Severidad:** Baja (los auditores proponían media; ajustada tras la verificación)
+- **Estado:** Corregido (c04-supply-chain-build)
 - **Dónde:** `README.md:185`
 - **Categoría:** key-management · **Dimensiones que lo detectaron:** supplychain, operador-y-futuro
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -801,6 +824,7 @@ VaultStorage.kt:9-13
 #### B-24 · Sin CI, Dependabot ni protección de rama: tests, lint y revisión de dependencias solo se ejecutan a mano
 
 - **Severidad:** Baja
+- **Estado:** Corregido (c04-supply-chain-build)
 - **Dónde:** `README.md:201`
 - **Categoría:** testing · **Dimensiones que lo detectaron:** supplychain, testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -833,6 +857,7 @@ app/src/androidTest/java/io/github/jls97/boveda/MainActivityTest.kt:17-21: un ú
 #### B-25 · APK distribuido por chat: primera instalación sin anclaje de confianza y DEX comprimido que impide useEmbeddedDex
 
 - **Severidad:** Baja
+- **Estado:** Corregido (c04-supply-chain-build)
 - **Dónde:** `app/build.gradle.kts:48`
 - **Categoría:** supply-chain · **Dimensiones que lo detectaron:** supplychain
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -863,6 +888,7 @@ app/src/main/AndroidManifest.xml:25-33: el elemento <application> no declara and
 #### B-26 · camera-view arrastra camera-video → media3, Guava, Dagger, kotlinx-serialization y appcompat 1.1.0 no usados
 
 - **Severidad:** Baja
+- **Estado:** Corregido (c04-supply-chain-build)
 - **Dónde:** `app/build.gradle.kts:71`
 - **Categoría:** supply-chain · **Dimensiones que lo detectaron:** supplychain
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -896,6 +922,7 @@ ui/otp/QrScanner.kt:51-70 solo usa Preview + ImageAnalysis + PreviewView (sin Vi
 #### B-27 · «StrongBox o TEE»: la alternancia StrongBox→TEE es silenciosa (catch Exception) y nunca se comprueba ni muestra el nivel de seguridad real de las claves Keystore
 
 - **Severidad:** Baja
+- **Estado:** Corregido (b05-keystore-robustness)
 - **Dónde:** `security/KeystoreKeys.kt:30`
 - **Categoría:** platform-hardening · **Dimensiones que lo detectaron:** crypto, docs
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -931,6 +958,7 @@ README.md:145-146: «no se podría abrir sin el chip de este teléfono.»
 #### B-28 · KeystoreKeys.create borra el alias antes de generar; con enrolamiento cancelado deja copias indescifrables marcadas como válidas
 
 - **Severidad:** Baja
+- **Estado:** Corregido (b05-keystore-robustness)
 - **Dónde:** `security/KeystoreKeys.kt:28`
 - **Categoría:** key-management · **Dimensiones que lo detectaron:** crypto
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -966,6 +994,7 @@ OtpScreens.kt:521 y 614 (enrollmentCipher() se pide ANTES de que el usuario conf
 #### B-29 · Metadatos en claro en el almacenamiento privado: tamaño/mtime de vault.bin, archivos de función y contador de fallos
 
 - **Severidad:** Baja
+- **Estado:** Corregido (b08-restore-non-destructive)
 - **Dónde:** `data/VaultStorage.kt:15`
 - **Categoría:** privacy · **Dimensiones que lo detectaron:** privacy
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -1003,6 +1032,7 @@ UnlockThrottle.kt:14, 31-34
 #### B-30 · «Cambiar contraseña maestra» verifica la contraseña actual con Argon2id sin pasar por UnlockThrottle: oráculo ilimitado de la contraseña maestra con la bóveda abierta
 
 - **Severidad:** Baja
+- **Estado:** Corregido (b02-throttle-monotonic)
 - **Dónde:** `session/VaultSession.kt:448`
 - **Categoría:** brute-force · **Dimensiones que lo detectaron:** atacante-acceso-fisico, bruteforce, crypto, ui
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -1072,6 +1102,7 @@ VaultViewModel.kt:247
 #### B-31 · Restauración destructiva: restoreBackup sobrescribe vault.bin sin conservar la bóveda anterior, sin pedir la contraseña actual y accesible desde la pantalla de bloqueo
 
 - **Severidad:** Baja (los auditores proponían media; ajustada tras la verificación)
+- **Estado:** Corregido (b08-restore-non-destructive)
 - **Dónde:** `session/VaultSession.kt:318`
 - **Categoría:** backup · **Dimensiones que lo detectaron:** atacante-acceso-fisico, backup, bruteforce, docs, operador-y-futuro, ui
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -1129,6 +1160,7 @@ VaultSession.kt:318-322
 #### B-32 · Rollback de vault.bin: la clave de capa no se rota al cambiar la contraseña ni hay contador monótono
 
 - **Severidad:** Baja
+- **Estado:** Corregido (b03-key-rotation)
 - **Dónde:** `session/VaultSession.kt:475`
 - **Categoría:** key-management · **Dimensiones que lo detectaron:** bruteforce
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -1160,6 +1192,7 @@ DeviceLayer.kt:17-18
 #### B-33 · Al restaurar una copia se conservan los parámetros KDF de la copia: un degradado (8 KiB, 1 pasada) persiste y se propaga a las copias futuras
 
 - **Severidad:** Baja
+- **Estado:** Corregido (b07-parser-robustness)
 - **Dónde:** `session/VaultSession.kt:320`
 - **Categoría:** parsing · **Dimensiones que lo detectaron:** parsing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -1195,6 +1228,7 @@ VaultSession.kt:599-603 (exportBackup reutiliza current.header)
 #### B-34 · Borrado de entradas y de secretos 2FA irreversible, sin re-autenticación ni papelera
 
 - **Severidad:** Baja
+- **Estado:** Pendiente: Papelera e historial de versiones: funcionalidad nueva (hoja de ruta R-16); el borrado sigue pidiendo confirmación con el nombre y «No se puede deshacer.».
 - **Dónde:** `session/VaultSession.kt:599`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** atacante-acceso-fisico
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -1228,6 +1262,7 @@ EntryDetailScreen.kt:308-320
 #### B-35 · Activar el desbloqueo con huella no pide la contraseña maestra: puerta trasera persistente con el dedo del atacante
 
 - **Severidad:** Baja (los auditores proponían alta; ajustada tras la verificación)
+- **Estado:** Corregido (c02-reauth-sensitive-ops)
 - **Dónde:** `ui/vault/SettingsScreen.kt:107`
 - **Categoría:** session · **Dimensiones que lo detectaron:** atacante-acceso-fisico, bruteforce, operador-y-futuro
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -1281,6 +1316,7 @@ VaultSession.kt:528-534
 #### B-36 · Exportar la copia cifrada no exige contraseña maestra, huella ni confirmación: extracción completa del .bvd (sin capa de dispositivo) para ataque offline
 
 - **Severidad:** Baja (los auditores proponían media; ajustada tras la verificación)
+- **Estado:** Corregido (c02-reauth-sensitive-ops)
 - **Dónde:** `ui/vault/SettingsScreen.kt:249`
 - **Categoría:** backup · **Dimensiones que lo detectaron:** atacante-acceso-fisico, ui
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -1339,6 +1375,7 @@ README.md:113-115 «Una copia del archivo sacada del te
 #### B-37 · Los ajustes de seguridad (bloqueo automático 15 min, portapapeles 2 min) se debilitan sin re-autenticación y sin rastro
 
 - **Severidad:** Baja (los auditores proponían media; ajustada tras la verificación)
+- **Estado:** Corregido (c02-reauth-sensitive-ops)
 - **Dónde:** `ui/vault/SettingsScreen.kt:141`
 - **Categoría:** session · **Dimensiones que lo detectaron:** atacante-acceso-fisico
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -1384,6 +1421,7 @@ VaultModel.kt:23-33
 #### B-38 · La disponibilidad depende exclusivamente de copias manuales y la app no registra, muestra ni recuerda cuándo se hizo la última copia
 
 - **Severidad:** Baja (los auditores proponían media; ajustada tras la verificación)
+- **Estado:** Corregido (c03-backup-verify-reminder)
 - **Dónde:** `ui/vault/SettingsScreen.kt:238`
 - **Categoría:** backup · **Dimensiones que lo detectaron:** operador-y-futuro, backup
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -1437,6 +1475,7 @@ VaultMod
 #### B-39 · Contraseña revelada y código TOTP siguen visibles al volver del segundo plano dentro de la ventana de autobloqueo
 
 - **Severidad:** Baja
+- **Estado:** Corregido (c05-ui-secret-hygiene)
 - **Dónde:** `ui/vault/EntryDetailScreen.kt:52`
 - **Categoría:** session · **Dimensiones que lo detectaron:** ui
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -1466,6 +1505,7 @@ VaultSession.kt:156-159
 #### B-40 · La clave 2FA (o la URI otpauth completa escaneada) se muestra en claro en el campo «Clave de configuración», editable, seleccionable y copiable sin pasar por SecureClipboard
 
 - **Severidad:** Baja
+- **Estado:** Corregido (c05-ui-secret-hygiene)
 - **Dónde:** `ui/otp/OtpScreens.kt:302`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** privacy, ui
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -1529,6 +1569,7 @@ VaultHost.kt:137-141
 #### B-41 · Los campos «Notas», «Usuario o email» y «Nombre» usan un teclado con aprendizaje personalizado y sugerencias: lo escrito puede acabar en el diccionario del IME y sincronizarse en la nube
 
 - **Severidad:** Baja
+- **Estado:** Corregido (c01-secure-dialogs-ime)
 - **Dónde:** `ui/vault/EntryEditScreen.kt:97`
 - **Categoría:** privacy · **Dimensiones que lo detectaron:** platform, ui, privacy
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (baja).
@@ -1595,6 +1636,7 @@ EntryEditScreen.kt:64-69
 #### B-42 · EXTRA_LOCAL_ONLY es solo una pista al selector: la promesa «nunca en la nube» no la impone el sistema y la copia en almacenamiento compartido es legible por otras apps y sincronizadores
 
 - **Severidad:** Baja
+- **Estado:** Corregido (c05-ui-secret-hygiene)
 - **Dónde:** `ui/components/LocalDocuments.kt:15`
 - **Categoría:** privacy · **Dimensiones que lo detectaron:** backup, platform
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -1636,6 +1678,7 @@ README.md:143-144: "Las copias de seguridad solo se pueden guardar en el almacen
 #### B-43 · KeyguardManager.isDeviceSecure solo se comprueba en la interfaz al crear la bóveda: restaurar una copia o quitar el bloqueo de pantalla después deja la capa de dispositivo vacía sin aviso
 
 - **Severidad:** Baja
+- **Estado:** Corregido (c02-reauth-sensitive-ops)
 - **Dónde:** `ui/lock/SetupScreen.kt:110`
 - **Categoría:** platform-hardening · **Dimensiones que lo detectaron:** bruteforce, atacante-acceso-fisico
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -1687,6 +1730,7 @@ DeviceKeyManager.kt:224
 #### B-44 · QrFrameDecoder solo captura ReaderException: una excepción de ZXing en el hilo de análisis cierra la app
 
 - **Severidad:** Baja
+- **Estado:** Corregido (c05-ui-secret-hygiene)
 - **Dónde:** `ui/otp/QrScanner.kt:119`
 - **Categoría:** parsing · **Dimensiones que lo detectaron:** parsing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (baja).
@@ -1728,6 +1772,7 @@ QrScanner.kt:58-63
 #### I-01 · suggestedTitle toma la última palabra 'significativa' del paquete: com.evil.instagram se guarda como «Instagram»
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (a04-phishing-signals-ui)
 - **Dónde:** `core/autofill/CredentialMatcher.kt:138`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** autofill
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -1756,6 +1801,7 @@ CredentialMatcher.kt:138-143
 #### I-02 · Emparejamiento de dominios sin casos adversarios en los tests: subdominios tomados, sufijos compartidos, IDN/punycode, userinfo
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (a03-domain-matching-psl)
 - **Dónde:** `core/autofill/CredentialMatcher.kt:23`
 - **Categoría:** testing · **Dimensiones que lo detectaron:** testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -1789,6 +1835,7 @@ AutofillLogicTest.kt:136-138 (únicos casos de covers)
 #### I-03 · trustedBrowserTableIsWellFormed valida solo 4 de ~60 entradas de la lista de navegadores
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (a01-trusted-browsers)
 - **Dónde:** `test:core/autofill/AutofillLogicTest.kt:256`
 - **Categoría:** testing · **Dimensiones que lo detectaron:** testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (informativa).
@@ -1819,6 +1866,7 @@ AppSigners.kt:133: fingerprint en minúsculas ("%02x") — una huella con mayús
 #### I-04 · Un lector antiguo descarta en silencio los campos desconocidos al volver a guardar (política de evolución sin versión menor)
 
 - **Severidad:** Informativa (los auditores proponían baja; ajustada tras la verificación)
+- **Estado:** Corregido (b09-core-tests-and-format)
 - **Dónde:** `core/vault/VaultCodec.kt:7`
 - **Categoría:** docs-mismatch · **Dimensiones que lo detectaron:** operador-y-futuro
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -1860,6 +1908,7 @@ VaultTest.kt:44-56 (solo se prueba que se ignoran, no que se preserven)
 #### I-05 · Una cabecera alterada (parámetros KDF, sal) se reporta como «contraseña incorrecta» y consume el freno
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b07-parser-robustness)
 - **Dónde:** `core/vault/VaultContainer.kt:73`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** crypto
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (informativa).
@@ -1891,6 +1940,7 @@ VaultSession.kt:256-259
 #### I-06 · Alcance real de la capa de dispositivo frente a adb, root y extracción forense
 
 - **Severidad:** Informativa
+- **Estado:** Documentado en README («Doble capa») y SECURITY.md: alcance real de la capa de dispositivo.
 - **Dónde:** `core/vault/DeviceLayer.kt:7`
 - **Categoría:** platform-hardening · **Dimensiones que lo detectaron:** bruteforce
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -1919,6 +1969,7 @@ DeviceKeyManager.kt:51
 #### I-07 · La copia .bvd no lleva fecha ni identificador de bóveda: no se puede previsualizar ni distinguir copias antes de restaurar
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (c03-backup-verify-reminder)
 - **Dónde:** `core/vault/VaultContainer.kt:77`
 - **Categoría:** backup · **Dimensiones que lo detectaron:** backup
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -1944,6 +1995,7 @@ SettingsScreen.kt:324  text = "Todo lo que hay ahora en la bóveda se sustituir�
 #### I-08 · El algoritmo TOTP se serializa por ordinal del enum: reordenarlo cambiaría el significado de los secretos guardados
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b09-core-tests-and-format)
 - **Dónde:** `core/otp/OtpCrypto.kt:101`
 - **Categoría:** parsing · **Dimensiones que lo detectaron:** operador-y-futuro
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -1976,6 +2028,7 @@ enum class OtpAlgorithm(val macName: String, val label: String) {
 #### I-09 · Los parámetros Argon2id de una bóveda existente solo se actualizan al cambiar la contraseña; el techo de 256 MiB limita futuras subidas
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (d02-kdf-upgrade-on-unlock)
 - **Dónde:** `core/crypto/Argon2Kdf.kt:16`
 - **Categoría:** crypto · **Dimensiones que lo detectaron:** operador-y-futuro
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2008,6 +2061,7 @@ VaultContainer.kt:70-72 (al abrir se usan los parámetros de la cabecera, nunca 
 #### I-10 · Nonces GCM aleatorios de 96 bits: el agotamiento no es un riesgo práctico (cuantificado), pero la DEK nunca rota
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b03-key-rotation)
 - **Dónde:** `core/crypto/AesGcm.kt:24`
 - **Categoría:** crypto · **Dimensiones que lo detectaron:** operador-y-futuro
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2042,6 +2096,7 @@ VaultContainer.kt:121-122 (KEK nueva con sal nueva en cada cabecera: nunca se re
 #### I-11 · ByteWriter.ensureCapacity entra en bucle infinito con capacidad inicial 0 o al desbordar Int
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b07-parser-robustness)
 - **Dónde:** `core/vault/BinaryIo.kt:13`
 - **Categoría:** parsing · **Dimensiones que lo detectaron:** parsing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2068,6 +2123,7 @@ BinaryIo.kt:10-14
 #### I-12 · PasswordStrength acepta como contraseña maestra secuencias y repeticiones largas; los tests no lo detectan
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b09-core-tests-and-format)
 - **Dónde:** `core/generator/PasswordStrength.kt:35`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (informativa).
@@ -2104,6 +2160,7 @@ GeneratorTest.kt:58-66: solo prueba "123456", 16×'a', "Password123!", una frase
 #### I-13 · El vector RFC 9106 no ejercita Argon2Kdf.deriveKey: una mala configuración del wrapper pasaría desapercibida
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b09-core-tests-and-format)
 - **Dónde:** `test:core/crypto/CryptoTest.kt:18`
 - **Categoría:** testing · **Dimensiones que lo detectaron:** testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2140,6 +2197,7 @@ CryptoTest.kt:38-48 deriveKeyIsDeterministicAndSaltDependent solo comprueba dete
 #### I-14 · Sin vector de prueba conocido (NIST) para AES-GCM: solo se verifica ida y vuelta
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b09-core-tests-and-format)
 - **Dónde:** `test:core/crypto/CryptoTest.kt:58`
 - **Categoría:** testing · **Dimensiones que lo detectaron:** testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2171,6 +2229,7 @@ AesGcm.kt:20,26,39
 #### I-15 · Tests negativos de formato incompletos: versiones futuras, KDF desconocido, longitudes límite y campos hostiles sin cubrir
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b09-core-tests-and-format)
 - **Dónde:** `core/vault/VaultContainer.kt:157`
 - **Categoría:** parsing · **Dimensiones que lo detectaron:** testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2208,6 +2267,7 @@ OtpCrypto.kt:145-146   al
 #### I-16 · Propiedades de vinculación criptográfica sin test directo (trasplante de cuerpo, DEK ajena, AAD del keyring 2FA)
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b09-core-tests-and-format)
 - **Dónde:** `core/vault/VaultContainer.kt:57`
 - **Categoría:** testing · **Dimensiones que lo detectaron:** testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2234,6 +2294,7 @@ Tests existentes: VaultTest.kt:157-163 solo altera un byte del cuerpo; VaultTest
 #### I-17 · Casos límite de OtpInput, percentDecode y Base32 sin cubrir (duplicados, límites, secuencias % malformadas, confusables Unicode)
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b09-core-tests-and-format)
 - **Dónde:** `core/otp/OtpInput.kt:104`
 - **Categoría:** parsing · **Dimensiones que lo detectaron:** testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2266,6 +2327,7 @@ OtpTest.kt:70-87, 89-144: vectores RFC 4648, leniencia, errores principales.
 #### I-18 · Los tests de compatibilidad reconstruyen el formato antiguo a partir del codificador actual; no hay fixtures binarios
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (d01-golden-fixtures)
 - **Dónde:** `test:core/vault/VaultTest.kt:78`
 - **Categoría:** testing · **Dimensiones que lo detectaron:** operador-y-futuro
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2298,6 +2360,7 @@ VaultTest.kt:101-107
 #### I-19 · Dependencia de API @RestrictTo (InlineSuggestionUi.Content.getSlice) con riesgo de rotura en androidx.autofill futuras
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (a06-autofill-activity-hardening)
 - **Dónde:** `autofill/AutofillResponses.kt:143`
 - **Categoría:** supply-chain · **Dimensiones que lo detectaron:** supplychain
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2330,6 +2393,7 @@ gradle/libs.versions.toml:8: autofill = "1.3.0"
 #### I-20 · «El teclado no ve nada»: la sugerencia no lleva secretos, pero el campo rellenado sigue siendo legible por el IME
 
 - **Severidad:** Informativa
+- **Estado:** Documentado en README («La sugerencia no lleva nada»): el campo rellenado es legible por el teclado activo.
 - **Dónde:** `autofill/AutofillResponses.kt:299`
 - **Categoría:** docs-mismatch · **Dimensiones que lo detectaron:** docs
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (informativa).
@@ -2360,6 +2424,7 @@ README.md:38-39: «El teclado no ve nada. La sugerencia solo dice «Bóveda». N
 #### I-21 · QUERY_ALL_PACKAGES: visibilidad total de apps instaladas para una necesidad acotada (leer el certificado del paquete que pide rellenar)
 
 - **Severidad:** Informativa
+- **Estado:** Documentado en README: QUERY_ALL_PACKAGES solo se usa para leer el certificado de la app que pide rellenar.
 - **Dónde:** `app/src/main/AndroidManifest.xml:17`
 - **Categoría:** privacy · **Dimensiones que lo detectaron:** platform, privacy
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2398,6 +2463,7 @@ README.md:136-139: sin permiso INTERNET la información no sale por red.
 #### I-22 · Lo que una app maliciosa aprende sin conseguir credenciales: que Bóveda es el servicio de autorrelleno activo (y nada más)
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (c06-antiphishing-phrase)
 - **Dónde:** `app/src/main/AndroidManifest.xml:55`
 - **Categoría:** privacy · **Dimensiones que lo detectaron:** atacante-app-maliciosa
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2420,6 +2486,7 @@ AutofillResponses.kt:44-53  la respuesta siempre contiene un dataset «Bóveda»
 #### I-23 · bcprov completo (~8 MB) sin R8 para usar solo Argon2BytesGenerator; ZXing en modo mantenimiento; sin automatización de actualizaciones
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (c04-supply-chain-build)
 - **Dónde:** `app/build.gradle.kts:65`
 - **Categoría:** supply-chain · **Dimensiones que lo detectaron:** supplychain, operador-y-futuro
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2457,6 +2524,7 @@ zxing = "3.5.4"
 #### I-24 · Higiene del repo: app/release/ y otros formatos de keystore no ignorados; README no fija versión de Android Studio
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (c04-supply-chain-build)
 - **Dónde:** `.gitignore:17`
 - **Categoría:** docs-mismatch · **Dimensiones que lo detectaron:** supplychain
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2485,6 +2553,7 @@ README.md:181: «adb install app/release/app-release.apk» (Android Studio escri
 #### I-25 · UnlockThrottle no es testeable (SharedPreferences + reloj de pared acoplados) y su política no tiene ningún test
 
 - **Severidad:** Informativa (los auditores proponían baja; ajustada tras la verificación)
+- **Estado:** Corregido (b02-throttle-monotonic)
 - **Dónde:** `security/UnlockThrottle.kt:13`
 - **Categoría:** testing · **Dimensiones que lo detectaron:** testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (informativa).
@@ -2521,6 +2590,7 @@ No existe ningún test que referencie UnlockThrottle (grep en app/src/test y app
 #### I-26 · El único test instrumentado (startsClosed) es vacuo: el texto que comprueba también aparece con la bóveda abierta
 
 - **Severidad:** Informativa (los auditores proponían baja; ajustada tras la verificación)
+- **Estado:** Corregido (d03-android-test-otp-migration-biometric-warning)
 - **Dónde:** `app/src/androidTest/java/io/github/jls97/boveda/MainActivityTest.kt:20`
 - **Categoría:** testing · **Dimensiones que lo detectaron:** testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2554,6 +2624,7 @@ SetupScreen.kt:70 / UnlockScreen.kt:109
 #### I-27 · No hay tope de intentos acumulados ni borrado opcional tras N fallos
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b02-throttle-monotonic)
 - **Dónde:** `security/UnlockThrottle.kt:46`
 - **Categoría:** brute-force · **Dimensiones que lo detectaron:** bruteforce
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (informativa).
@@ -2579,6 +2650,7 @@ UnlockThrottle.kt:45-47
 #### I-28 · El estado del freno vive en SharedPreferences fuera de la capa cifrada
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b02-throttle-monotonic)
 - **Dónde:** `security/UnlockThrottle.kt:14`
 - **Categoría:** brute-force · **Dimensiones que lo detectaron:** bruteforce
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2605,6 +2677,7 @@ AndroidManifest.xml:27-28
 #### I-29 · El borrado programado limpia cualquier clip posterior del usuario y, con autobloqueo «al salir», borra antes de poder pegar
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b04-clipboard-alarm)
 - **Dónde:** `security/SecureClipboard.kt:30`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** privacy
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2644,6 +2717,7 @@ VaultSession.kt:170
 #### I-30 · biometric.key no lleva AAD, magia ni versión, a diferencia de layer.key y otp.key
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b05-keystore-robustness)
 - **Dónde:** `security/BiometricKeyManager.kt:29`
 - **Categoría:** key-management · **Dimensiones que lo detectaron:** crypto
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2676,6 +2750,7 @@ Comparar con DeviceKeyManager.kt:31 `cipher.updateAAD(AAD)` y OtpKeyManager.kt:4
 #### I-31 · La escritura con el teclado en pantalla no cuenta como interacción: el autolock puede saltar a mitad de edición y borra el borrador
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (c05-ui-secret-hygiene)
 - **Dónde:** `MainActivity.kt:83`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** session
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2700,6 +2775,7 @@ VaultViewModel.kt:87-100  session.state.collect { state -> if (state !is VaultSt
 #### I-32 · Con el proceso congelado (cached apps freezer) el SCREEN_OFF se entrega tarde y la DEK sigue en memoria
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b06-autolock-coherence)
 - **Dónde:** `BovedaApplication.kt:22`
 - **Categoría:** platform-hardening · **Dimensiones que lo detectaron:** session
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (informativa).
@@ -2723,6 +2799,7 @@ VaultSession.kt:176-178  autoLockJob = scope.launch { while (isActive) { delay(1
 #### I-33 · Con el autobloqueo por defecto (60 s) salir de la app no bloquea: el README promete «al salir de la app» y «se vuelve a bloquear tras rellenar» de forma más fuerte que el comportamiento real
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b06-autolock-coherence)
 - **Dónde:** `session/VaultSession.kt:156`
 - **Categoría:** session · **Dimensiones que lo detectaron:** atacante-acceso-fisico, docs
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2786,6 +2863,7 @@ VaultModel.kt:30
 #### I-34 · VaultSession (máquina de estados, carreras lock/operación, freno, autobloqueo) no tiene ningún test y su constructor privado con dependencias Android impide testearla
 
 - **Severidad:** Informativa
+- **Estado:** Corregido en e07-tests-sincerity: VaultSession se construye con interfaces (VaultFiles, LayerKeys, FingerprintKeys, OtpKeys, VaultClipboard) y reloj inyectable, y VaultSessionTest (JVM) cubre la carrera lock()/changeMasterPassword; las políticas de freno, autobloqueo, portapapeles e integridad tienen tests propios.
 - **Dónde:** `session/VaultSession.kt:90`
 - **Categoría:** testing · **Dimensiones que lo detectaron:** session, testing
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2836,6 +2914,7 @@ VaultSession.kt:86-88  " Threading: every method must be called on the main thre
 #### I-35 · No hay forma de comprobar el código de recuperación 2FA mientras todo funciona
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (c02-reauth-sensitive-ops)
 - **Dónde:** `session/VaultSession.kt:637`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** operador-y-futuro
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2869,6 +2948,7 @@ SettingsScreen.kt:223-235 (solo «Recuperar» si LOCKED y «Nuevo código» si R
 #### I-36 · Restaurar una copia de otra bóveda deja un otp.key huérfano y no aclara que la contraseña maestra cambia
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (b08-restore-non-destructive)
 - **Dónde:** `session/VaultSession.kt:319`
 - **Categoría:** key-management · **Dimensiones que lo detectaron:** backup
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2896,6 +2976,7 @@ VaultViewModel.kt:277  message("Copia restaurada. La huella se ha desactivado; v
 #### I-37 · El borrador de edición y la contraseña generada se conservan en el ViewModel tras salir sin guardar
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (c05-ui-secret-hygiene)
 - **Dónde:** `ui/vault/VaultViewModel.kt:74`
 - **Categoría:** memory · **Dimensiones que lo detectaron:** ui
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2923,6 +3004,7 @@ VaultViewModel.kt:93-100 forgetEverything() solo se ejecuta al bloquear
 #### I-38 · Secretos revelados expuestos por completo al árbol de accesibilidad (sin alternativa de lectura controlada)
 
 - **Severidad:** Informativa
+- **Estado:** Pendiente: No corregido: ocultar los secretos revelados al árbol de accesibilidad impediría usar la app a quien depende de un lector de pantalla; se deja como decisión de producto.
 - **Dónde:** `ui/vault/EntryDetailScreen.kt:146`
 - **Categoría:** platform-hardening · **Dimensiones que lo detectaron:** ui
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2952,6 +3034,7 @@ GeneratorScreen.kt:69-74 Text(text = password.ifEmpty { "—" }, ...)
 #### I-39 · El escáner rechaza los QR otpauth-migration:// con un aviso genérico, a diferencia del campo de texto
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (d03-android-test-otp-migration-biometric-warning)
 - **Dónde:** `ui/otp/OtpScreens.kt:457`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** ui
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -2980,6 +3063,7 @@ OtpViewModel.kt:348-349 OtpInputError.MIGRATION_EXPORT -> "Es una exportación d
 #### I-40 · El generador permite 8 caracteres y no avisa cuando la combinación elegida baja de un umbral razonable
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (c05-ui-secret-hygiene)
 - **Dónde:** `ui/vault/GeneratorScreen.kt:99`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** ui
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -3008,6 +3092,7 @@ PasswordGenerator.kt:9-14 defaults: length = 24, lowercase/uppercase/digits/symb
 #### I-41 · «Copiar» un código 2FA oculto también lo revela en pantalla durante 60 s
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (c05-ui-secret-hygiene)
 - **Dónde:** `ui/otp/OtpViewModel.kt:289`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** ui
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -3033,6 +3118,7 @@ OtpScreens.kt:164 TextButton(onClick = { open(copy = true) }, enabled = !otp.bus
 #### I-42 · La etiqueta del clip («Contraseña», «Código 2FA») describe el tipo de secreto copiado
 
 - **Severidad:** Informativa
+- **Estado:** Corregido (c05-ui-secret-hygiene)
 - **Dónde:** `ui/vault/EntryDetailScreen.kt:93`
 - **Categoría:** privacy · **Dimensiones que lo detectaron:** privacy
 - **Verificación:** 1 verificador(es) independiente(s): confirmado (informativa).
@@ -3059,6 +3145,7 @@ SecureClipboard.kt:22
 #### I-43 · Mostrar/copiar contraseñas y rellenar en otras apps no exige segundo factor con la bóveda abierta (mejora opcional)
 
 - **Severidad:** Informativa
+- **Estado:** Pendiente: No corregido: exigir huella para mostrar o copiar con la bóveda abierta es una opción de producto (hoja de ruta), no un fallo.
 - **Dónde:** `ui/vault/EntryDetailScreen.kt:279`
 - **Categoría:** ux-security · **Dimensiones que lo detectaron:** atacante-acceso-fisico
 - **Verificación:** 1 verificador(es) independiente(s): confirmado-con-matices (informativa).
