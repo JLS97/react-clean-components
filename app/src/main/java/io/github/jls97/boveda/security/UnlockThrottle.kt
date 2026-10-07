@@ -25,7 +25,7 @@ internal class UnlockThrottle(
     private val clock: ThrottleClock,
     private val policy: ThrottlePolicy = ThrottlePolicy(),
 ) {
-    constructor(context: Context) : this(PrefsStore(context), AndroidClock(context))
+    constructor(context: Context) : this(PrefsStore(context, AndroidClock(context)), AndroidClock(context))
 
     /** Epoch millis until which a password check is blocked, or 0 if it is allowed now. */
     fun blockedUntil(): Long {
@@ -112,15 +112,57 @@ internal class UnlockThrottle(
         store.saveKept(null)
     }
 
+    companion object {
+        /**
+         * State to adopt from the preferences the previous throttle wrote (`failures` plus
+         * `blocked_until`, an epoch instant) when the app is updated with a block pending (R02-5):
+         * the penalty the policy gives for [failures], served from now with the monotonic clock
+         * for whatever the old deadline has left (at most one full penalty, so a date moved
+         * forward cannot lengthen it), and the old deadline kept as the wall-clock reference. A
+         * deadline already past leaves only the failure count, like a served penalty.
+         */
+        internal fun migrateLegacy(
+            failures: Int,
+            legacyBlockedUntil: Long,
+            clock: ThrottleClock,
+            policy: ThrottlePolicy,
+        ): ThrottleState {
+            val remaining = legacyBlockedUntil - clock.wallClock()
+            if (remaining <= 0L) return ThrottleState(failures = failures)
+            // The old count always had a penalty behind a pending block; if the policies disagree,
+            // the time left is the penalty, capped like any other.
+            val penalty = policy.delayAfter(failures).takeIf { it > 0L } ?: remaining.coerceAtMost(policy.maxDelayMs)
+            return ThrottleState(
+                failures = failures,
+                penaltyMs = penalty,
+                blockedElapsedUntil = clock.elapsedRealtime() + remaining.coerceAtMost(penalty),
+                bootCount = clock.bootCount(),
+                blockedWallUntil = legacyBlockedUntil,
+            )
+        }
+    }
+
     // commit() on purpose: a failed attempt must be on disk before the app can be killed.
     @SuppressLint("ApplySharedPref")
-    private class PrefsStore(context: Context) : ThrottleStore {
+    private class PrefsStore(
+        context: Context,
+        private val clock: ThrottleClock,
+        private val policy: ThrottlePolicy = ThrottlePolicy(),
+    ) : ThrottleStore {
         private val prefs = context.getSharedPreferences("unlock_throttle", Context.MODE_PRIVATE)
 
         /** Its own file, so [clear] (every reset) cannot wipe the state kept aside. */
         private val keptPrefs = context.getSharedPreferences("unlock_throttle_kept", Context.MODE_PRIVATE)
 
-        override fun load(): ThrottleState = read(prefs)
+        override fun load(): ThrottleState {
+            val state = read(prefs)
+            // Written by the previous version and never by this one: migrate it once (R02-5). The
+            // write below also removes the old key, so this runs a single time.
+            if (prefs.contains(KEY_PENALTY_MS) || !prefs.contains(KEY_LEGACY_BLOCKED_UNTIL)) return state
+            val migrated = migrateLegacy(state.failures, prefs.getLong(KEY_LEGACY_BLOCKED_UNTIL, 0L), clock, policy)
+            write(prefs, migrated)
+            return migrated
+        }
 
         override fun save(state: ThrottleState) = write(prefs, state)
 
@@ -149,11 +191,15 @@ internal class UnlockThrottle(
                 .putLong(KEY_BLOCKED_ELAPSED_UNTIL, state.blockedElapsedUntil)
                 .putInt(KEY_BOOT_COUNT, state.bootCount)
                 .putLong(KEY_BLOCKED_WALL_UNTIL, state.blockedWallUntil)
+                .remove(KEY_LEGACY_BLOCKED_UNTIL)
                 .commit()
         }
 
         private companion object {
             const val KEY_FAILURES = "failures"
+
+            /** Deadline (epoch millis) of the throttle before R02-5; only read to migrate it. */
+            const val KEY_LEGACY_BLOCKED_UNTIL = "blocked_until"
             const val KEY_PENALTY_MS = "penalty_ms"
             const val KEY_BLOCKED_ELAPSED_UNTIL = "blocked_elapsed_until"
             const val KEY_BOOT_COUNT = "boot_count"

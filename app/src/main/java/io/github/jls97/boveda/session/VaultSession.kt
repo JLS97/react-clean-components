@@ -897,27 +897,18 @@ class VaultSession private constructor(
     suspend fun changeMasterPassword(currentPassword: CharArray, newPassword: CharArray): OperationResult =
         writeMutex.withLock {
             try {
-                // Same throttle as unlock: with the vault open (e.g. by fingerprint) this dialog
-                // would otherwise be an unlimited oracle of the master password.
-                val blockedUntil = withContext(Dispatchers.IO) { throttle.blockedUntil() }
-                if (blockedUntil > 0) return@withLock OperationResult.Throttled(blockedUntil)
                 val current = open ?: return@withLock OperationResult.Failure("La bóveda está bloqueada")
                 val lockCountAtStart = lockCount
                 val layerKey = current.layerKey.copyOf()
                 var rekeyed: VaultContainer.Opened? = null
                 try {
-                    rekeyed = withContext(Dispatchers.Default) {
-                        if (!VaultContainer.verifyPassword(current.header, currentPassword)) {
-                            null
-                        } else {
-                            VaultContainer.changePassword(newPassword, current.data)
-                        }
+                    // Same throttle as unlock: with the vault open (e.g. by fingerprint) this dialog
+                    // would otherwise be an unlimited oracle of the master password.
+                    val check = throttle.checkPassword {
+                        withContext(Dispatchers.Default) { VaultContainer.verifyPassword(current.header, currentPassword) }
                     }
-                    if (rekeyed == null) {
-                        val until = withContext(Dispatchers.IO) { throttle.recordFailure() }
-                        return@withLock if (until > 0) OperationResult.Throttled(until) else OperationResult.WrongPassword
-                    }
-                    withContext(Dispatchers.IO) { throttle.reset() }
+                    if (check != OperationResult.Success) return@withLock check
+                    rekeyed = withContext(Dispatchers.Default) { VaultContainer.changePassword(newPassword, current.data) }
                     if (open !== current || lockCount != lockCountAtStart) {
                         return@withLock OperationResult.Failure(
                             "Se bloqueó mientras se cambiaba la contraseña. No se ha escrito nada.",
@@ -1287,15 +1278,29 @@ class VaultSession private constructor(
     /**
      * Comprueba que [password] es la contraseña maestra de la bóveda abierta, sin desbloquear ni
      * cambiar nada: sirve para volver a pedirla antes de una operación sensible (activar la huella,
-     * exportar una copia, relajar un ajuste). Lenta: Argon2id. El array recibido se borra. Devuelve
-     * false si la bóveda está bloqueada.
+     * exportar una copia, relajar un ajuste, deshacer una restauración). Lenta: Argon2id. El array
+     * recibido se borra.
+     *
+     * Pasa por el mismo freno de intentos que el desbloqueo y el cambio de contraseña (A-03, B-30,
+     * R02-1): con la bóveda abierta por huella estos diálogos serían, si no, un oráculo ilimitado
+     * de la contraseña maestra. Devuelve [OperationResult.Success] si es correcta,
+     * [OperationResult.WrongPassword] si no, [OperationResult.Throttled] mientras el freno manda
+     * esperar y [OperationResult.Failure] si la bóveda está bloqueada.
      */
-    suspend fun verifyMasterPassword(password: CharArray): Boolean {
+    suspend fun verifyMasterPassword(password: CharArray): OperationResult {
         val header = open?.header
         val copy = password.copyOf()
         password.wipe()
         return try {
-            if (header == null) false else withContext(Dispatchers.Default) { VaultContainer.verifyPassword(header, copy) }
+            if (header == null) {
+                OperationResult.Failure("La bóveda está bloqueada")
+            } else {
+                throttle.checkPassword { withContext(Dispatchers.Default) { VaultContainer.verifyPassword(header, copy) } }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            OperationResult.Failure(describe(e))
         } finally {
             copy.wipe()
         }

@@ -288,6 +288,57 @@ class UnlockThrottleTest {
         assertEquals(ThrottleState(), store.state)
     }
 
+    // (g) the state the previous version wrote (failures + blocked_until) is migrated (R02-5)
+
+    private val policy = ThrottlePolicy()
+
+    /** The preferences of the old throttle after [failures] wrong passwords, [left] ms still pending. */
+    private fun legacy(failures: Int, left: Long): ThrottleState =
+        UnlockThrottle.migrateLegacy(failures, clock.wall + left, clock, policy)
+
+    @Test
+    fun aPendingLegacyBlockIsServedAfterTheUpdate() {
+        store.state = legacy(failures = 5, left = 20_000L)
+        with(store.state) {
+            assertEquals(5, failures)
+            assertEquals(30_000L, penaltyMs)
+            assertEquals(clock.elapsed + 20_000L, blockedElapsedUntil)
+            assertEquals(clock.boots, bootCount)
+            assertEquals(clock.wall + 20_000L, blockedWallUntil)
+        }
+        assertEquals(20_000L, remaining())
+        clock.tick(20_000L)
+        assertEquals(0L, throttle.blockedUntil())
+        // The count came along: the next failure is the sixth.
+        assertEquals(60_000L, throttle.recordFailure() - clock.wall)
+    }
+
+    @Test
+    fun aLegacyBlockCannotBeShortenedByTheDateNorLastLongerThanOnePenalty() {
+        store.state = legacy(failures = 5, left = 20_000L)
+        clock.wall += 365L * 24 * 60 * 60 * 1000
+        assertEquals(20_000L, remaining())
+        // An old deadline further away than the penalty itself (another policy, a date moved back)
+        // is capped at one full penalty.
+        store.state = legacy(failures = 6, left = 10L * 60_000L)
+        assertEquals(60_000L, remaining())
+    }
+
+    @Test
+    fun anExpiredLegacyBlockLeavesOnlyTheFailureCount() {
+        store.state = legacy(failures = 7, left = -1L)
+        assertEquals(ThrottleState(failures = 7), store.state)
+        assertEquals(0L, throttle.blockedUntil())
+        assertEquals(240_000L, throttle.recordFailure() - clock.wall)
+    }
+
+    @Test
+    fun aLegacyBlockWithoutAPenaltyBehindItStillBlocksForWhatIsLeft() {
+        store.state = legacy(failures = 0, left = 15_000L)
+        assertEquals(15_000L, store.state.penaltyMs)
+        assertEquals(15_000L, remaining())
+    }
+
     @Test
     fun customPolicyIsUsed() {
         val custom = UnlockThrottle(store, clock, ThrottlePolicy(freeAttempts = 2, baseDelayMs = 1_000L, maxDoublings = 1))

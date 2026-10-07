@@ -313,11 +313,10 @@ class VaultViewModel(
 
     // region Settings
 
-    fun setAutoLock(seconds: Int) = updateSettings(settings.copy(autoLockSeconds = seconds))
-
-    fun setClipboardClear(seconds: Int) = updateSettings(settings.copy(clipboardClearSeconds = seconds))
-
-    /** Guarda [newSettings] tal cual. Si relajan la seguridad, la pantalla pide antes la contraseña maestra. */
+    /**
+     * Guarda [newSettings] tal cual. Si relajan la seguridad, la pantalla pide antes la contraseña
+     * maestra (B-37): no hay atajos que apliquen un ajuste sin pasar por ese camino (R02-4).
+     */
     fun updateSettings(newSettings: VaultSettings) {
         launchBusy {
             val result = session.updateSettings(newSettings)
@@ -328,21 +327,28 @@ class VaultViewModel(
     /**
      * Vuelve a pedir la contraseña maestra antes de una operación sensible: [onVerified] solo se
      * llama si es la correcta, y ya con [busy] a false para que pueda lanzar su propia operación.
+     * Comparte el freno de intentos con el desbloqueo (R02-1): si manda esperar, se dice cuánto.
      */
     fun verifyMasterPassword(password: String, onVerified: () -> Unit) {
         if (busy) return
         busy = true
         viewModelScope.launch {
-            val verified = try {
+            val result = try {
                 session.verifyMasterPassword(password.toCharArray())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                false
+                OperationResult.Failure("Error inesperado.")
             } finally {
                 busy = false
             }
-            if (verified) onVerified() else message("La contraseña maestra no es correcta.")
+            when (result) {
+                OperationResult.Success -> onVerified()
+                OperationResult.WrongPassword -> message("La contraseña maestra no es correcta.")
+                is OperationResult.Throttled -> message(throttledMessage(result.untilMillis))
+                is OperationResult.Failure -> message(result.message)
+                else -> message("No se pudo comprobar la contraseña.")
+            }
         }
     }
 
@@ -365,7 +371,7 @@ class VaultViewModel(
                 }
                 OperationResult.WrongPassword -> message("La contraseña actual no es correcta.")
                 is OperationResult.Failure -> message(result.message)
-                is OperationResult.Throttled -> message("Espera antes de volver a intentarlo.")
+                is OperationResult.Throttled -> message(throttledMessage(result.untilMillis))
                 else -> message("No se pudo cambiar la contraseña.")
             }
         }
@@ -525,7 +531,7 @@ class VaultViewModel(
                 OperationResult.WrongPassword -> message("La contraseña de la copia no es correcta.")
                 OperationResult.WrongCurrentPassword -> message("La contraseña maestra actual no es correcta.")
                 is OperationResult.Failure -> message(result.message)
-                is OperationResult.Throttled -> message("Espera antes de volver a intentarlo.")
+                is OperationResult.Throttled -> message(throttledMessage(result.untilMillis))
             }
         }
     }
@@ -624,6 +630,16 @@ class VaultViewModel(
             }
         }
     }
+}
+
+/**
+ * Texto del aviso cuando el freno de intentos manda esperar hasta [untilMillis] (época, ms): dice
+ * cuántos segundos quedan, redondeados hacia arriba y nunca menos de uno, igual que la cuenta
+ * atrás de la pantalla de desbloqueo (R02-6).
+ */
+internal fun throttledMessage(untilMillis: Long, nowMillis: Long = System.currentTimeMillis()): String {
+    val seconds = ((untilMillis - nowMillis + 999) / 1_000).coerceAtLeast(1)
+    return "Demasiados intentos fallidos. Vuelve a intentarlo en $seconds s."
 }
 
 /**

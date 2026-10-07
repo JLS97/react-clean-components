@@ -144,8 +144,8 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
   los códigos 2FA. Revísalo antes de activarla; al cambiar la contraseña maestra la huella se
   desactiva y hay que volver a activarla.
 - **Freno a los intentos.** Tras 5 contraseñas incorrectas, cada fallo bloquea la siguiente
-  comprobación de contraseña (desbloqueo, cambio de contraseña o restauración) durante un tiempo
-  creciente (30 s … 64 min). La espera se mide con el reloj monótono del sistema y el contador de
+  comprobación de contraseña (desbloqueo, cambio de contraseña, restauración o re-autenticación en
+  Ajustes) durante un tiempo creciente (30 s … 64 min). La espera se mide con el reloj monótono del sistema y el contador de
   arranques: adelantar la fecha del teléfono no la acorta y reiniciar vuelve a imponerla entera.
   Además, cada intento cuesta una ejecución completa de Argon2id. Es una medida de velocidad: la
   seguridad real descansa en Argon2id y en la contraseña maestra.
