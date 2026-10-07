@@ -12,6 +12,7 @@ import io.github.jls97.boveda.core.crypto.wipe
 import io.github.jls97.boveda.core.generator.GeneratorOptions
 import io.github.jls97.boveda.core.generator.PasswordGenerator
 import io.github.jls97.boveda.core.otp.RecoveryCode
+import io.github.jls97.boveda.core.vault.EntryLimits
 import io.github.jls97.boveda.core.vault.VaultData
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.core.vault.VaultSettings
@@ -21,17 +22,20 @@ import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
 import io.github.jls97.boveda.ui.components.CloudAuthorities
+import io.github.jls97.boveda.ui.components.clipboardClearNotice
 import io.github.jls97.boveda.ui.components.deleteDocument
 import io.github.jls97.boveda.ui.components.readBackup
 import io.github.jls97.boveda.ui.components.writeBackup
 import io.github.jls97.boveda.ui.lock.LockViewModel
 import io.github.jls97.boveda.ui.otp.RecoveryCodePurpose
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import javax.crypto.Cipher
 
@@ -87,6 +91,10 @@ class VaultViewModel(
     var busy by mutableStateOf(false)
         private set
 
+    /** Se conserva la bóveda que sustituyó la última restauración: se puede deshacer o descartar (B-31). */
+    var canUndoRestore by mutableStateOf(false)
+        private set
+
     val resumeTicks: StateFlow<Int> = session.resumeTicks
 
     /** Fecha de la última copia verificada y cambios desde entonces (B-38). */
@@ -112,6 +120,7 @@ class VaultViewModel(
         viewModelScope.launch {
             session.state.collect { state ->
                 if (state is VaultState.Unlocked) {
+                    canUndoRestore = session.canUndoRestore()
                     trackChanges(state.data)
                     if (state.integrityWarning && !integrityWarned) {
                         integrityWarned = true
@@ -243,6 +252,11 @@ class VaultViewModel(
             // The 2FA secret is edited from its own screens and never goes through the form.
             otp = existing?.otp,
         )
+        // Límites de uso, en bytes UTF-8, antes de que el códec los rechace sin decir qué campo.
+        EntryLimits.oversizedField(entry)?.let { oversized ->
+            message(oversized)
+            return
+        }
         launchBusy {
             when (val result = session.saveEntry(entry)) {
                 OperationResult.Success -> {
@@ -274,9 +288,7 @@ class VaultViewModel(
     fun copy(label: String, value: String) {
         val seconds = settings.clipboardClearSeconds
         session.clipboard.copy(value, seconds)
-        // Con «Al salir de la app», el bloqueo borra el portapapeles antes de que venza el temporizador.
-        val until = if (settings.autoLockSeconds == 0) "al salir de la app" else "en $seconds s"
-        message("$label copiado. Se borrará del portapapeles $until.")
+        message("$label copiado. ${clipboardClearNotice(seconds).replaceFirstChar { it.uppercase() }}.")
     }
 
     // endregion
@@ -306,11 +318,10 @@ class VaultViewModel(
 
     // region Settings
 
-    fun setAutoLock(seconds: Int) = updateSettings(settings.copy(autoLockSeconds = seconds))
-
-    fun setClipboardClear(seconds: Int) = updateSettings(settings.copy(clipboardClearSeconds = seconds))
-
-    /** Guarda [newSettings] tal cual. Si relajan la seguridad, la pantalla pide antes la contraseña maestra. */
+    /**
+     * Guarda [newSettings] tal cual. Si relajan la seguridad, la pantalla pide antes la contraseña
+     * maestra (B-37): no hay atajos que apliquen un ajuste sin pasar por ese camino (R02-4).
+     */
     fun updateSettings(newSettings: VaultSettings) {
         launchBusy {
             val result = session.updateSettings(newSettings)
@@ -321,21 +332,28 @@ class VaultViewModel(
     /**
      * Vuelve a pedir la contraseña maestra antes de una operación sensible: [onVerified] solo se
      * llama si es la correcta, y ya con [busy] a false para que pueda lanzar su propia operación.
+     * Comparte el freno de intentos con el desbloqueo (R02-1): si manda esperar, se dice cuánto.
      */
     fun verifyMasterPassword(password: String, onVerified: () -> Unit) {
         if (busy) return
         busy = true
         viewModelScope.launch {
-            val verified = try {
+            val result = try {
                 session.verifyMasterPassword(password.toCharArray())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                false
+                OperationResult.Failure("Error inesperado.")
             } finally {
                 busy = false
             }
-            if (verified) onVerified() else message("La contraseña maestra no es correcta.")
+            when (result) {
+                OperationResult.Success -> onVerified()
+                OperationResult.WrongPassword -> message("La contraseña maestra no es correcta.")
+                is OperationResult.Throttled -> message(throttledMessage(result.untilMillis))
+                is OperationResult.Failure -> message(result.message)
+                else -> message("No se pudo comprobar la contraseña.")
+            }
         }
     }
 
@@ -358,7 +376,7 @@ class VaultViewModel(
                 }
                 OperationResult.WrongPassword -> message("La contraseña actual no es correcta.")
                 is OperationResult.Failure -> message(result.message)
-                is OperationResult.Throttled -> message("Espera antes de volver a intentarlo.")
+                is OperationResult.Throttled -> message(throttledMessage(result.untilMillis))
                 else -> message("No se pudo cambiar la contraseña.")
             }
         }
@@ -480,28 +498,71 @@ class VaultViewModel(
         message("$reason Haz una copia de seguridad ahora.")
     }
 
-    fun restoreBackup(uri: Uri, password: String) {
+    /**
+     * Restaura una copia con la bóveda abierta. [currentPassword] es la contraseña maestra de la
+     * bóveda que hay ahora: con la bóveda abierta la sesión la exige siempre (B-31); aquí no hay
+     * vía forzada.
+     */
+    fun restoreBackup(uri: Uri, password: String, currentPassword: String) {
         launchBusy {
             val backup = readBackup(contentResolver, uri)
             if (backup == null) {
                 message("No se pudo leer el archivo.")
                 return@launchBusy
             }
-            when (val result = session.restoreBackup(backup, password.toCharArray())) {
+            val result = session.restoreBackup(
+                backup,
+                password.toCharArray(),
+                currentPassword.toCharArray(),
+                forceWithoutCurrent = false,
+            )
+            when (result) {
                 OperationResult.Success, is OperationResult.Restored -> {
                     backToList()
-                    val passwordNote = if ((result as? OperationResult.Restored)?.masterPasswordChanged == true) {
+                    canUndoRestore = session.canUndoRestore()
+                    val restored = result as? OperationResult.Restored
+                    val passwordNote = if (restored?.masterPasswordChanged == true) {
                         " La contraseña maestra es ahora la de la copia."
                     } else {
                         ""
                     }
-                    message("Copia restaurada.$passwordNote La huella se ha desactivado; vuelve a activarla si quieres.")
+                    val undoNote = if (restored?.hadUndo == true) {
+                        " Puedes deshacerlo desde Ajustes hasta la próxima restauración."
+                    } else {
+                        ""
+                    }
+                    message("Copia restaurada.$passwordNote La huella se ha desactivado; vuelve a activarla si quieres.$undoNote")
                 }
                 OperationResult.WrongPassword -> message("La contraseña de la copia no es correcta.")
                 OperationResult.WrongCurrentPassword -> message("La contraseña maestra actual no es correcta.")
                 is OperationResult.Failure -> message(result.message)
-                is OperationResult.Throttled -> message("Espera antes de volver a intentarlo.")
+                is OperationResult.Throttled -> message(throttledMessage(result.untilMillis))
             }
+        }
+    }
+
+    /**
+     * Vuelve a la bóveda anterior a la última restauración. La sesión se bloquea (las claves en
+     * memoria son de la bóveda que se va) y [onUndone] avisa a la pantalla de bloqueo, que es la
+     * que queda a la vista; la huella se desactiva.
+     */
+    fun undoRestore(onUndone: () -> Unit) {
+        launchBusy {
+            when (val result = session.undoRestore()) {
+                OperationResult.Success -> onUndone()
+                is OperationResult.Failure -> message(result.message)
+                else -> message("No se pudo deshacer la restauración.")
+            }
+            canUndoRestore = session.canUndoRestore()
+        }
+    }
+
+    /** Borra la copia de la bóveda que sustituyó la última restauración: ya no se podrá deshacer. */
+    fun discardUndo() {
+        launchBusy {
+            withContext(Dispatchers.IO) { session.discardUndo() }
+            canUndoRestore = session.canUndoRestore()
+            message("Copia de la bóveda anterior borrada.")
         }
     }
 
@@ -574,6 +635,16 @@ class VaultViewModel(
             }
         }
     }
+}
+
+/**
+ * Texto del aviso cuando el freno de intentos manda esperar hasta [untilMillis] (época, ms): dice
+ * cuántos segundos quedan, redondeados hacia arriba y nunca menos de uno, igual que la cuenta
+ * atrás de la pantalla de desbloqueo (R02-6).
+ */
+internal fun throttledMessage(untilMillis: Long, nowMillis: Long = System.currentTimeMillis()): String {
+    val seconds = ((untilMillis - nowMillis + 999) / 1_000).coerceAtLeast(1)
+    return "Demasiados intentos fallidos. Vuelve a intentarlo en $seconds s."
 }
 
 /**

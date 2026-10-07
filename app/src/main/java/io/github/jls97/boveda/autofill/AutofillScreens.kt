@@ -1,5 +1,6 @@
 package io.github.jls97.boveda.autofill
 
+import android.content.Intent
 import android.service.autofill.Dataset
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.jls97.boveda.MainActivity
 import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
 import io.github.jls97.boveda.core.autofill.ExternalText
@@ -75,6 +77,7 @@ internal fun AutofillApp(
     onClose: () -> Unit,
 ) {
     val state by session.state.collectAsStateWithLifecycle()
+    val appContext = LocalContext.current.applicationContext
     when (val current = state) {
         VaultState.NoVault -> MessageScreen(
             title = "Todavía no hay bóveda",
@@ -90,6 +93,12 @@ internal fun AutofillApp(
                 is AutofillRequest.Fill -> "Para: ${request.target.label}"
                 is AutofillRequest.FillOtp -> "Código 2FA para: ${request.target.label}"
                 is AutofillRequest.Save -> request.pending?.let { "Guardar para: ${it.target.label}" }
+            },
+            // With the fingerprint on, the master password is never typed inside the requesting
+            // app's task: Bóveda opens in its own task and this screen closes with no result (M-04).
+            onUsePasswordInApp = {
+                appContext.startActivity(Intent(appContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                onClose()
             },
         )
         is VaultState.Unlocked -> {

@@ -63,18 +63,21 @@ object VaultCodec {
     private const val MAX_SEALED_OTP_SIZE = 4_096
 
     /**
-     * Most UTF-8 bytes each text field may hold. Generous for anything typed by hand, and small
-     * enough that a crafted backup cannot persist a value that freezes the interface or exhausts
-     * memory on every unlock. Checked when encoding too, so the app never writes what it would
-     * then refuse to read.
+     * Format ceilings: most UTF-8 bytes each text field may hold, read or written. They are part
+     * of the format, like the Argon2id ceilings: small enough that a crafted backup cannot
+     * persist a value that freezes the interface or exhausts memory on every unlock, and far
+     * above anything the first versions (which had no limit) wrote with a real use, so those
+     * vaults keep opening and, since encoding checks the same ceiling, saving again. What a
+     * person may type is bounded earlier and much lower by [EntryLimits]; a field above a ceiling
+     * is reported as [OversizedFieldException], never as a damaged file.
      */
     const val MAX_ID_BYTES = 128
-    const val MAX_TITLE_BYTES = 1_024
-    const val MAX_USERNAME_BYTES = 1_024
-    const val MAX_PASSWORD_BYTES = 4_096
-    const val MAX_URL_BYTES = 2_048
-    const val MAX_NOTES_BYTES = 65_536
-    const val MAX_AUTOFILL_TARGETS_BYTES = 16_384
+    const val MAX_TITLE_BYTES = 256 * 1_024
+    const val MAX_USERNAME_BYTES = 256 * 1_024
+    const val MAX_PASSWORD_BYTES = 256 * 1_024
+    const val MAX_URL_BYTES = 256 * 1_024
+    const val MAX_NOTES_BYTES = 1_024 * 1_024
+    const val MAX_AUTOFILL_TARGETS_BYTES = 256 * 1_024
 
     fun encode(data: VaultData): ByteArray {
         val writer = ByteWriter(4_096)
@@ -195,7 +198,7 @@ object VaultCodec {
     }
 
     private fun ByteArray.asBoundedString(maxBytes: Int): String {
-        if (size > maxBytes) throw CorruptedVaultException("Field too long")
+        if (size > maxBytes) throw OversizedFieldException("An entry has a field above $maxBytes bytes")
         return asString()
     }
 

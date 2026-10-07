@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.jls97.boveda.core.autofill.AutofillTarget
 import io.github.jls97.boveda.core.autofill.CredentialMatcher
 import io.github.jls97.boveda.core.autofill.SaveCapture
+import io.github.jls97.boveda.core.vault.EntryLimits
 import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.VaultSession
@@ -131,6 +132,12 @@ internal class AutofillViewModel(private val session: VaultSession) : ViewModel(
                     // Web sites match through the url; apps through a link, if they can be linked.
                     autofillTargets = if (host == null && !impersonates(pending.target)) listOfNotNull(pending.target.key) else emptyList(),
                 )
+            }
+            // What the other app handed over may be anything: the same limits as the editor.
+            EntryLimits.oversizedField(entry)?.let { oversized ->
+                busy = false
+                error = oversized
+                return@launch
             }
             val result = session.saveEntry(entry)
             busy = false

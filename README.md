@@ -144,8 +144,8 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
   los códigos 2FA. Revísalo antes de activarla; al cambiar la contraseña maestra la huella se
   desactiva y hay que volver a activarla.
 - **Freno a los intentos.** Tras 5 contraseñas incorrectas, cada fallo bloquea la siguiente
-  comprobación de contraseña (desbloqueo, cambio de contraseña o restauración) durante un tiempo
-  creciente (30 s … 64 min). La espera se mide con el reloj monótono del sistema y el contador de
+  comprobación de contraseña (desbloqueo, cambio de contraseña, restauración o re-autenticación en
+  Ajustes) durante un tiempo creciente (30 s … 64 min). La espera se mide con el reloj monótono del sistema y el contador de
   arranques: adelantar la fecha del teléfono no la acorta y reiniciar vuelve a imponerla entera.
   Además, cada intento cuesta una ejecución completa de Argon2id. Es una medida de velocidad: la
   seguridad real descansa en Argon2id y en la contraseña maestra.
@@ -242,6 +242,12 @@ copia después de cambios importantes o de cambiar la contraseña maestra.
 
 La copia incluye los códigos 2FA, cifrados. Al restaurarla en otro móvil, o en este tras cambiar
 tus huellas, Bóveda te pedirá también el código de recuperación para volver a abrirlos.
+
+Límites por campo (nuevos tras 0.2.0): al escribir o pegar, nombre y usuario admiten 1 KB, la contraseña
+4 KB, la web 2 KB y las notas 64 KB (en bytes UTF-8); la app avisa bajo el campo y al guardar. El
+archivo admite más (256 KB por campo y 1 MB en notas), así que las bóvedas y copias de versiones
+anteriores, que no tenían límite, siguen abriéndose y guardándose. Solo por encima de eso se
+rechaza la copia, con un aviso de campo demasiado grande, nunca como archivo dañado.
 
 ## Desarrollo
 

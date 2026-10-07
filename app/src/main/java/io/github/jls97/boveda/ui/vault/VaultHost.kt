@@ -29,6 +29,8 @@ fun VaultHost(
     state: VaultState.Unlocked,
     viewModel: VaultViewModel,
     onPickExportDestination: (String) -> Unit,
+    /** Tras deshacer una restauración la bóveda queda bloqueada: avisa a la pantalla de bloqueo. */
+    onRestoreUndone: () -> Unit,
 ) {
     val otp = viewModel { OtpViewModel(session) }
     val backupStatus by viewModel.backupStatus.collectAsStateWithLifecycle()
@@ -57,6 +59,7 @@ fun VaultHost(
             onSettings = { viewModel.navigate(Route.Settings) },
             onLock = viewModel::lock,
             snackbar = snackbar,
+            restoreUndo = { RestoreUndoBanner(viewModel, onRestoreUndone) },
         )
 
         is Route.Detail -> {
@@ -128,6 +131,7 @@ fun VaultHost(
                 viewModel.navigate(Route.OtpRecoveryCode(RecoveryCodePurpose.REPLACE))
             },
             onPickExportDestination = onPickExportDestination,
+            onRestoreUndone = onRestoreUndone,
             viewModel = viewModel,
             snackbar = snackbar,
         )

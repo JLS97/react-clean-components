@@ -230,6 +230,7 @@ class VaultSessionTest {
         integrity = integrity,
         clipboard = FakeClipboard(),
         scope = scope,
+        deviceSecure = { true },
         elapsedRealtime = { now },
     )
 

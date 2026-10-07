@@ -1,6 +1,7 @@
 package io.github.jls97.boveda.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -18,6 +19,26 @@ class BackupReminderTest {
         val text = backupReminder(BackupStatus(), now)
         assertNotNull(text)
         assertTrue(text!!.contains("ninguna copia"))
+    }
+
+    @Test
+    fun existingVaultWithoutRecordGetsTheSofterNotice() {
+        // Bóveda anterior al registro de copias: no se sabe si hubo copia, así que no se afirma «nunca».
+        val unknown = BackupStatus(historyUnknown = true)
+        assertFalse(unknown.neverBackedUp)
+        assertTrue(unknown.unverifiedHistory)
+        assertEquals(0L, unknown.daysSinceBackup(now))
+        val text = backupReminder(unknown, now)
+        assertNotNull(text)
+        assertTrue(text!!.contains("No consta ninguna copia verificada"))
+        assertFalse(text.contains("Todavía no hay"))
+        assertEquals("Última copia verificada con esta versión: ninguna.", lastBackupLabel(unknown) { "FECHA" })
+        // Un motivo concreto sigue ganando, y la primera copia verificada cierra la incógnita.
+        assertTrue(backupReminder(unknown.copy(pendingReason = "Motivo."), now)!!.startsWith("Motivo."))
+        val verified = unknown.copy(lastBackupAt = now - TimeUnit.DAYS.toMillis(1))
+        assertFalse(verified.unverifiedHistory)
+        assertNull(backupReminder(verified, now))
+        assertEquals("Última copia: FECHA. Sin cambios desde entonces.", lastBackupLabel(verified) { "FECHA" })
     }
 
     @Test

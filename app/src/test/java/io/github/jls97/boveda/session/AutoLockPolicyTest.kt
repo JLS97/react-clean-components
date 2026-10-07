@@ -2,6 +2,7 @@ package io.github.jls97.boveda.session
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -41,22 +42,75 @@ class AutoLockPolicyTest {
 
     @Test
     fun inactivityTimeoutFollowsTheSetting() {
-        assertEquals(60_000L, AutoLockPolicy.inactivityTimeoutMs(60, externalActivityExpected = false))
-        assertEquals(60_000L, AutoLockPolicy.inactivityTimeoutMs(60, externalActivityExpected = true))
-        assertEquals(900_000L, AutoLockPolicy.inactivityTimeoutMs(900, externalActivityExpected = false))
-        assertEquals("sin temporizador al salir", 0L, AutoLockPolicy.inactivityTimeoutMs(0, externalActivityExpected = false))
-        assertEquals("tope mientras dura la excepción", grace, AutoLockPolicy.inactivityTimeoutMs(0, externalActivityExpected = true))
+        assertEquals(60_000L, AutoLockPolicy.inactivityTimeoutMs(60))
+        assertEquals(900_000L, AutoLockPolicy.inactivityTimeoutMs(900))
+        assertEquals("sin temporizador al salir", 0L, AutoLockPolicy.inactivityTimeoutMs(0))
+        // "Lock when leaving" has no inactivity timer at all, whatever was announced.
+        assertFalse(AutoLockPolicy.shouldLockForInactivity(0, now, now + 24 * 60 * 60_000L))
     }
+
+    /**
+     * One tick of the VaultSession timer with "lock when leaving": the same two rules, composed
+     * from the same inputs as in production.
+     */
+    private fun tickLocks(expectedUntil: Long, backgroundSince: Long?, lastTouch: Long, t: Long): Boolean =
+        AutoLockPolicy.shouldLockForInactivity(0, lastTouch, t) ||
+            AutoLockPolicy.shouldLockOnAnnouncementExpiry(0, expectedUntil, backgroundSince, t)
 
     @Test
     fun leavingModeStillLocksWhileThePickerIsAbandoned() {
-        // The user opened the picker (exception active) and pressed Home: nobody calls
-        // onAppForeground, so the inactivity timer must lock on its own after the grace.
-        val lastTouch = now
-        assertFalse(AutoLockPolicy.shouldLockForInactivity(0, true, lastTouch, lastTouch + grace - 1))
-        assertTrue(AutoLockPolicy.shouldLockForInactivity(0, true, lastTouch, lastTouch + grace))
-        // Without the exception, "lock when leaving" has no inactivity timer at all.
-        assertFalse(AutoLockPolicy.shouldLockForInactivity(0, false, lastTouch, lastTouch + 24 * 60 * 60_000L))
+        // The touch that opens the picker (onUserInteraction) comes a few ms before the
+        // announcement, and the app goes to the background a bit later, when the picker shows.
+        // The user presses Home from the picker: nobody calls onAppForeground, so the ticks must
+        // lock on their own exactly when the announcement expires, and not before.
+        val lastTouch = now - 50
+        val until = AutoLockPolicy.externalActivityDeadline(now)
+        val backgroundSince = now + 200
+        var lockedAt: Long? = null
+        var t = backgroundSince
+        while (t <= until + 5_000 && lockedAt == null) {
+            if (tickLocks(until, backgroundSince, lastTouch, t)) lockedAt = t
+            t += 1_000
+        }
+        assertNotNull("un selector abandonado bloquea solo", lockedAt)
+        assertTrue("no antes del plazo", lockedAt!! >= until)
+        assertTrue("en el primer tick desde el plazo", lockedAt < until + 1_000)
+        // Checked at the exact instants too: not with the whole window ahead...
+        assertFalse(tickLocks(until, backgroundSince, lastTouch, until - 1))
+        // ...and yes at the deadline itself, even with a touch 30 s before the announcement.
+        assertTrue(tickLocks(until, backgroundSince, lastTouch, until))
+        assertFalse(tickLocks(until, backgroundSince, now - 30_000, until - 1))
+        assertTrue(tickLocks(until, backgroundSince, now - 30_000, until))
+    }
+
+    @Test
+    fun announcementWithoutLeavingNeverLocks() {
+        // The picker never opened (or the user is back in front): the app stays in the
+        // foreground, so an expired announcement is no reason to lock.
+        val until = AutoLockPolicy.externalActivityDeadline(now)
+        for (t in now..until + 10 * 60_000L step 1_000) {
+            assertFalse("t = $t", tickLocks(until, backgroundSince = null, lastTouch = now, t = t))
+        }
+    }
+
+    @Test
+    fun returningFromThePickerClearsTheAnnouncement() {
+        // onAppForeground sets the deadline to 0 and backgroundSince to null: the tick after that
+        // has nothing to lock on, however old the announcement was.
+        val until = AutoLockPolicy.externalActivityDeadline(now)
+        assertFalse(AutoLockPolicy.shouldLockOnForeground(0, now + 200, now, now + 30_000))
+        assertFalse(tickLocks(expectedUntil = 0L, backgroundSince = null, lastTouch = now, t = until + 60_000))
+        // An announcement alone, without the background, is not enough either way.
+        assertFalse(AutoLockPolicy.shouldLockOnAnnouncementExpiry(0, 0L, backgroundSinceMs = now, nowMs = until))
+    }
+
+    @Test
+    fun announcementExpiryOnlyAppliesToTheZeroSetting() {
+        // With an inactivity setting the timer already applies; the deadline adds nothing.
+        val until = AutoLockPolicy.externalActivityDeadline(now)
+        assertTrue(AutoLockPolicy.shouldLockOnAnnouncementExpiry(0, until, now + 200, until))
+        assertFalse(AutoLockPolicy.shouldLockOnAnnouncementExpiry(60, until, now + 200, until))
+        assertFalse(AutoLockPolicy.shouldLockOnAnnouncementExpiry(900, until, now + 200, until + 60_000))
     }
 
     @Test
@@ -64,9 +118,9 @@ class AutoLockPolicyTest {
         // A frozen process misses its one-second ticks; the first tick after thawing compares
         // against the monotonic clock and finds the whole gap.
         val lastTouch = now
-        assertFalse(AutoLockPolicy.shouldLockForInactivity(60, false, lastTouch, lastTouch + 59_999))
-        assertTrue(AutoLockPolicy.shouldLockForInactivity(60, false, lastTouch, lastTouch + 60_000))
-        assertTrue(AutoLockPolicy.shouldLockForInactivity(60, false, lastTouch, lastTouch + 3 * 60 * 60_000L))
+        assertFalse(AutoLockPolicy.shouldLockForInactivity(60, lastTouch, lastTouch + 59_999))
+        assertTrue(AutoLockPolicy.shouldLockForInactivity(60, lastTouch, lastTouch + 60_000))
+        assertTrue(AutoLockPolicy.shouldLockForInactivity(60, lastTouch, lastTouch + 3 * 60 * 60_000L))
     }
 
     @Test

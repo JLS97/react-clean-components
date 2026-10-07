@@ -1,6 +1,7 @@
 package io.github.jls97.boveda.security
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -13,6 +14,7 @@ class UnlockThrottleTest {
     private class FakeStore : ThrottleStore {
         var state = ThrottleState()
         var saves = 0
+        var kept: ThrottleState? = null
 
         override fun load(): ThrottleState = state
 
@@ -23,6 +25,12 @@ class UnlockThrottleTest {
 
         override fun clear() {
             state = ThrottleState()
+        }
+
+        override fun loadKept(): ThrottleState? = kept
+
+        override fun saveKept(state: ThrottleState?) {
+            kept = state
         }
     }
 
@@ -235,6 +243,100 @@ class UnlockThrottleTest {
         assertEquals(0L, throttle.blockedUntil())
         assertEquals(cap, throttle.recordFailure() - clock.wall)
         assertEquals(cap, store.state.penaltyMs)
+    }
+
+    // (f) a forced restore keeps the count aside for the vault that may come back (R01-9)
+
+    @Test
+    fun stateKeptForUndoSurvivesAResetAndComesBackWithTheUndo() {
+        fail(5)
+        clock.tick(30_000L) // served: the count stays
+        assertEquals(0L, throttle.blockedUntil())
+        // Forced restore of another vault, then its owner unlocks it: the live state is cleared...
+        throttle.keepForUndo()
+        throttle.reset()
+        assertEquals(ThrottleState(), store.state)
+        assertEquals(0L, fail(4))
+        // ...but undoing the restore brings the original vault back with its own count: the next
+        // wrong password is the sixth, not the first.
+        throttle.restoreKept()
+        assertEquals(5, store.state.failures)
+        assertNull(store.kept)
+        assertEquals(60_000L, throttle.recordFailure() - clock.wall)
+    }
+
+    @Test
+    fun aPendingBlockKeptForUndoIsStillServedAfterTheUndo() {
+        fail(5)
+        throttle.keepForUndo()
+        throttle.reset()
+        clock.tick(10_000L)
+        throttle.restoreKept()
+        assertEquals(20_000L, remaining())
+    }
+
+    @Test
+    fun restoringWithNothingKeptChangesNothingAndDiscardEmptiesTheSlot() {
+        fail(3)
+        throttle.restoreKept()
+        assertEquals(3, store.state.failures)
+        throttle.keepForUndo()
+        throttle.discardKept()
+        assertNull(store.kept)
+        throttle.reset()
+        throttle.restoreKept()
+        assertEquals(ThrottleState(), store.state)
+    }
+
+    // (g) the state the previous version wrote (failures + blocked_until) is migrated (R02-5)
+
+    private val policy = ThrottlePolicy()
+
+    /** The preferences of the old throttle after [failures] wrong passwords, [left] ms still pending. */
+    private fun legacy(failures: Int, left: Long): ThrottleState =
+        UnlockThrottle.migrateLegacy(failures, clock.wall + left, clock, policy)
+
+    @Test
+    fun aPendingLegacyBlockIsServedAfterTheUpdate() {
+        store.state = legacy(failures = 5, left = 20_000L)
+        with(store.state) {
+            assertEquals(5, failures)
+            assertEquals(30_000L, penaltyMs)
+            assertEquals(clock.elapsed + 20_000L, blockedElapsedUntil)
+            assertEquals(clock.boots, bootCount)
+            assertEquals(clock.wall + 20_000L, blockedWallUntil)
+        }
+        assertEquals(20_000L, remaining())
+        clock.tick(20_000L)
+        assertEquals(0L, throttle.blockedUntil())
+        // The count came along: the next failure is the sixth.
+        assertEquals(60_000L, throttle.recordFailure() - clock.wall)
+    }
+
+    @Test
+    fun aLegacyBlockCannotBeShortenedByTheDateNorLastLongerThanOnePenalty() {
+        store.state = legacy(failures = 5, left = 20_000L)
+        clock.wall += 365L * 24 * 60 * 60 * 1000
+        assertEquals(20_000L, remaining())
+        // An old deadline further away than the penalty itself (another policy, a date moved back)
+        // is capped at one full penalty.
+        store.state = legacy(failures = 6, left = 10L * 60_000L)
+        assertEquals(60_000L, remaining())
+    }
+
+    @Test
+    fun anExpiredLegacyBlockLeavesOnlyTheFailureCount() {
+        store.state = legacy(failures = 7, left = -1L)
+        assertEquals(ThrottleState(failures = 7), store.state)
+        assertEquals(0L, throttle.blockedUntil())
+        assertEquals(240_000L, throttle.recordFailure() - clock.wall)
+    }
+
+    @Test
+    fun aLegacyBlockWithoutAPenaltyBehindItStillBlocksForWhatIsLeft() {
+        store.state = legacy(failures = 0, left = 15_000L)
+        assertEquals(15_000L, store.state.penaltyMs)
+        assertEquals(15_000L, remaining())
     }
 
     @Test

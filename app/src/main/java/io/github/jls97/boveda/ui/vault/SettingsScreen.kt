@@ -58,6 +58,7 @@ import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
+import io.github.jls97.boveda.ui.components.RestoreBackupDialog
 import io.github.jls97.boveda.ui.components.SecureAlertDialog
 import io.github.jls97.boveda.ui.components.StrengthMeter
 import io.github.jls97.boveda.ui.components.autoLockLabel
@@ -88,6 +89,8 @@ fun SettingsScreen(
     onRecoverOtp: () -> Unit,
     onNewRecoveryCode: () -> Unit,
     onPickExportDestination: (String) -> Unit,
+    /** Tras deshacer una restauración la bóveda queda bloqueada: avisa a la pantalla de bloqueo. */
+    onRestoreUndone: () -> Unit,
     viewModel: VaultViewModel,
     snackbar: SnackbarHostState,
 ) {
@@ -97,6 +100,8 @@ fun SettingsScreen(
     var changingPassword by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
     var restoreUri by remember { mutableStateOf<Uri?>(null) }
+    // Acción sobre la última restauración a la espera de confirmación (B-31).
+    var undoAction by remember { mutableStateOf<UndoAction?>(null) }
     var confirmExport by remember { mutableStateOf(false) }
     var checkingRecoveryCode by remember { mutableStateOf(false) }
     var editingPhrase by remember { mutableStateOf(false) }
@@ -183,10 +188,13 @@ fun SettingsScreen(
             viewModel.message("No se pudo preparar la huella. Comprueba que tienes una registrada.")
             return
         }
-        BiometricPrompts.authenticate(activity, "Activar huella", "Confirma con tu huella", cipher) { authorized, error ->
+        // La contraseña maestra acaba de comprobarse: el botón negativo solo puede ser «Cancelar».
+        BiometricPrompts.authenticate(activity, "Activar huella", "Confirma con tu huella", cipher, negativeLabel = "Cancelar") { authorized, error ->
             when {
                 authorized != null -> viewModel.enableBiometric(authorized)
                 error != null -> viewModel.message(error)
+                // «Cancelar» o cierre del diálogo: la huella sigue desactivada y se dice.
+                else -> viewModel.message("Activación cancelada. El desbloqueo con huella sigue desactivado.")
             }
         }
     }
@@ -421,9 +429,26 @@ fun SettingsScreen(
             )
             ListItem(
                 headlineContent = { Text("Restaurar copia") },
-                supportingContent = { Text("Sustituye todo el contenido actual por el de la copia.") },
+                supportingContent = { Text("Sustituye todo el contenido actual por el de la copia. Pide la contraseña maestra actual y la de la copia.") },
                 modifier = Modifier.clickable(enabled = !viewModel.busy) { confirmRestore = true },
             )
+            if (viewModel.canUndoRestore) {
+                ListItem(
+                    headlineContent = { Text("Volver a la bóveda anterior") },
+                    supportingContent = {
+                        Text(
+                            "Deshace la última restauración: la bóveda de antes vuelve, bloqueada y sin huella, " +
+                                "y la de ahora se guarda en su lugar. Pide la contraseña maestra.",
+                        )
+                    },
+                    modifier = Modifier.clickable(enabled = !viewModel.busy) { undoAction = UndoAction.UNDO },
+                )
+                ListItem(
+                    headlineContent = { Text("Descartar la bóveda anterior") },
+                    supportingContent = { Text("Borra la copia de la bóveda que sustituyó la última restauración. No se puede deshacer.") },
+                    modifier = Modifier.clickable(enabled = !viewModel.busy) { undoAction = UndoAction.DISCARD },
+                )
+            }
             HorizontalDivider()
 
             SectionTitle("Privacidad")
@@ -497,18 +522,21 @@ fun SettingsScreen(
         )
     }
 
+    // Con la bóveda abierta la sesión exige siempre la contraseña maestra actual (B-31); la huella
+    // no la sustituye.
     restoreUri?.let { uri ->
-        PasswordPromptDialog(
-            title = "Restaurar copia",
-            text = "Escribe la contraseña maestra con la que se hizo la copia.",
-            confirmLabel = "Restaurar",
-            onConfirm = { password ->
+        RestoreBackupDialog(
+            text = "Escribe la contraseña maestra con la que se hizo la copia y la contraseña maestra " +
+                "actual. Al terminar, la contraseña maestra será la de la copia.",
+            onConfirm = { backupPassword, currentPassword ->
                 restoreUri = null
-                viewModel.restoreBackup(uri, password)
+                viewModel.restoreBackup(uri, backupPassword, currentPassword)
             },
             onDismiss = { restoreUri = null },
         )
     }
+
+    RestoreUndoDialogs(undoAction, viewModel, onRestoreUndone) { undoAction = null }
 
     if (confirmExport) {
         ConfirmDialog(

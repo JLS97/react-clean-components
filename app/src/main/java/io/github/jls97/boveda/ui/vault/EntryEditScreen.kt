@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import io.github.jls97.boveda.core.vault.EntryLimits
 import io.github.jls97.boveda.ui.components.BackButton
 import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.PasswordField
@@ -70,6 +71,7 @@ fun EntryEditScreen(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = false),
             )
+            LimitError(EntryLimits.titleError(draft.title))
             NoLearningTextField(
                 value = draft.username,
                 onValueChange = { onDraftChange(draft.copy(username = it)) },
@@ -77,11 +79,13 @@ fun EntryEditScreen(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, autoCorrectEnabled = false),
             )
+            LimitError(EntryLimits.usernameError(draft.username))
             PasswordField(
                 value = draft.password,
                 onValueChange = { onDraftChange(draft.copy(password = it)) },
                 label = "Contraseña",
             )
+            LimitError(EntryLimits.passwordError(draft.password))
             StrengthMeter(draft.password)
             OutlinedButton(onClick = onGenerate, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                 Text("Generar una contraseña segura")
@@ -94,6 +98,7 @@ fun EntryEditScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
                 modifier = Modifier.fillMaxWidth(),
             )
+            LimitError(EntryLimits.urlError(draft.url))
             NoLearningTextField(
                 value = draft.notes,
                 onValueChange = { onDraftChange(draft.copy(notes = it)) },
@@ -101,6 +106,7 @@ fun EntryEditScreen(
                 minLines = 3,
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
             )
+            LimitError(EntryLimits.notesError(draft.notes))
             if (draft.autofillTargets.isNotEmpty()) {
                 Text("Autorrelleno vinculado a", style = MaterialTheme.typography.titleSmall)
                 draft.autofillTargets.forEach { target ->
@@ -113,5 +119,16 @@ fun EntryEditScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Aviso bajo un campo que supera su límite ([EntryLimits]): lo pegado no se recorta a escondidas,
+ * se avisa y «Guardar» repite el mismo mensaje hasta que quepa.
+ */
+@Composable
+private fun LimitError(message: String?) {
+    if (message != null) {
+        Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     }
 }

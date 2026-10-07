@@ -16,7 +16,9 @@ object BiometricPrompts {
 
     /**
      * Shows the system fingerprint dialog. [onResult] receives the authorized cipher, or null plus
-     * an error message (null message when the user simply cancelled).
+     * an error message (null message when the user simply cancelled). The negative button
+     * ([negativeLabel]) calls [onNegative] when given, so a screen can tell "Usar contraseña" from
+     * a plain cancellation (back, touch outside); without it, it reports (null, null) like one.
      */
     fun authenticate(
         activity: Activity,
@@ -24,6 +26,7 @@ object BiometricPrompts {
         subtitle: String,
         cipher: Cipher,
         negativeLabel: String = "Usar contraseña",
+        onNegative: (() -> Unit)? = null,
         onResult: (cipher: Cipher?, error: String?) -> Unit,
     ): CancellationSignal {
         val executor = activity.mainExecutor
@@ -32,7 +35,7 @@ object BiometricPrompts {
             .setTitle(title)
             .setSubtitle(subtitle)
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-            .setNegativeButton(negativeLabel, executor) { _, _ -> onResult(null, null) }
+            .setNegativeButton(negativeLabel, executor) { _, _ -> if (onNegative != null) onNegative() else onResult(null, null) }
             .build()
         prompt.authenticate(
             BiometricPrompt.CryptoObject(cipher),

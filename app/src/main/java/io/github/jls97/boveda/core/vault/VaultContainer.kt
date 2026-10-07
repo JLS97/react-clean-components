@@ -67,8 +67,9 @@ object VaultContainer {
      * @throws WrongPasswordException if the password is wrong or the header was altered.
      * @throws CorruptedVaultException if the file is damaged.
      * @throws UnsupportedVaultException if the file uses an unknown format or absurd KDF costs.
-     * @throws KdfMemoryException if the KDF needs more than half of [maxHeapBytes]: before running
-     *   Argon2id, so a crafted header cannot take the app down with an OutOfMemoryError.
+     * @throws KdfMemoryException if the KDF asks for more than [KdfParams.DEFAULT] and more than
+     *   half of [maxHeapBytes]: before running Argon2id, so a crafted header cannot take the app
+     *   down with an OutOfMemoryError.
      */
     fun open(blob: ByteArray, password: CharArray, maxHeapBytes: Long = Runtime.getRuntime().maxMemory()): Opened {
         val header = parseHeader(blob)
@@ -130,10 +131,20 @@ object VaultContainer {
      * within [KdfParams.MAX_MEMORY_KIB] can still exhaust the heap of a phone with a small one.
      * Half of the heap leaves room for the rest of the app.
      *
-     * @throws KdfMemoryException if the derivation would claim more than half of [maxHeapBytes].
+     * Costs up to [KdfParams.DEFAULT] are always accepted: the app writes them into every vault
+     * and backup, so refusing them would lock the user out on a phone with a small heap (96 or
+     * 128 MiB without `largeHeap`), where the previous versions did open the vault. The relative
+     * check only guards against files asking for more than the app itself ever writes.
+     *
+     * @throws KdfMemoryException if the derivation would claim more than half of [maxHeapBytes]
+     *   with costs above [KdfParams.DEFAULT], or more than [KdfParams.MAX_MEMORY_KIB] at all.
      */
     fun ensureKdfFitsInMemory(params: KdfParams, maxHeapBytes: Long = Runtime.getRuntime().maxMemory()) {
-        if (params.memoryKiB > KdfParams.MAX_MEMORY_KIB || params.memoryBytes > maxHeapBytes / 2) {
+        if (params.memoryKiB > KdfParams.MAX_MEMORY_KIB) {
+            throw KdfMemoryException("Key derivation needs ${params.memoryKiB} KiB, more than the format allows")
+        }
+        if (params.memoryKiB <= KdfParams.DEFAULT.memoryKiB) return
+        if (params.memoryBytes > maxHeapBytes / 2) {
             throw KdfMemoryException("Key derivation needs ${params.memoryKiB} KiB, more than this process allows")
         }
     }

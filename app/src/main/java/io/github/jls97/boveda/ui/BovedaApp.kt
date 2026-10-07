@@ -26,21 +26,26 @@ fun BovedaApp(session: VaultSession) {
     // archivo vacío que el sistema ya había creado se puede borrar (M-10).
     val vaultViewModel = viewModel {
         val app = context.applicationContext
-        VaultViewModel(session, app.contentResolver, BackupLog(app))
+        // Una bóveda anterior al registro de copias no cuenta como «nunca copiada» (R03-7).
+        VaultViewModel(session, app.contentResolver, BackupLog(app, vaultExists = session.state.value !is VaultState.NoVault))
     }
     val exportLauncher = rememberLauncherForActivityResult(CreateLocalDocument("application/octet-stream")) { uri ->
         vaultViewModel.finishExport(uri)
     }
+    // También en la raíz: deshacer una restauración desde la bóveda abierta la bloquea, y el aviso
+    // de que la anterior ha vuelto lo muestra la pantalla de bloqueo (B-31).
+    val lockViewModel = viewModel { LockViewModel(session) }
     // Escribir con el teclado en pantalla también pospone el autobloqueo (I-31).
     TouchOnTyping(onTyping = session::touch) {
         when (val current = state) {
-            VaultState.NoVault -> SetupScreen(viewModel { LockViewModel(session) })
-            VaultState.Locked -> UnlockScreen(viewModel { LockViewModel(session) })
+            VaultState.NoVault -> SetupScreen(lockViewModel)
+            VaultState.Locked -> UnlockScreen(lockViewModel)
             is VaultState.Unlocked -> VaultHost(
                 session = session,
                 state = current,
                 viewModel = vaultViewModel,
                 onPickExportDestination = { fileName -> exportLauncher.launch(fileName) },
+                onRestoreUndone = { lockViewModel.showNotice(LockViewModel.RESTORE_UNDONE) },
             )
         }
     }

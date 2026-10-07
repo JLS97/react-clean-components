@@ -10,6 +10,7 @@ import java.security.InvalidAlgorithmParameterException
 import java.security.KeyStore
 import java.security.KeyStoreException
 import java.security.ProviderException
+import java.security.UnrecoverableKeyException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -45,7 +46,22 @@ enum class KeySecurityLevel(val label: String) {
 internal class KeystoreKeys(private val context: Context) {
     private val keyStore: KeyStore = KeyStore.getInstance(PROVIDER).apply { load(null) }
 
-    fun get(alias: String): SecretKey? = keyStore.getKey(alias, null) as? SecretKey
+    /**
+     * The key under [alias], or null when there is none. Android answers null only when the
+     * keystore says the key does not exist and throws `UnrecoverableKeyException` for every other
+     * failure, transient ones included, so that exception is read by its error code
+     * ([KeystoreFailurePolicy]): a key that is gone or corrupted is null as well, and anything else
+     * is a [KeystoreUnavailableException] to retry later.
+     */
+    fun get(alias: String): SecretKey? =
+        try {
+            keyStore.getKey(alias, null) as? SecretKey
+        } catch (e: UnrecoverableKeyException) {
+            when (KeystoreFailurePolicy.classifyUnrecoverableKey(KeystoreFailurePolicy.keystoreErrorCode(e))) {
+                KeystoreFailurePolicy.Kind.PERMANENT -> null
+                KeystoreFailurePolicy.Kind.TRANSIENT -> throw KeystoreUnavailableException("Keystore did not respond", e)
+            }
+        }
 
     fun delete(alias: String) {
         if (keyStore.containsAlias(alias)) keyStore.deleteEntry(alias)

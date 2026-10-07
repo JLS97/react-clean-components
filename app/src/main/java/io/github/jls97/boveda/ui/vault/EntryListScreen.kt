@@ -61,6 +61,8 @@ fun EntryListScreen(
     onSettings: () -> Unit,
     onLock: () -> Unit,
     snackbar: SnackbarHostState,
+    /** Aviso con las acciones sobre la última restauración, mientras se pueda deshacer (B-31). */
+    restoreUndo: @Composable () -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val visible = remember(entries, query) {
@@ -153,6 +155,7 @@ fun EntryListScreen(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
+            restoreUndo()
             if (visible.isEmpty()) {
                 Box(
                     modifier = Modifier
