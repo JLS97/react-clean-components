@@ -1247,7 +1247,7 @@ class VaultSession internal constructor(
             } catch (e: Exception) {
                 if (open === current) publish(current)
                 return@withLock OperationResult.Failure(
-                    "Código cambiado, pero este móvil no pudo guardar la llave nueva. " +
+                    "Código cambiado, pero este teléfono no pudo guardar la llave nueva. " +
                         "Recupera los códigos 2FA con el código nuevo.",
                 )
             }

@@ -286,7 +286,7 @@ class OtpViewModel(
         if (cipher == null) {
             message(
                 if (otpAccess == OtpAccess.LOCKED) {
-                    "Tus huellas han cambiado, así que los códigos 2FA están bloqueados en este móvil. " +
+                    "Tus huellas han cambiado, así que los códigos 2FA están bloqueados en este teléfono. " +
                         "Recupéralos con tu código de recuperación."
                 } else {
                     "No se pudo preparar la huella."

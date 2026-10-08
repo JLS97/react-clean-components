@@ -174,9 +174,9 @@ internal fun AltaContenido(
             Text(
                 voz(
                     "Guardo tus contraseñas y tus códigos 2FA, y a mí no me la cuela nadie. Todo se cifra en " +
-                        "este teléfono y de aquí no sale: ni siquiera tengo permiso de Internet.",
-                    "Guarda tus contraseñas y códigos 2FA. Todo se cifra en este teléfono y no sale de él: la " +
-                        "app no tiene permiso de Internet.",
+                        "este teléfono y no se lo mando a nadie: ni siquiera tengo permiso de Internet.",
+                    "Guarda tus contraseñas y códigos 2FA. Todo se cifra en este teléfono y la app no lo envía " +
+                        "a ningún sitio: no tiene permiso de Internet.",
                 ),
                 style = t.bodyLarge,
                 color = c.textSecondary,

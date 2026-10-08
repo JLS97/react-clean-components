@@ -4,8 +4,13 @@ import android.graphics.Color
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 
 /**
@@ -24,5 +29,32 @@ fun BarrasDelSistema(oscuro: Boolean) {
         }
         activity.enableEdgeToEdge(statusBarStyle = estilo, navigationBarStyle = estilo)
         onDispose { }
+    }
+}
+
+/**
+ * false en la pantalla que se va durante una transición: sigue a la vista un momento, pero ya no
+ * debe atender al gesto de atrás (lo atiende la que llega).
+ */
+val LocalPantallaActiva = compositionLocalOf { true }
+
+/**
+ * Tapa [contenido] mientras no esté [activa]: los toques no llegan a una pantalla que se está yendo.
+ */
+@Composable
+fun SinToquesSiSeVa(activa: Boolean, contenido: @Composable () -> Unit) {
+    Box {
+        CompositionLocalProvider(LocalPantallaActiva provides activa) { contenido() }
+        if (!activa) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) awaitPointerEvent().changes.forEach { it.consume() }
+                        }
+                    },
+            )
+        }
     }
 }

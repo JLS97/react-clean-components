@@ -63,10 +63,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
@@ -86,9 +84,9 @@ import io.github.jls97.boveda.ui.components.BotonSecundario
 import io.github.jls97.boveda.ui.components.FilaCasilla
 import io.github.jls97.boveda.ui.components.LineaPunteada
 import io.github.jls97.boveda.ui.components.MedidorFuerza
-import io.github.jls97.boveda.ui.components.Resguardo
 import io.github.jls97.boveda.ui.components.Mostrador
 import io.github.jls97.boveda.ui.components.Pantalla
+import io.github.jls97.boveda.ui.components.Resguardo
 import io.github.jls97.boveda.ui.components.Salida
 import io.github.jls97.boveda.ui.components.TextoError
 import io.github.jls97.boveda.ui.components.TipoAviso
@@ -340,7 +338,8 @@ private fun desaparecer(reduced: Boolean): ExitTransition =
 /**
  * «Copiar» con su palabra y la misma respuesta que [io.github.jls97.boveda.ui.components.BotonCopiar]
  * (que es solo de icono): al pulsar, el icono pasa a una marca de conforme con un pequeño salto, la
- * palabra a «Copiada» (TalkBack la oye por la región viva) y a los 1,4 s vuelve solo. La marca va
+ * palabra a «Copiada» y a los 1,4 s vuelve solo. TalkBack no lo anuncia aparte: ya lo cuenta el
+ * aviso de abajo, con cuándo se borra el portapapeles. La marca va
  * en verde ciprés sobre papel; sobre el ciruela del botón principal, en su mismo color de texto.
  * Imita el alto, la forma y el hundido de los botones de la base, que no tiene esta variante.
  */
@@ -378,7 +377,6 @@ private fun BotonCopiarContrasena(
             scaleX = escala
             scaleY = escala
         }
-        .semantics { liveRegion = LiveRegionMode.Polite }
     val contenido: @Composable RowScope.() -> Unit = {
         AnimatedContent(
             targetState = copiada,
@@ -591,7 +589,8 @@ internal fun SecretoEnRenglones(secreto: String, estilo: TextStyle, modifier: Mo
         val anchoCaracter = remember(estilo, medidor) { medidor.measure("0".repeat(10), estilo).size.width / 10f }
         val porLinea = if (anchoCaracter > 0f) (constraints.maxWidth / anchoCaracter).toInt().coerceAtLeast(1) else Int.MAX_VALUE
         val texto = if (secreto.all { it in ' '..'~' }) partirEnRenglones(secreto, porLinea).joinToString("\n") else secreto
-        Text(textoSecreto(texto), style = estilo, color = c.textPrimary)
+        // Los renglones son solo para la vista: TalkBack lee el secreto entero, sin saltos.
+        Text(textoSecreto(texto), style = estilo, color = c.textPrimary, modifier = Modifier.semantics { contentDescription = secreto })
     }
 }
 

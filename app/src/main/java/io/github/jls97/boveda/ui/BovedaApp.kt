@@ -79,14 +79,18 @@ fun BovedaApp(session: VaultSession) {
                     // Se está yendo porque se ha abierto: el arco del candado sube (momento de marca).
                     abriendo = transition.targetState == EnterExitState.PostExit && state is VaultState.Unlocked,
                 )
-                is VaultState.Unlocked -> VaultHost(
-                    session = session,
-                    state = current,
-                    viewModel = vaultViewModel,
-                    personalidad = personalidad,
-                    onPickExportDestination = { fileName -> exportLauncher.launch(fileName) },
-                    onRestoreUndone = { lockViewModel.showNotice(LockViewModel.RESTORE_UNDONE) },
-                )
+                // Solo mientras la bóveda sigue abierta: al bloquearse, la pantalla que se va no
+                // vuelve a componer nada de lo descifrado, ni durante la transición.
+                is VaultState.Unlocked -> if (state is VaultState.Unlocked) {
+                    VaultHost(
+                        session = session,
+                        state = current,
+                        viewModel = vaultViewModel,
+                        personalidad = personalidad,
+                        onPickExportDestination = { fileName -> exportLauncher.launch(fileName) },
+                        onRestoreUndone = { lockViewModel.showNotice(LockViewModel.RESTORE_UNDONE) },
+                    )
+                }
             }
         }
     }
@@ -95,8 +99,8 @@ fun BovedaApp(session: VaultSession) {
 /**
  * Cómo se pasa de un estado a otro. Al abrir la bóveda, la ventanilla se abre: la pantalla de
  * bloqueo aguanta lo justo para que el arco suba y se desvanece creciendo un poco, mientras la
- * bóveda sube desde abajo. Al bloquear, todo desaparece enseguida: nada de lo que había abierto se
- * queda a la vista mientras dura la animación.
+ * bóveda sube desde abajo. Al bloquear, lo abierto desaparece de golpe y solo aparece, suave, la
+ * pantalla de bloqueo: nada de lo descifrado se queda a la vista mientras dura la animación.
  */
 private fun AnimatedContentTransitionScope<VaultState>.transicionDeEstado(
     desde: VaultState,
@@ -114,7 +118,7 @@ private fun AnimatedContentTransitionScope<VaultState>.transicionDeEstado(
             fadeOut(tween(Motion.BASE, delayMillis = 200, easing = Motion.Exit)) +
                 scaleOut(tween(Motion.SLOW, delayMillis = 140, easing = Motion.Exit), targetScale = 1.04f)
             )
-        cierra -> fadeIn(tween(Motion.BASE)) togetherWith fadeOut(tween(Motion.INSTANT))
+        cierra -> fadeIn(tween(Motion.BASE)) togetherWith ExitTransition.None
         else -> fadeIn(tween(Motion.BASE, delayMillis = 60)) togetherWith fadeOut(tween(Motion.FAST))
     } using SizeTransform(clip = false)
 }

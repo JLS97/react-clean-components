@@ -48,6 +48,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -105,6 +106,7 @@ import io.github.jls97.boveda.ui.components.Mostrador
 import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.OnAppBackground
 import io.github.jls97.boveda.ui.components.Pantalla
+import io.github.jls97.boveda.ui.components.Redondel
 import io.github.jls97.boveda.ui.components.Salida
 import io.github.jls97.boveda.ui.components.Sello
 import io.github.jls97.boveda.ui.components.TextoError
@@ -112,11 +114,13 @@ import io.github.jls97.boveda.ui.components.TipoAviso
 import io.github.jls97.boveda.ui.components.Trabajando
 import io.github.jls97.boveda.ui.components.desbordar
 import io.github.jls97.boveda.ui.components.findActivity
+import io.github.jls97.boveda.ui.components.margenDeLista
 import io.github.jls97.boveda.ui.components.margenLateral
 import io.github.jls97.boveda.ui.components.textoSecreto
 import io.github.jls97.boveda.ui.components.tintaDe
 import io.github.jls97.boveda.ui.lock.LockViewModel
 import io.github.jls97.boveda.ui.lock.UnlockScreen
+import io.github.jls97.boveda.ui.theme.Comportamiento
 import io.github.jls97.boveda.ui.theme.ContrasenoraShapes
 import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
 import io.github.jls97.boveda.ui.theme.Motion
@@ -124,6 +128,7 @@ import io.github.jls97.boveda.ui.theme.Sizes
 import io.github.jls97.boveda.ui.theme.Spacing
 import io.github.jls97.boveda.ui.theme.rememberReducedMotion
 import io.github.jls97.boveda.ui.theme.voz
+import kotlinx.coroutines.delay
 
 @Composable
 internal fun AutofillApp(
@@ -193,7 +198,7 @@ internal fun AutofillApp(
                 is AutofillRequest.FillOtp -> if (current.otpAccess == OtpAccess.LOCKED) {
                     MessageScreen(
                         title = "Códigos 2FA bloqueados",
-                        text = "Este móvil no tiene la llave de huella de tus códigos 2FA (copia restaurada o huellas " +
+                        text = "Este teléfono no tiene la llave de huella de tus códigos 2FA (copia restaurada o huellas " +
                             "cambiadas). Abre Contraseñora y recupéralos con tu código de recuperación.",
                         onClose = onClose,
                     )
@@ -349,7 +354,7 @@ internal fun ElegirEntradaContenido(
     val desplazada by remember(lista, umbral) {
         derivedStateOf { lista.firstVisibleItemIndex > 0 || lista.firstVisibleItemScrollOffset > umbral }
     }
-    val margen = margenLateral()
+    val margen = margenDeLista()
 
     Scaffold(
         containerColor = c.bgCanvas,
@@ -620,8 +625,15 @@ private fun SaveEntryScreen(
     // user and, on the web, anchored to this very host, never to a parent domain of it.
     var replaceId by remember { mutableStateOf(SaveCapture.preselect(matches, typedUsername, pending.target.host)?.id) }
     var revealed by remember { mutableStateOf(false) }
-    // Whatever was revealed hides again when the app goes to the background (B-39).
+    // Whatever was revealed hides again when the app goes to the background (B-39) and, like
+    // everywhere else, after a while on screen.
     OnAppBackground { revealed = false }
+    LaunchedEffect(revealed) {
+        if (revealed) {
+            delay(Comportamiento.CONTRASENA_REVELADA_SEGUNDOS * 1_000L)
+            revealed = false
+        }
+    }
 
     GuardarContenido(
         pending = pending,
@@ -857,25 +869,6 @@ private fun OpcionGuardar(titulo: String, detalle: String?, elegida: Boolean, on
             Text(titulo, style = t.bodyStrong, color = c.textPrimary)
             if (detalle != null) Text(detalle, style = t.small, color = c.textSecondary)
         }
-    }
-}
-
-/** El redondel de una opción: un aro que, al elegirla, se llena hasta dejar un punto de ciruela. */
-@Composable
-private fun Redondel(elegida: Boolean) {
-    val c = ContrasenoraTheme.colors
-    val reduced = rememberReducedMotion()
-    val progreso by animateFloatAsState(
-        targetValue = if (elegida) 1f else 0f,
-        animationSpec = if (reduced) snap() else tween(Motion.BASE, easing = Motion.Emphasized),
-        label = "redondel",
-    )
-    val aro = lerp(c.borderStrong, c.brandPrimary, progreso)
-    Canvas(Modifier.size(22.dp)) {
-        val grosor = 1.5.dp.toPx()
-        drawCircle(c.bgSurface)
-        drawCircle(aro, radius = size.minDimension / 2 - grosor / 2, style = Stroke(grosor))
-        if (progreso > 0f) drawCircle(c.brandPrimary, radius = 5.dp.toPx() * progreso)
     }
 }
 

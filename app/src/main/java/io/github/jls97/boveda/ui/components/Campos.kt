@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,6 +44,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -99,11 +101,16 @@ internal fun coloresCampo(): TextFieldColors {
 /**
  * La caja de texto de la marca: alto mínimo 52 dp, radio sm y borde de 1,5 dp (2 dp con el
  * foco). Es un BasicTextField con la decoración de Material para poder fijar esos grosores.
+ *
+ * La [etiqueta] va encima de la caja pero dentro de la decoración del campo: así forma parte del
+ * mismo nodo editable y TalkBack la lee al llegar al campo (y tocarla también lo enfoca). El
+ * [error] se anuncia como error del propio campo.
  */
 @Composable
 internal fun CajaTexto(
     value: String,
     onValueChange: (String) -> Unit,
+    etiqueta: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     singleLine: Boolean = true,
@@ -111,7 +118,7 @@ internal fun CajaTexto(
     maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
     textStyle: TextStyle = ContrasenoraTheme.type.body,
     placeholder: String? = null,
-    isError: Boolean = false,
+    error: String? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
@@ -119,6 +126,7 @@ internal fun CajaTexto(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val c = ContrasenoraTheme.colors
+    val isError = error != null
     val interaccion = remember { MutableInteractionSource() }
     val colores = coloresCampo()
     val estilo = textStyle.copy(color = if (enabled) c.textPrimary else c.textDisabled)
@@ -127,7 +135,9 @@ internal fun CajaTexto(
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
-            modifier = modifier.fillMaxWidth().heightIn(min = Sizes.inputHeight),
+            modifier = modifier
+                .fillMaxWidth()
+                .semantics { if (error != null) error(error) },
             enabled = enabled,
             singleLine = singleLine,
             minLines = minLines,
@@ -139,63 +149,66 @@ internal fun CajaTexto(
             keyboardActions = keyboardActions,
             interactionSource = interaccion,
             decorationBox = { campo ->
-                OutlinedTextFieldDefaults.DecorationBox(
-                    value = value,
-                    innerTextField = campo,
-                    enabled = enabled,
-                    singleLine = singleLine,
-                    visualTransformation = visualTransformation,
-                    interactionSource = interaccion,
-                    isError = isError,
-                    placeholder = placeholder?.let { texto -> { Text(texto, style = textStyle, color = c.textTertiary) } },
-                    leadingIcon = leading,
-                    trailingIcon = trailing,
-                    colors = colores,
-                    contentPadding = OutlinedTextFieldDefaults.contentPadding(
-                        start = Spacing.s4,
-                        end = if (trailing != null) Spacing.s1 else Spacing.s4,
-                        top = 14.dp,
-                        bottom = 14.dp,
-                    ),
-                    container = {
-                        OutlinedTextFieldDefaults.Container(
+                Column {
+                    Text(
+                        etiqueta,
+                        style = ContrasenoraTheme.type.label,
+                        color = if (enabled) c.textPrimary else c.textDisabled,
+                        modifier = Modifier.padding(bottom = Spacing.s2),
+                    )
+                    Box(Modifier.heightIn(min = Sizes.inputHeight), propagateMinConstraints = true) {
+                        OutlinedTextFieldDefaults.DecorationBox(
+                            value = value,
+                            innerTextField = campo,
                             enabled = enabled,
-                            isError = isError,
+                            singleLine = singleLine,
+                            visualTransformation = visualTransformation,
                             interactionSource = interaccion,
+                            isError = isError,
+                            placeholder = placeholder?.let { texto -> { Text(texto, style = textStyle, color = c.textTertiary) } },
+                            leadingIcon = leading,
+                            trailingIcon = trailing,
                             colors = colores,
-                            shape = ContrasenoraShapes.sm,
-                            focusedBorderThickness = 2.dp,
-                            unfocusedBorderThickness = Sizes.inputBorder,
+                            contentPadding = OutlinedTextFieldDefaults.contentPadding(
+                                start = Spacing.s4,
+                                end = if (trailing != null) Spacing.s1 else Spacing.s4,
+                                top = 14.dp,
+                                bottom = 14.dp,
+                            ),
+                            container = {
+                                OutlinedTextFieldDefaults.Container(
+                                    enabled = enabled,
+                                    isError = isError,
+                                    interactionSource = interaccion,
+                                    colors = colores,
+                                    shape = ContrasenoraShapes.sm,
+                                    focusedBorderThickness = 2.dp,
+                                    unfocusedBorderThickness = Sizes.inputBorder,
+                                )
+                            },
                         )
-                    },
-                )
+                    }
+                }
             },
         )
     }
 }
 
 /**
- * Marco común de los campos: etiqueta siempre visible encima (nunca solo un texto de ejemplo) y,
- * debajo, el error con su icono o una ayuda. El error dice qué pasa y cómo arreglarlo.
+ * Marco común de los campos: debajo de [campo] (que trae su etiqueta, siempre visible encima y
+ * nunca solo un texto de ejemplo), el error con su icono o una ayuda. El error dice qué pasa y
+ * cómo arreglarlo.
  */
 @Composable
 internal fun MarcoCampo(
-    etiqueta: String,
     modifier: Modifier = Modifier,
     error: String? = null,
     ayuda: String? = null,
-    enabled: Boolean = true,
     campo: @Composable () -> Unit,
 ) {
     val c = ContrasenoraTheme.colors
     val t = ContrasenoraTheme.type
     Column(modifier.fillMaxWidth()) {
-        Text(
-            etiqueta,
-            style = t.label,
-            color = if (enabled) c.textPrimary else c.textDisabled,
-            modifier = Modifier.padding(bottom = Spacing.s2),
-        )
         campo()
         AnimatedVisibility(
             visible = error != null,
@@ -229,8 +242,12 @@ internal fun MarcoCampo(
 internal fun sacudida(intentos: Int): () -> Float {
     val reduced = rememberReducedMotion()
     val progreso = remember { Animatable(1f) }
+    // Solo sacude un fallo nuevo: al volver a la pantalla con fallos ya contados, se queda quieto.
+    var visto by remember { mutableIntStateOf(intentos) }
     LaunchedEffect(intentos) {
-        if (intentos > 0 && !reduced) {
+        val nuevo = intentos > visto
+        visto = intentos
+        if (nuevo && !reduced) {
             progreso.snapTo(0f)
             progreso.animateTo(1f, tween(Motion.LOCK_SHAKE))
         }
@@ -268,18 +285,17 @@ fun PasswordField(
     }
     val desplazamiento = sacudida(intentosFallidos)
     MarcoCampo(
-        label,
         modifier.offset { IntOffset(desplazamiento().dp.roundToPx(), 0) },
         error = error,
         ayuda = ayuda,
-        enabled = enabled,
     ) {
         CajaTexto(
             value = value,
             onValueChange = onValueChange,
+            etiqueta = label,
             enabled = enabled,
             textStyle = ContrasenoraTheme.type.secret,
-            isError = error != null,
+            error = error,
             visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Password,
@@ -328,16 +344,17 @@ fun NoLearningTextField(
     ayuda: String? = null,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
-    MarcoCampo(label, modifier, error = error, ayuda = ayuda, enabled = enabled) {
+    MarcoCampo(modifier, error = error, ayuda = ayuda) {
         InterceptPlatformTextInput(interceptor = NoLearningInterceptor) {
             CajaTexto(
                 value = value,
                 onValueChange = onValueChange,
+                etiqueta = label,
                 enabled = enabled,
                 singleLine = singleLine,
                 minLines = minLines,
                 placeholder = placeholder,
-                isError = error != null,
+                error = error,
                 keyboardOptions = keyboardOptions,
                 keyboardActions = keyboardActions,
             )
@@ -376,16 +393,17 @@ fun CampoCodigo(
             visible = false
         }
     }
-    MarcoCampo(label, modifier, error = error, ayuda = ayuda, enabled = enabled) {
+    MarcoCampo(modifier, error = error, ayuda = ayuda) {
         CajaTexto(
             value = value,
             onValueChange = onValueChange,
+            etiqueta = label,
             enabled = enabled,
             singleLine = singleLine,
             maxLines = maxLines,
             textStyle = ContrasenoraTheme.type.secret,
             placeholder = placeholder,
-            isError = error != null,
+            error = error,
             visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Password,

@@ -43,9 +43,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -199,6 +198,7 @@ fun UnlockScreen(
         deviceSecure = deviceSecure,
         notice = ui.notice,
         error = ui.error,
+        errorEnCampo = ui.errorEnCampo,
         busy = ui.busy,
         wrongPasswords = ui.wrongPasswords,
         blockedSeconds = if (blocked) (ui.blockedUntil - now + 999) / 1_000 else null,
@@ -281,7 +281,9 @@ fun UnlockScreen(
 /**
  * Lo que se ve de la pantalla de desbloqueo, sin estado: el isotipo, el título, para quién es (en el
  * autorrelleno), la frase antiphishing y la contraseña o la huella; durante el bloqueo temporal,
- * «Descanse en Pass» con su cuenta atrás. [blockedSeconds] es null si no hay bloqueo.
+ * «Descanse en Pass» con su cuenta atrás y, si hay huella, el botón para entrar con ella, que no
+ * pasa por el freno de intentos. [blockedSeconds] es null si no hay bloqueo. [errorEnCampo] dice si
+ * [error] es de la contraseña escrita (se muestra bajo el campo) o de otra cosa (debajo, suelto).
  */
 @Composable
 internal fun DesbloqueoContenido(
@@ -289,6 +291,7 @@ internal fun DesbloqueoContenido(
     deviceSecure: Boolean,
     notice: String?,
     error: String?,
+    errorEnCampo: Boolean = false,
     busy: Boolean,
     wrongPasswords: Int,
     blockedSeconds: Long?,
@@ -340,11 +343,27 @@ internal fun DesbloqueoContenido(
                     label = "bloqueo temporal",
                 ) { bloqueada ->
                     if (bloqueada) {
-                        // Durante el bloqueo no se pide nada: solo la lápida y cuánto falta.
-                        DescanseEnPass(
-                            segundosRestantes = blockedSeconds ?: 0,
-                            modifier = Modifier.padding(top = Spacing.s8),
-                        )
+                        // Durante el bloqueo no se pide la contraseña: la lápida, cuánto falta y,
+                        // si hay huella, la puerta que el freno de intentos no cierra.
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.s4)) {
+                            DescanseEnPass(
+                                segundosRestantes = blockedSeconds ?: 0,
+                                modifier = Modifier.padding(top = Spacing.s8),
+                            )
+                            if (biometricEnabled) {
+                                Text(
+                                    voz("Mientras tanto, puedes entrar con tu huella.", "Mientras tanto, puedes usar tu huella."),
+                                    style = t.body,
+                                    color = c.textSecondary,
+                                )
+                                if (busy) {
+                                    Trabajando(voz("Mirando si eres tú…", "Descifrando…"), Modifier.padding(vertical = Spacing.s3))
+                                } else {
+                                    BotonPrimario("Usar huella", onFingerprint, Modifier.fillMaxWidth(), icono = R.drawable.ic_huella)
+                                }
+                            }
+                            if (error != null && !errorEnCampo) TextoError(error)
+                        }
                     } else {
                         Column {
                             IsotipoPortero(abriendo = abriendo, trabajando = busy, fallos = wrongPasswords)
@@ -388,12 +407,11 @@ internal fun DesbloqueoContenido(
                                         imeAction = ImeAction.Done,
                                         onImeAction = onUnlock,
                                         enabled = !busy,
-                                        error = error,
+                                        error = error?.takeIf { errorEnCampo },
                                         intentosFallidos = wrongPasswords,
                                     )
-                                } else {
-                                    error?.let { TextoError(it) }
                                 }
+                                if (error != null && !(usePassword && errorEnCampo)) TextoError(error)
                                 Acciones(
                                     busy = busy,
                                     usePassword = usePassword,
@@ -447,8 +465,12 @@ private fun IsotipoPortero(abriendo: Boolean, trabajando: Boolean, fallos: Int) 
         }
     }
     val negar = remember { Animatable(1f) }
+    // Niega solo ante un fallo nuevo, no al volver a componerse con fallos ya contados.
+    var visto by remember { mutableIntStateOf(fallos) }
     LaunchedEffect(fallos) {
-        if (fallos > 0 && !reduced) {
+        val nuevo = fallos > visto
+        visto = fallos
+        if (nuevo && !reduced) {
             negar.snapTo(0f)
             negar.animateTo(1f, tween(Motion.LOCK_SHAKE))
         }
@@ -460,7 +482,7 @@ private fun IsotipoPortero(abriendo: Boolean, trabajando: Boolean, fallos: Int) 
                 val p = negar.value
                 rotationZ = (sin(p * PI * 4) * 8.0 * (1 - p)).toFloat()
             },
-        apertura = apertura.value,
+        apertura = { apertura.value },
         descripcion = "Contraseñora",
     )
 }
@@ -506,7 +528,8 @@ private fun NotaAntiphishing(phrase: String?) {
                     modifier = Modifier.padding(top = Spacing.s1),
                 )
             }
-            Sello("Nota", c.infoFg, Modifier.padding(start = Spacing.s2), girado = 6f)
+            // Decorativo: TalkBack ya lee «Tu frase antiphishing» y la frase.
+            Sello("Nota", c.infoFg, Modifier.padding(start = Spacing.s2).clearAndSetSemantics {}, girado = 6f)
         }
         Text(
             "Si no la ves, no escribas la contraseña.",

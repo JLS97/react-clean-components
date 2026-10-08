@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -61,13 +60,14 @@ private val SubidaArco = 6.dp
  * gato y la cerradura por boca. Cambia de colores con el tema, como las variantes «sobre oscuro».
  *
  * @param apertura de 0 (cerrado) a 1 (el arco y el moño han subido 6 dp): se anima al desbloquear.
+ *   Es una función para leerla al dibujar: animarla no recompone, solo vuelve a pintar.
  * @param simple sin gafas, como el isotipo simple, para tamaños por debajo de 32 dp.
  * @param descripcion texto para TalkBack; null si el isotipo es decorativo.
  */
 @Composable
 fun Isotipo(
     modifier: Modifier = Modifier,
-    apertura: Float = 0f,
+    apertura: () -> Float = { 0f },
     simple: Boolean = false,
     descripcion: String? = null,
 ) {
@@ -81,7 +81,7 @@ fun Isotipo(
         Modifier.clearAndSetSemantics { }
     }
     Canvas(modifier.then(semantica)) {
-        dibujarIsotipo(cuerpo, gafas, hueco, apertura.coerceIn(0f, 1f), simple)
+        dibujarIsotipo(cuerpo, gafas, hueco, apertura().coerceIn(0f, 1f), simple)
     }
 }
 
@@ -117,24 +117,22 @@ private fun DrawScope.dibujarIsotipo(cuerpo: Color, gafas: Color, hueco: Color, 
 @Composable
 fun Trabajando(texto: String, modifier: Modifier = Modifier, tamano: Dp = 28.dp) {
     val reduced = rememberReducedMotion()
-    val apertura = if (reduced) {
-        0f
+    val arco = if (reduced) {
+        null
     } else {
-        val transicion = rememberInfiniteTransition(label = "trabajando")
-        val valor by transicion.animateFloat(
+        rememberInfiniteTransition(label = "trabajando").animateFloat(
             initialValue = 0f,
             targetValue = 1f,
             animationSpec = infiniteRepeatable(tween(520, easing = FastOutSlowInEasing), RepeatMode.Reverse),
             label = "arco",
         )
-        valor
     }
     Row(
         modifier = modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
     ) {
-        Isotipo(Modifier.size(tamano), apertura = apertura, simple = tamano < 32.dp)
+        Isotipo(Modifier.size(tamano), apertura = { arco?.value ?: 0f }, simple = tamano < 32.dp)
         Text(texto, style = ContrasenoraTheme.type.body, color = ContrasenoraTheme.colors.textSecondary)
     }
 }

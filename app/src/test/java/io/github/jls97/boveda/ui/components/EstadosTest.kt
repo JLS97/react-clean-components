@@ -22,7 +22,7 @@ class EstadosTest {
 
     @Test
     fun noticeSplitsAtTheFirstSentence() {
-        assertEquals("Todavía no hay copia." to "Si pierdes el móvil, pierdes la bóveda.", partirEnAviso("Todavía no hay copia. Si pierdes el móvil, pierdes la bóveda."))
-        assertEquals("Última copia hace 40 días." to null, partirEnAviso("Última copia hace 40 días."))
+        assertEquals("Todavía no hay copia" to "Si pierdes el teléfono, pierdes la bóveda.", partirEnAviso("Todavía no hay copia. Si pierdes el teléfono, pierdes la bóveda."))
+        assertEquals("Última copia hace 40 días" to null, partirEnAviso("Última copia hace 40 días."))
     }
 }

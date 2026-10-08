@@ -35,6 +35,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.jls97.boveda.R
@@ -55,7 +58,7 @@ import io.github.jls97.boveda.ui.components.LineaPunteada
 import io.github.jls97.boveda.ui.components.Mostrador
 import io.github.jls97.boveda.ui.components.TipoAviso
 import io.github.jls97.boveda.ui.components.desbordar
-import io.github.jls97.boveda.ui.components.margenLateral
+import io.github.jls97.boveda.ui.components.margenDeLista
 import io.github.jls97.boveda.ui.components.partirEnAviso
 import io.github.jls97.boveda.ui.theme.ContrasenoraShapes
 import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
@@ -100,7 +103,7 @@ fun EntryListScreen(
     val desplazada by remember(lista, umbral) {
         derivedStateOf { lista.firstVisibleItemIndex > 0 || lista.firstVisibleItemScrollOffset > umbral }
     }
-    val margen = margenLateral()
+    val margen = margenDeLista()
     val entrada = entradaEscalonada(animarEntrada)
 
     Scaffold(
@@ -129,7 +132,7 @@ fun EntryListScreen(
                 CampoBusqueda(
                     value = query,
                     onValueChange = onQueryChange,
-                    placeholder = "Buscar una clave",
+                    placeholder = "Buscar una entrada",
                     modifier = Modifier.weight(1f),
                 )
                 BotonIcono(R.drawable.ic_generar, "Generador de contraseñas", onGenerator, tinte = c.textPrimary, fondo = c.bgSunken)
@@ -140,7 +143,14 @@ fun EntryListScreen(
     ) { inner ->
         LazyColumn(
             state = lista,
-            modifier = Modifier.fillMaxSize().consumeWindowInsets(inner),
+            modifier = Modifier
+                .fillMaxSize()
+                .consumeWindowInsets(inner)
+                // TalkBack lee la barra y el mostrador (la búsqueda) antes que la lista entera.
+                .semantics {
+                    isTraversalGroup = true
+                    traversalIndex = 1f
+                },
             contentPadding = PaddingValues(
                 start = margen,
                 end = margen,
@@ -165,7 +175,7 @@ fun EntryListScreen(
                             "Precavida que es una: haz otra y guárdala lejos del teléfono.",
                             "Haz otra copia y guárdala fuera del teléfono.",
                         ),
-                        accion = "Ir a las copias",
+                        accion = "Abrir Ajustes",
                         onAccion = onSettings,
                         modifier = Modifier.padding(bottom = Spacing.s4),
                     )
@@ -180,7 +190,7 @@ fun EntryListScreen(
                             "Añade tu primera contraseña y yo la guardo como si fuera la receta de las croquetas.",
                             "Añade tu primera contraseña para empezar.",
                         ),
-                        accion = "Añadir contraseña",
+                        accion = "Añadir entrada",
                         onAccion = onAdd,
                     )
                 }
@@ -259,7 +269,7 @@ private fun FilaFichero(
                 Etiqueta("2FA", Modifier.padding(start = Spacing.s2), icono = R.drawable.ic_reloj)
             }
             if (entry.password.isNotEmpty()) {
-                BotonCopiar("Copiar contraseña de $nombre", onCopyPassword)
+                BotonCopiar("Copiar contraseña de $nombre", onCopyPassword, hecho = "Contraseña copiada")
             } else {
                 Spacer(Modifier.width(Spacing.s3))
             }
@@ -330,12 +340,12 @@ internal fun letraDe(title: String): String {
     return if (base.isLetter()) base.uppercase() else "#"
 }
 
-/** «23 claves · 4 con 2FA», o «3 de 23» mientras se busca. */
+/** «23 entradas · 4 con 2FA», o «3 de 23 entradas» mientras se busca. */
 private fun recuento(entries: List<VaultEntry>, visible: List<VaultEntry>, query: String): String? {
     if (entries.isEmpty()) return null
-    val claves = if (entries.size == 1) "1 clave" else "${entries.size} claves"
-    if (query.isNotBlank()) return "${visible.size} de $claves"
+    val total = if (entries.size == 1) "1 entrada" else "${entries.size} entradas"
+    if (query.isNotBlank()) return "${visible.size} de $total"
     val conCodigo = entries.count { it.otp != null }
-    return if (conCodigo == 0) claves else "$claves · $conCodigo con 2FA"
+    return if (conCodigo == 0) total else "$total · $conCodigo con 2FA"
 }
 

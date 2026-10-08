@@ -210,7 +210,8 @@ fun BotonIcono(
 
 /**
  * Botón de copiar con respuesta: al pulsarlo, el icono se convierte un momento en una marca de
- * conforme (en verde ciprés) y vuelve solo. TalkBack oye «Copiada» mientras dura.
+ * conforme (en verde ciprés) y vuelve solo. Mientras dura, TalkBack oye [hecho] («Copiado», o
+ * «Contraseña copiada» donde se copia una contraseña).
  */
 @Composable
 fun BotonCopiar(
@@ -219,6 +220,7 @@ fun BotonCopiar(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     tamanoIcono: Dp = Sizes.iconMd,
+    hecho: String = "Copiado",
 ) {
     val c = ContrasenoraTheme.colors
     var copiado by remember { mutableStateOf(false) }
@@ -246,11 +248,11 @@ fun BotonCopiar(
                     fadeOut(tween(Motion.FAST))
             },
             label = "copiar",
-        ) { hecho ->
+        ) { copiadoAhora ->
             Icon(
-                painterResource(if (hecho) R.drawable.ic_check else R.drawable.ic_copiar),
-                contentDescription = if (hecho) "Copiada" else descripcion,
-                tint = if (hecho) c.successFg else c.textSecondary,
+                painterResource(if (copiadoAhora) R.drawable.ic_check else R.drawable.ic_copiar),
+                contentDescription = if (copiadoAhora) hecho else descripcion,
+                tint = if (copiadoAhora) c.successFg else c.textSecondary,
                 modifier = Modifier.size(tamanoIcono),
             )
         }

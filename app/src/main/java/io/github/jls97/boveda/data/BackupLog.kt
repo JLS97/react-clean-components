@@ -114,7 +114,7 @@ fun backupReminder(status: BackupStatus, nowMillis: Long): String? {
     return when {
         status.pendingReason != null -> "${status.pendingReason} Haz una copia de seguridad ahora."
         status.neverBackedUp ->
-            "Todavía no hay ninguna copia de seguridad. Si pierdes el móvil, pierdes la bóveda."
+            "Todavía no hay ninguna copia de seguridad. Si pierdes el teléfono, pierdes la bóveda."
         status.unverifiedHistory ->
             "No consta ninguna copia verificada con esta versión. Haz una para comprobar que se abre."
         days > BACKUP_REMINDER_DAYS ->

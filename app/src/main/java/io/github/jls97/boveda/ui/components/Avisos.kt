@@ -204,8 +204,11 @@ fun TextoError(texto: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** «Primera frase. Lo demás.» → título de un aviso y su mensaje (null si solo hay una frase). */
+/**
+ * «Primera frase. Lo demás.» → título de un aviso («Primera frase», sin el punto, como todos los
+ * títulos) y su mensaje («Lo demás.»; null si solo hay una frase).
+ */
 fun partirEnAviso(texto: String): Pair<String, String?> {
     val corte = texto.indexOf(". ")
-    return if (corte < 0) texto to null else texto.substring(0, corte + 1) to texto.substring(corte + 2)
+    return if (corte < 0) texto.removeSuffix(".") to null else texto.substring(0, corte) to texto.substring(corte + 2)
 }

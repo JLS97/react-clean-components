@@ -3,7 +3,9 @@ package io.github.jls97.boveda.ui.vault
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
@@ -30,6 +32,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.jls97.boveda.data.backupReminder
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
+import io.github.jls97.boveda.ui.components.SinToquesSiSeVa
 import io.github.jls97.boveda.ui.otp.OtpAddScreen
 import io.github.jls97.boveda.ui.otp.OtpCard
 import io.github.jls97.boveda.ui.otp.OtpRecoverScreen
@@ -92,154 +95,173 @@ fun VaultHost(
         transitionSpec = { transicionDeFicha(adelante, reduced) },
         label = "pantallas de la bóveda",
     ) { route ->
-        when (route) {
-            Route.EntryList -> {
-                EntryListScreen(
-                    entries = entries,
-                    // Con la bóveda vacía no hay nada que copiar todavía.
-                    backupReminder = if (entries.isEmpty()) null else backupReminder(backupStatus, System.currentTimeMillis()),
-                    query = viewModel.query,
-                    onQueryChange = viewModel::updateQuery,
-                    onOpen = { viewModel.navigate(Route.Detail(it.id)) },
-                    onCopyPassword = { viewModel.copy("Contraseña", it.password) },
-                    onAdd = viewModel::newEntry,
-                    onGenerator = { viewModel.openGenerator(forEditor = false) },
-                    onSettings = { viewModel.navigate(Route.Settings) },
-                    onLock = viewModel::lock,
-                    snackbar = snackbar,
-                    restoreUndo = { RestoreUndoBanner(viewModel, onRestoreUndone) },
-                    lista = listaEstado,
-                    animarEntrada = !listaVista,
-                )
-                LaunchedEffect(Unit) { listaVista = true }
-            }
-
-            is Route.Detail -> {
-                val entry = entries.find { it.id == route.entryId }
-                if (entry == null) {
-                    LaunchedEffect(route) { backFrom(route) }
-                } else {
-                    EntryDetailScreen(
-                        entry = entry,
-                        busy = viewModel.busy,
-                        onBack = { viewModel.back() },
-                        onEdit = { viewModel.editEntry(entry) },
-                        onDelete = { viewModel.deleteEntry(entry.id) },
-                        onCopy = viewModel::copy,
-                        snackbar = snackbar,
-                        otpSection = {
-                            OtpCard(
-                                entry = entry,
-                                otpAccess = state.otpAccess,
-                                otp = otp,
-                                onAdd = {
-                                    otp.startAdd(entry.id)
-                                    viewModel.navigate(Route.OtpAdd(entry.id))
-                                },
-                                onRecover = { viewModel.navigate(Route.OtpRecover) },
-                            )
-                        },
+        // La pantalla que se va sigue a la vista un momento: no atiende toques ni el gesto de atrás,
+        // no repite el aviso de abajo y no cambia mientras se aleja aunque el ViewModel ya haya
+        // olvidado su borrador o su contraseña generada.
+        val activa = transition.targetState == EnterExitState.Visible
+        val snackbarAqui = if (activa) snackbar else remember { SnackbarHostState() }
+        SinToquesSiSeVa(activa) {
+            when (route) {
+                Route.EntryList -> {
+                    EntryListScreen(
+                        entries = entries,
+                        // Con la bóveda vacía no hay nada que copiar todavía.
+                        backupReminder = if (entries.isEmpty()) null else backupReminder(backupStatus, System.currentTimeMillis()),
+                        query = viewModel.query,
+                        onQueryChange = viewModel::updateQuery,
+                        onOpen = { viewModel.navigate(Route.Detail(it.id)) },
+                        onCopyPassword = { viewModel.copy("Contraseña", it.password) },
+                        onAdd = viewModel::newEntry,
+                        onGenerator = { viewModel.openGenerator(forEditor = false) },
+                        onSettings = { viewModel.navigate(Route.Settings) },
+                        onLock = viewModel::lock,
+                        snackbar = snackbarAqui,
+                        restoreUndo = { RestoreUndoBanner(viewModel, onRestoreUndone) },
+                        lista = listaEstado,
+                        animarEntrada = !listaVista,
                     )
+                    LaunchedEffect(Unit) { listaVista = true }
                 }
-            }
 
-            // Atrás desde el editor o el generador olvida el borrador o la contraseña generada (I-37, en back()).
-            is Route.Edit -> EntryEditScreen(
-                draft = viewModel.draft,
-                isNew = route.entryId == null,
-                busy = viewModel.busy,
-                onDraftChange = viewModel::updateDraft,
-                onGenerate = { viewModel.openGenerator(forEditor = true) },
-                onSave = viewModel::saveDraft,
-                onBack = { viewModel.back() },
-                snackbar = snackbar,
-            )
-
-            is Route.Generator -> GeneratorScreen(
-                password = viewModel.generated,
-                options = viewModel.generatorOptions,
-                forEditor = route.forEditor,
-                onOptionsChange = viewModel::updateGeneratorOptions,
-                onRegenerate = viewModel::regenerate,
-                onCopy = { viewModel.copy("Contraseña", viewModel.generated) },
-                onUse = viewModel::useGeneratedPassword,
-                onBack = { viewModel.back() },
-                snackbar = snackbar,
-            )
-
-            Route.Settings -> SettingsScreen(
-                settings = state.data.settings,
-                biometricEnabled = state.biometricEnabled,
-                deviceKeySecurityLevel = state.deviceKeySecurityLevel,
-                deviceKeyWarning = state.deviceKeyWarning,
-                entryCount = entries.size,
-                otpAccess = state.otpAccess,
-                otpCount = entries.count { it.otp != null },
-                kdfParams = state.kdfParams,
-                kdfUpgradeWarning = state.kdfUpgradeWarning,
-                onRecoverOtp = { viewModel.navigate(Route.OtpRecover) },
-                onNewRecoveryCode = {
-                    otp.beginRecoveryCode()
-                    viewModel.navigate(Route.OtpRecoveryCode(RecoveryCodePurpose.REPLACE))
-                },
-                onPickExportDestination = onPickExportDestination,
-                onRestoreUndone = onRestoreUndone,
-                viewModel = viewModel,
-                snackbar = snackbar,
-            )
-
-            is Route.OtpAdd -> {
-                val entry = entries.find { it.id == route.entryId }
-                if (entry == null) {
-                    LaunchedEffect(route) { backFrom(route) }
-                } else {
-                    OtpAddScreen(
-                        entry = entry,
-                        otpAccess = state.otpAccess,
-                        otp = otp,
-                        onScan = { viewModel.navigate(Route.OtpScan) },
-                        onNeedsSetup = { viewModel.navigate(Route.OtpRecoveryCode(RecoveryCodePurpose.SETUP)) },
-                        onNeedsRecovery = { viewModel.navigate(Route.OtpRecover) },
-                        onSaved = { viewModel.back() },
-                        onBack = { viewModel.back() },
-                        snackbar = snackbar,
-                    )
-                }
-            }
-
-            Route.OtpScan -> OtpScanScreen(
-                onScanned = { text ->
-                    otp.updateInput(text)
-                    viewModel.back()
-                },
-                onBack = { viewModel.back() },
-            )
-
-            is Route.OtpRecoveryCode -> RecoveryCodeScreen(
-                purpose = route.purpose,
-                otp = otp,
-                onDone = {
-                    if (route.purpose == RecoveryCodePurpose.SETUP) {
-                        // Back to the entry, past the "add" screen.
-                        viewModel.popTo { it is Route.Detail }
-                        viewModel.suggestBackup("Has guardado tu primer código 2FA y su secreto solo existe en esta bóveda.")
+                is Route.Detail -> {
+                    val entry = quietaAlIrse(entries.find { it.id == route.entryId })
+                    if (entry == null) {
+                        LaunchedEffect(route) { backFrom(route) }
                     } else {
-                        viewModel.back()
-                        viewModel.suggestBackup("Has cambiado el código de recuperación 2FA: las copias anteriores necesitan el antiguo.")
+                        EntryDetailScreen(
+                            entry = entry,
+                            busy = viewModel.busy,
+                            onBack = { viewModel.back() },
+                            onEdit = { viewModel.editEntry(entry) },
+                            onDelete = { viewModel.deleteEntry(entry.id) },
+                            onCopy = viewModel::copy,
+                            snackbar = snackbarAqui,
+                            otpSection = {
+                                OtpCard(
+                                    entry = entry,
+                                    otpAccess = state.otpAccess,
+                                    otp = otp,
+                                    onAdd = {
+                                        otp.startAdd(entry.id)
+                                        viewModel.navigate(Route.OtpAdd(entry.id))
+                                    },
+                                    onRecover = { viewModel.navigate(Route.OtpRecover) },
+                                )
+                            },
+                        )
                     }
-                },
-                onBack = { viewModel.back() },
-                snackbar = snackbar,
-            )
+                }
 
-            Route.OtpRecover -> OtpRecoverScreen(
-                otp = otp,
-                onDone = { viewModel.back() },
-                onBack = { viewModel.back() },
-                snackbar = snackbar,
-            )
+                // Atrás desde el editor o el generador olvida el borrador o la contraseña generada (I-37, en back()).
+                is Route.Edit -> EntryEditScreen(
+                    draft = quietaAlIrse(viewModel.draft),
+                    isNew = route.entryId == null,
+                    busy = viewModel.busy,
+                    onDraftChange = viewModel::updateDraft,
+                    onGenerate = { viewModel.openGenerator(forEditor = true) },
+                    onSave = viewModel::saveDraft,
+                    onBack = { viewModel.back() },
+                    snackbar = snackbarAqui,
+                )
+
+                is Route.Generator -> GeneratorScreen(
+                    password = quietaAlIrse(viewModel.generated),
+                    options = viewModel.generatorOptions,
+                    forEditor = route.forEditor,
+                    onOptionsChange = viewModel::updateGeneratorOptions,
+                    onRegenerate = viewModel::regenerate,
+                    onCopy = { viewModel.copy("Contraseña", viewModel.generated) },
+                    onUse = viewModel::useGeneratedPassword,
+                    onBack = { viewModel.back() },
+                    snackbar = snackbarAqui,
+                )
+
+                Route.Settings -> SettingsScreen(
+                    settings = state.data.settings,
+                    biometricEnabled = state.biometricEnabled,
+                    deviceKeySecurityLevel = state.deviceKeySecurityLevel,
+                    deviceKeyWarning = state.deviceKeyWarning,
+                    entryCount = entries.size,
+                    otpAccess = state.otpAccess,
+                    otpCount = entries.count { it.otp != null },
+                    kdfParams = state.kdfParams,
+                    kdfUpgradeWarning = state.kdfUpgradeWarning,
+                    onRecoverOtp = { viewModel.navigate(Route.OtpRecover) },
+                    onNewRecoveryCode = {
+                        otp.beginRecoveryCode()
+                        viewModel.navigate(Route.OtpRecoveryCode(RecoveryCodePurpose.REPLACE))
+                    },
+                    onPickExportDestination = onPickExportDestination,
+                    onRestoreUndone = onRestoreUndone,
+                    viewModel = viewModel,
+                    snackbar = snackbarAqui,
+                )
+
+                is Route.OtpAdd -> {
+                    val entry = quietaAlIrse(entries.find { it.id == route.entryId })
+                    if (entry == null) {
+                        LaunchedEffect(route) { backFrom(route) }
+                    } else {
+                        OtpAddScreen(
+                            entry = entry,
+                            otpAccess = state.otpAccess,
+                            otp = otp,
+                            onScan = { viewModel.navigate(Route.OtpScan) },
+                            onNeedsSetup = { viewModel.navigate(Route.OtpRecoveryCode(RecoveryCodePurpose.SETUP)) },
+                            onNeedsRecovery = { viewModel.navigate(Route.OtpRecover) },
+                            onSaved = { viewModel.back() },
+                            onBack = { viewModel.back() },
+                            snackbar = snackbarAqui,
+                        )
+                    }
+                }
+
+                Route.OtpScan -> OtpScanScreen(
+                    onScanned = { text ->
+                        otp.updateInput(text)
+                        viewModel.back()
+                    },
+                    onBack = { viewModel.back() },
+                )
+
+                is Route.OtpRecoveryCode -> RecoveryCodeScreen(
+                    purpose = route.purpose,
+                    otp = otp,
+                    onDone = {
+                        if (route.purpose == RecoveryCodePurpose.SETUP) {
+                            // Back to the entry, past the "add" screen.
+                            viewModel.popTo { it is Route.Detail }
+                            viewModel.suggestBackup("Has guardado tu primer código 2FA y su secreto solo existe en esta bóveda.")
+                        } else {
+                            viewModel.back()
+                            viewModel.suggestBackup("Has cambiado el código de recuperación 2FA: las copias anteriores necesitan el antiguo.")
+                        }
+                    },
+                    onBack = { viewModel.back() },
+                    snackbar = snackbarAqui,
+                )
+
+                Route.OtpRecover -> OtpRecoverScreen(
+                    otp = otp,
+                    onDone = { viewModel.back() },
+                    onBack = { viewModel.back() },
+                    snackbar = snackbarAqui,
+                )
+            }
         }
     }
+}
+
+/**
+ * [valor] mientras la pantalla está activa; mientras se va, el último que tuvo activa. Así la ficha
+ * que se retira no se queda en blanco a media animación cuando el ViewModel ya la ha vaciado.
+ */
+@Composable
+private fun <T> AnimatedVisibilityScope.quietaAlIrse(valor: T): T {
+    val ultimo = remember { mutableStateOf(valor) }
+    val activa = transition.targetState == EnterExitState.Visible
+    if (activa) SideEffect { ultimo.value = valor }
+    return if (activa) valor else ultimo.value
 }
 
 /**
@@ -248,6 +270,7 @@ fun VaultHost(
  */
 private fun AnimatedContentTransitionScope<Route>.transicionDeFicha(adelante: Boolean, reduced: Boolean): ContentTransform {
     if (reduced) return EnterTransition.None togetherWith ExitTransition.None
+    // La que llega queda siempre encima, también al volver: es la que recibe los toques.
     val transicion = if (adelante) {
         (
             fadeIn(tween(Motion.BASE, delayMillis = 40, easing = Motion.Emphasized)) +
@@ -265,7 +288,5 @@ private fun AnimatedContentTransitionScope<Route>.transicionDeFicha(adelante: Bo
                 slideOutVertically(tween(Motion.BASE + 60, easing = Motion.Exit)) { it / 14 }
             )
     }
-    // Al volver, la ficha que se retira queda encima de la que reaparece.
-    if (!adelante) transicion.targetContentZIndex = -1f
     return transicion using SizeTransform(clip = false)
 }

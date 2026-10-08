@@ -231,7 +231,13 @@ private fun Datos(
     ) {
         if (conUsuario) {
             Dato("Usuario o email", acciones = { BotonCopiar("Copiar usuario", { onCopy("Usuario", entry.username) }) }) {
-                Text(conCortes(entry.username), style = t.bodyLarge, color = c.textPrimary)
+                Text(
+                    conCortes(entry.username),
+                    style = t.bodyLarge,
+                    color = c.textPrimary,
+                    // Los cortes invisibles son solo para partir la línea: TalkBack lee el valor tal cual.
+                    modifier = Modifier.semantics { contentDescription = entry.username },
+                )
             }
         }
         if (conContrasena) {
@@ -245,14 +251,19 @@ private fun Datos(
                         onClick = onTogglePassword,
                         tamanoIcono = Sizes.iconMd,
                     )
-                    BotonCopiar("Copiar contraseña", { onCopy("Contraseña", entry.password) })
+                    BotonCopiar("Copiar contraseña", { onCopy("Contraseña", entry.password) }, hecho = "Contraseña copiada")
                 },
             ) { ValorContrasena(entry.password, passwordRevealed) }
         }
         if (conWeb) {
             if (conUsuario || conContrasena) Separacion()
             Dato("Web o app", acciones = { BotonCopiar("Copiar dirección", { onCopy("Dirección", entry.url) }) }) {
-                Text(conCortes(entry.url), style = t.bodyLarge, color = c.textPrimary)
+                Text(
+                    conCortes(entry.url),
+                    style = t.bodyLarge,
+                    color = c.textPrimary,
+                    modifier = Modifier.semantics { contentDescription = entry.url },
+                )
             }
         }
         if (conNotas) {
@@ -381,7 +392,8 @@ private fun Registro(entry: VaultEntry) {
             entry.autofillTargets.forEach { destino ->
                 Row(horizontalArrangement = Arrangement.spacedBy(Spacing.s2)) {
                     LlaveDeDestino(t.small)
-                    Text(conCortes(autofillTargetLabel(destino)), style = t.small, color = c.textPrimary)
+                    val etiqueta = autofillTargetLabel(destino)
+                    Text(conCortes(etiqueta), style = t.small, color = c.textPrimary, modifier = Modifier.semantics { contentDescription = etiqueta })
                 }
             }
         }

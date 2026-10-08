@@ -3,8 +3,10 @@ package io.github.jls97.boveda.ui.components
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -19,21 +21,21 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -47,7 +49,6 @@ import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -63,6 +64,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
@@ -98,7 +100,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -112,6 +113,7 @@ import io.github.jls97.boveda.ui.theme.Sizes
 import io.github.jls97.boveda.ui.theme.Spacing
 import io.github.jls97.boveda.ui.theme.YoungSerif
 import io.github.jls97.boveda.ui.theme.rememberReducedMotion
+import kotlin.math.roundToInt
 
 // region Papel
 
@@ -334,6 +336,17 @@ fun margenLateral(): Dp {
 }
 
 /**
+ * Margen lateral de lo que ocupa todo el ancho de la ventana (el fichero, el mostrador): el de
+ * siempre o, en pantallas anchas (tablets, plegables abiertos), el que deja el contenido centrado
+ * y en [Sizes.contentMaxWidth] como mucho.
+ */
+@Composable
+fun margenDeLista(): Dp {
+    val ancho = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() }
+    return maxOf(margenLateral(), (ancho - Sizes.contentMaxWidth) / 2)
+}
+
+/**
  * Fila superior de todas las pantallas: salida a la izquierda, acciones a la derecha y, cuando el
  * título grande ya se ha ido con el desplazamiento, el mismo título en pequeño. Sin barra de
  * color: es el mismo papel que el fondo, con una línea fina cuando hay contenido debajo.
@@ -370,16 +383,41 @@ fun BarraSuperior(
         Box(Modifier.fillMaxWidth().height(2.dp)) {
             if (ocupado) {
                 // Algo lento está en marcha (comprobar la contraseña maestra, cifrar): una línea de latón.
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxSize(),
-                    color = c.brassDefault,
-                    trackColor = c.borderSubtle,
-                )
+                LineaDeLaton(Modifier.fillMaxSize())
             } else {
                 HorizontalDivider(Modifier.align(Alignment.BottomCenter), thickness = 1.dp, color = linea)
             }
         }
     }
+}
+
+/**
+ * La línea de ocupado: un tramo de latón que recorre la raya de la cabecera, sobre la propia raya.
+ * Sin animaciones, la raya entera en latón y quieta.
+ */
+@Composable
+private fun LineaDeLaton(modifier: Modifier = Modifier) {
+    val c = ContrasenoraTheme.colors
+    if (rememberReducedMotion()) {
+        Box(modifier.background(c.brassDefault))
+        return
+    }
+    val recorrido = rememberInfiniteTransition(label = "ocupado").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(Motion.SLOW * 3, easing = Motion.Standard)),
+        label = "tramo",
+    )
+    Box(
+        modifier
+            .background(c.borderSubtle)
+            .clipToBounds()
+            .drawBehind {
+                val tramo = size.width * 0.35f
+                val x = -tramo + (size.width + tramo) * recorrido.value
+                drawRect(c.brassDefault, topLeft = Offset(x, 0f), size = Size(tramo, size.height))
+            },
+    )
 }
 
 /** El título de la pantalla en pequeño, que entra desde abajo cuando el grande ya no se ve. */
@@ -486,7 +524,7 @@ fun Pantalla(
 fun Mostrador(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
     val c = ContrasenoraTheme.colors
     val forma = ContrasenoraShapes.lg.copy(bottomStart = CornerSize(0.dp), bottomEnd = CornerSize(0.dp))
-    val margen = margenLateral()
+    val margen = margenDeLista()
     Surface(
         modifier = modifier.fillMaxWidth().sombraPapel(forma, c.isDark, Elevation.md),
         shape = forma,
@@ -709,6 +747,28 @@ fun FilaCasilla(
 }
 
 /**
+ * El redondel de una opción única: un aro que, al elegirla, se llena hasta dejar un punto de
+ * ciruela. Decorativo: quien lo usa pone la fila como `selectable(role = Role.RadioButton)`.
+ */
+@Composable
+fun Redondel(elegida: Boolean, modifier: Modifier = Modifier) {
+    val c = ContrasenoraTheme.colors
+    val reduced = rememberReducedMotion()
+    val progreso by animateFloatAsState(
+        targetValue = if (elegida) 1f else 0f,
+        animationSpec = if (reduced) snap() else tween(Motion.BASE, easing = Motion.Emphasized),
+        label = "redondel",
+    )
+    val aro = lerp(c.borderStrong, c.brandPrimary, progreso)
+    Canvas(modifier.size(22.dp)) {
+        val grosor = 1.5.dp.toPx()
+        drawCircle(c.bgSurface)
+        drawCircle(aro, radius = size.minDimension / 2 - grosor / 2, style = Stroke(grosor))
+        if (progreso > 0f) drawCircle(c.brandPrimary, radius = 5.dp.toPx() * progreso)
+    }
+}
+
+/**
  * Selector de pocas opciones en una píldora hundida, con una marca de papel que se desliza hasta
  * la elegida. TalkBack lo lee como un grupo de botones de opción.
  */
@@ -724,25 +784,29 @@ fun <T> SelectorSegmentado(
     val t = ContrasenoraTheme.type
     val reduced = rememberReducedMotion()
     val indice = opciones.indexOfFirst { it.first == seleccionada }.coerceAtLeast(0)
-    BoxWithConstraints(
+    val posicion by animateFloatAsState(
+        targetValue = indice.toFloat(),
+        animationSpec = if (reduced) snap() else tween(Motion.BASE, easing = Motion.Emphasized),
+        label = "selector",
+    )
+    // Cada opción ocupa los 48 dp enteros, de borde a borde de la píldora; el margen de 4 dp es
+    // solo de la marca de papel, que se pinta por dentro.
+    Box(
         modifier
             .fillMaxWidth()
-            .heightIn(min = Sizes.touchTarget)
+            .height(IntrinsicSize.Min)
             .clip(ContrasenoraShapes.full)
-            .background(c.bgSunken)
-            .padding(4.dp),
+            .background(c.bgSunken),
     ) {
-        val ancho = maxWidth / opciones.size
-        val desplazamiento by animateDpAsState(
-            targetValue = ancho * indice,
-            animationSpec = if (reduced) snap() else tween(Motion.BASE, easing = Motion.Emphasized),
-            label = "selector",
-        )
         Box(
             Modifier
-                .offset { IntOffset(desplazamiento.roundToPx(), 0) }
-                .width(ancho)
-                .height(40.dp)
+                .fillMaxHeight()
+                .fillMaxWidth(1f / opciones.size)
+                .layout { medible, restricciones ->
+                    val marca = medible.measure(restricciones)
+                    layout(marca.width, marca.height) { marca.place((marca.width * posicion).roundToInt(), 0) }
+                }
+                .padding(4.dp)
                 .sombraPapel(ContrasenoraShapes.full, c.isDark)
                 .clip(ContrasenoraShapes.full)
                 .background(if (c.isDark) c.bgRaised else c.bgSurface)
@@ -754,9 +818,10 @@ fun <T> SelectorSegmentado(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(40.dp)
+                        .heightIn(min = Sizes.touchTarget)
                         .clip(ContrasenoraShapes.full)
-                        .selectable(selected = elegida, enabled = enabled, role = Role.RadioButton) { onSeleccion(valor) },
+                        .selectable(selected = elegida, enabled = enabled, role = Role.RadioButton) { onSeleccion(valor) }
+                        .padding(horizontal = Spacing.s2, vertical = Spacing.s1),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(

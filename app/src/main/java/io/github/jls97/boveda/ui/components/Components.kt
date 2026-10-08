@@ -20,8 +20,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -239,11 +237,7 @@ fun <T> ChoiceDialog(
                             .padding(horizontal = Spacing.s1),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        RadioButton(
-                            selected = elegida,
-                            onClick = null,
-                            colors = RadioButtonDefaults.colors(selectedColor = c.brandPrimary, unselectedColor = c.borderStrong),
-                        )
+                        Redondel(elegida, Modifier.padding(Spacing.s1))
                         Text(
                             label,
                             style = ContrasenoraTheme.type.body,

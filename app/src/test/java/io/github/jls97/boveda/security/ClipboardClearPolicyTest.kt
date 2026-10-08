@@ -26,6 +26,10 @@ class ClipboardClearPolicyTest {
         assertFalse("sin etiqueta", ClipboardClearPolicy.isOwnClip(null, stamp, stamp))
         assertFalse("sin marca", ClipboardClearPolicy.isOwnClip(ClipboardClearPolicy.LABEL, null, stamp))
         assertFalse("marca de otra copia", ClipboardClearPolicy.isOwnClip(ClipboardClearPolicy.LABEL, stamp + 1, stamp))
+        // Un clip copiado por la versión anterior al cambio de nombre se sigue borrando, con su marca.
+        assertTrue("etiqueta anterior", ClipboardClearPolicy.isOwnClip("Bóveda", stamp, stamp))
+        assertFalse("etiqueta anterior sin marca", ClipboardClearPolicy.isOwnClip("Bóveda", null, stamp))
+        assertFalse("etiqueta anterior, otra marca", ClipboardClearPolicy.isOwnClip("Bóveda", stamp + 1, stamp))
     }
 
     @Test

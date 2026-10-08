@@ -90,15 +90,14 @@ import io.github.jls97.boveda.data.Tema
 import io.github.jls97.boveda.data.antiPhishingPhraseProblem
 import io.github.jls97.boveda.data.lastBackupLabel
 import io.github.jls97.boveda.security.BiometricPrompts
+import io.github.jls97.boveda.security.KeySecurityLevel
 import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.ui.components.Apartado
-import io.github.jls97.boveda.ui.components.Resguardo
 import io.github.jls97.boveda.ui.components.Aviso
 import io.github.jls97.boveda.ui.components.BotonFantasma
 import io.github.jls97.boveda.ui.components.BotonPrimario
 import io.github.jls97.boveda.ui.components.BotonSecundario
 import io.github.jls97.boveda.ui.components.CampoCodigo
-import io.github.jls97.boveda.ui.components.Casilla
 import io.github.jls97.boveda.ui.components.ChoiceDialog
 import io.github.jls97.boveda.ui.components.ConfirmDialog
 import io.github.jls97.boveda.ui.components.Etiqueta
@@ -114,6 +113,8 @@ import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.Pantalla
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
+import io.github.jls97.boveda.ui.components.Redondel
+import io.github.jls97.boveda.ui.components.Resguardo
 import io.github.jls97.boveda.ui.components.RestoreBackupDialog
 import io.github.jls97.boveda.ui.components.Salida
 import io.github.jls97.boveda.ui.components.SecureAlertDialog
@@ -559,7 +560,7 @@ internal fun AjustesContenido(
         Codigos2fa(otpAccess, otpCount, busy, onRecoverOtp, onCheckRecoveryCode, onNewRecoveryCode)
         Copias(entryCount, lastBackup, copiaAlDia, canUndoRestore, busy, onExport, onRestore, onUndoRestore, onDiscardUndo)
         AparienciaApartado(apariencia, onPersonalidad, onTema)
-        Privacidad()
+        Privacidad(deviceSecure, deviceKeySecurityLevel, deviceKeyWarning, kdfUpgradeWarning)
         BotonSecundario(
             "Bloquear ahora",
             onLock,
@@ -616,7 +617,7 @@ private fun Seguridad(
         Renglon()
         Fila(
             "Borrar portapapeles",
-            valor = "A los ${durationLabel(settings.clipboardClearSeconds)} de copiar",
+            valor = "${durationLabel(settings.clipboardClearSeconds).replaceFirstChar { it.uppercase() }} después de copiar",
             enabled = !busy,
             onClick = onClipboard,
         )
@@ -769,7 +770,7 @@ private fun Copias(
     Apartado(
         "Copias",
         numero = "IV",
-        descripcion = "Si pierdes el teléfono, una copia es la única forma de recuperar tus $entryCount entradas.",
+        descripcion = "Si pierdes el teléfono, una copia es la única forma de recuperar tus entradas.",
     )
     // Antes del botón de exportar, como en el original: dónde no debe quedarse la copia.
     Aviso(
@@ -863,7 +864,7 @@ private fun Copias(
 }
 
 /** La palabra del sello del resguardo. */
-private fun selloDeLaCopia(alDia: Boolean) = if (alDia) "Conforme" else "Pendiente"
+private fun selloDeLaCopia(alDia: Boolean) = if (alDia) TipoAviso.Exito.palabra else TipoAviso.Aviso.palabra
 
 @Composable
 private fun AparienciaApartado(
@@ -948,9 +949,20 @@ private fun AparienciaApartado(
 }
 
 @Composable
-private fun Privacidad() {
+private fun Privacidad(
+    deviceSecure: Boolean,
+    deviceKeySecurityLevel: String,
+    deviceKeyWarning: String?,
+    kdfUpgradeWarning: String?,
+) {
     Apartado("Privacidad", numero = "VI")
-    CertificadoDeLaCasa(Modifier.padding(top = Spacing.s2))
+    CertificadoDeLaCasa(
+        nivelClave = deviceKeySecurityLevel,
+        // El sello «Conforme» solo se estampa si no hay nada pendiente en Seguridad.
+        conforme = deviceSecure && deviceKeyWarning == null && kdfUpgradeWarning == null &&
+            deviceKeySecurityLevel in NIVELES_DE_HARDWARE,
+        modifier = Modifier.padding(top = Spacing.s2),
+    )
     Aviso(
         TipoAviso.Info,
         voz("Un consejo de la casa", "Consejo"),
@@ -1200,7 +1212,7 @@ private fun FichaPersonalidad(
                 )
                 Text(lema, style = t.small, color = c.textSecondary, modifier = Modifier.padding(top = Spacing.s0_5))
             }
-            Casilla(elegida, Modifier.align(Alignment.TopEnd).padding(Spacing.s4))
+            Redondel(elegida, Modifier.align(Alignment.TopEnd).padding(Spacing.s4))
         }
     }
 }
@@ -1210,36 +1222,58 @@ private fun FichaPersonalidad(
  * de puntos de guía, y el sello «Conforme» estampado arriba.
  */
 @Composable
-private fun CertificadoDeLaCasa(modifier: Modifier = Modifier) {
+private fun CertificadoDeLaCasa(nivelClave: String, conforme: Boolean, modifier: Modifier = Modifier) {
     val c = ContrasenoraTheme.colors
     val t = ContrasenoraTheme.type
     Ficha(modifier) {
         EncabezadoConSello(
-            sello = { Sello(TipoAviso.Exito.palabra, tintaDe(TipoAviso.Exito), Modifier.clearAndSetSemantics { }, girado = 6f) },
+            sello = if (conforme) {
+                { Sello(TipoAviso.Exito.palabra, tintaDe(TipoAviso.Exito), Modifier.clearAndSetSemantics { }, girado = 6f) }
+            } else {
+                null
+            },
         ) {
             Text(
                 "Garantías de la casa",
                 style = serifMediana,
                 color = c.textPrimary,
-                modifier = Modifier.semantics { contentDescription = "${TipoAviso.Exito.palabra}. Garantías de la casa" },
+                modifier = Modifier.semantics {
+                    contentDescription = if (conforme) "${TipoAviso.Exito.palabra}. Garantías de la casa" else "Garantías de la casa"
+                },
             )
         }
         LineaPunteada(Modifier.padding(top = Spacing.s3, bottom = Spacing.s1))
         RenglonGuia("Conexión a Internet", "Sin permiso")
         RenglonGuia("Cifrado", "AES-256-GCM")
         RenglonGuia("Derivación de la clave", "Argon2id")
-        RenglonGuia("Capa de hardware", "Android Keystore")
+        RenglonGuia("Capa de hardware", capaDeHardware(nivelClave))
         RenglonGuia("Capturas de pantalla", "Bloqueadas")
         RenglonGuia("Copias en la nube", "Desactivadas")
         RenglonGuia("Autorrelleno de terceros", "Bloqueado")
         Text(
-            "Sin ese permiso, Android no deja que la app abra ninguna conexión. La capa de hardware va ligada al chip " +
-                "de seguridad del teléfono; los parámetros de la derivación están en «Derivación de la clave».",
+            if (nivelClave in NIVELES_DE_HARDWARE) {
+                "Sin ese permiso, Android no deja que la app abra ninguna conexión. La capa de hardware va ligada al " +
+                    "chip de seguridad del teléfono; los parámetros de la derivación están en «Derivación de la clave»."
+            } else {
+                "Sin ese permiso, Android no deja que la app abra ninguna conexión. En este teléfono la capa de " +
+                    "hardware no está confirmada: lo explica Seguridad, en «Dónde se guarda la clave de este teléfono»."
+            },
             style = t.small,
             color = c.textSecondary,
             modifier = Modifier.padding(top = Spacing.s3),
         )
     }
+}
+
+/** Niveles del Android Keystore que guardan la clave del teléfono en hardware. */
+private val NIVELES_DE_HARDWARE = setOf(KeySecurityLevel.STRONGBOX.label, KeySecurityLevel.TEE.label)
+
+/** Lo que dice el certificado de la capa de hardware según dónde guarda el Keystore la clave. */
+private fun capaDeHardware(nivel: String): String = when (nivel) {
+    KeySecurityLevel.STRONGBOX.label -> "StrongBox"
+    KeySecurityLevel.TEE.label -> "Android Keystore (TEE)"
+    KeySecurityLevel.SOFTWARE.label -> "Solo software"
+    else -> "Sin confirmar"
 }
 
 /**

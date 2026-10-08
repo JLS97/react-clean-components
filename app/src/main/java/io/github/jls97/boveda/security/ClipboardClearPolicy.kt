@@ -19,6 +19,12 @@ object ClipboardClearPolicy {
     /** Neutral clip label: a reader of the clipboard learns nothing about what was copied. */
     const val LABEL = "Contraseñora"
 
+    /**
+     * Label of the clips copied before the app was renamed. A clip copied by the old version just
+     * before an update still carries it, and its pending alarm must still be able to clear it.
+     */
+    const val LABEL_ANTERIOR = "Bóveda"
+
     /** Key of the stamp inside `ClipDescription.extras`. */
     const val EXTRA_STAMP = "io.github.jls97.boveda.CLIP_STAMP"
 
@@ -38,7 +44,7 @@ object ClipboardClearPolicy {
 
     /** True when [label] and [stamp] are those of the clip Bóveda copied with [ownStamp]. */
     fun isOwnClip(label: CharSequence?, stamp: Long?, ownStamp: Long): Boolean =
-        label?.toString() == LABEL && stamp != null && stamp == ownStamp
+        label?.toString().let { it == LABEL || it == LABEL_ANTERIOR } && stamp != null && stamp == ownStamp
 
     /** True once the clip copied with deadline [deadlineMs] (monotonic clock) should be gone. */
     fun hasExpired(deadlineMs: Long, nowMs: Long): Boolean = nowMs >= deadlineMs

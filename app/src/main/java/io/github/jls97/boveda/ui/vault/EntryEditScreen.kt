@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -94,8 +95,8 @@ internal fun EdicionContenido(
     val nombre = remember(draft.id) { draft.title.trim() }
     Pantalla(
         titulo = when {
-            isNew -> "Nueva clave"
-            nombre.isEmpty() -> "Editar clave"
+            isNew -> "Nueva entrada"
+            nombre.isEmpty() -> "Editar entrada"
             nombre.length > MAX_TITULO -> nombre.take(MAX_TITULO).trimEnd() + "…"
             else -> nombre
         },
@@ -230,7 +231,7 @@ private fun DestinosEditables(destinos: List<String>, onQuitar: (String) -> Unit
                     LlaveDeDestino(t.label)
                     Column(Modifier.weight(1f)) {
                         Text(tipo, style = t.label, color = c.textSecondary)
-                        Text(conCortes(valor), style = t.body, color = c.textPrimary)
+                        Text(conCortes(valor), style = t.body, color = c.textPrimary, modifier = Modifier.semantics { contentDescription = valor })
                     }
                 }
                 // Con varios seguidos, TalkBack dice cuál quita cada uno.

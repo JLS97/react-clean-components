@@ -84,7 +84,6 @@ import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.ui.components.Apartado
 import io.github.jls97.boveda.ui.components.Aviso
 import io.github.jls97.boveda.ui.components.BotonCopiar
-import io.github.jls97.boveda.ui.components.Resguardo
 import io.github.jls97.boveda.ui.components.BotonFantasma
 import io.github.jls97.boveda.ui.components.BotonPrimario
 import io.github.jls97.boveda.ui.components.BotonSecundario
@@ -96,9 +95,11 @@ import io.github.jls97.boveda.ui.components.Etiqueta
 import io.github.jls97.boveda.ui.components.Ficha
 import io.github.jls97.boveda.ui.components.Fila
 import io.github.jls97.boveda.ui.components.LineaPunteada
+import io.github.jls97.boveda.ui.components.LocalPantallaActiva
 import io.github.jls97.boveda.ui.components.Mostrador
 import io.github.jls97.boveda.ui.components.OnAppBackground
 import io.github.jls97.boveda.ui.components.Pantalla
+import io.github.jls97.boveda.ui.components.Resguardo
 import io.github.jls97.boveda.ui.components.Salida
 import io.github.jls97.boveda.ui.components.Sello
 import io.github.jls97.boveda.ui.components.TextoError
@@ -241,20 +242,38 @@ internal fun OtpCardContenido(
     ResguardoDeLaton(
         modifier = modifier,
         arriba = {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val etiqueta = @Composable { modificador: Modifier ->
                 Etiqueta(
                     "Código 2FA",
-                    Modifier.semantics(mergeDescendants = true) {
+                    modificador.semantics(mergeDescendants = true) {
                         if (estado == EstadoOtp.Revelado && cuenta != null) contentDescription = "Código 2FA de $cuenta"
                     },
                     icono = R.drawable.ic_reloj,
                 )
-                Spacer(Modifier.weight(1f))
-                // El color del estado vive en el sello, como en los avisos: el texto va en tinta normal.
+            }
+            // El color del estado vive en el sello, como en los avisos: el texto va en tinta normal.
+            val sello = @Composable {
                 when (estado) {
                     EstadoOtp.Bloqueado -> Sello("Ojo", c.warningFg, Modifier.clearAndSetSemantics { }, girado = 6f)
                     EstadoOtp.SinLlave -> Sello("Urgente", c.dangerFg, Modifier.clearAndSetSemantics { }, girado = 6f)
                     else -> Unit
+                }
+            }
+            if (letraGrande()) {
+                // Con la letra grande el sello girado no cabe al lado de la etiqueta: se estampa debajo.
+                Column(Modifier.fillMaxWidth()) {
+                    etiqueta(Modifier)
+                    Box(Modifier.padding(top = Spacing.s1)) { sello() }
+                }
+            } else {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.s3),
+                ) {
+                    etiqueta(Modifier)
+                    Spacer(Modifier.weight(1f))
+                    sello()
                 }
             }
             AnimatedContent(
@@ -270,7 +289,7 @@ internal fun OtpCardContenido(
                         style = t.body,
                         color = c.textSecondary,
                     )
-                    EstadoOtp.Bloqueado -> TextoSellado("Ojo", "Bloqueado en este móvil. Recupéralo con tu código de recuperación.")
+                    EstadoOtp.Bloqueado -> TextoSellado("Ojo", "Bloqueado en este teléfono. Recupéralo con tu código de recuperación.")
                     EstadoOtp.SinLlave -> TextoSellado("Urgente", "No se puede abrir: a la bóveda le falta la llave de los códigos 2FA.")
                     EstadoOtp.Revelado -> Box(Modifier.fillMaxWidth()) { codigo() }
                     EstadoOtp.Oculto -> CodigoOculto()
@@ -563,7 +582,7 @@ fun OtpAddScreen(
         otp.clearDraft()
         onBack()
     }
-    BackHandler { leave() }
+    BackHandler(enabled = LocalPantallaActiva.current) { leave() }
 
     fun save() {
         when (otpAccess) {
@@ -575,7 +594,7 @@ fun OtpAddScreen(
                     otp.message("Registra una huella en los ajustes del teléfono: los códigos 2FA solo se abren con ella.")
                 }
             OtpAccess.LOCKED -> {
-                otp.message("Primero recupera en este móvil los códigos 2FA que ya tienes.")
+                otp.message("Primero recupera en este teléfono los códigos 2FA que ya tienes.")
                 onNeedsRecovery()
             }
             OtpAccess.READY ->
@@ -764,7 +783,7 @@ internal fun AnadirCodigoContenido(
                     tint = c.brassText,
                     modifier = Modifier.padding(top = 3.dp).size(Sizes.iconSm),
                 )
-                Text("Los códigos dependen de la hora del móvil: déjala en automática.", style = t.small, color = c.textSecondary)
+                Text("Los códigos dependen de la hora del teléfono: déjala en automática.", style = t.small, color = c.textSecondary)
             }
         }
     }
@@ -813,7 +832,7 @@ private fun ClaveLeida(pendiente: OtpSecret?, error: String?, busy: Boolean, onD
                 }
             }
             when {
-                pendiente != null -> Sello("Conforme", c.successFg, Modifier.padding(start = Spacing.s2), girado = 6f)
+                pendiente != null -> Sello("Conforme", c.successFg, Modifier.padding(start = Spacing.s2).clearAndSetSemantics { }, girado = 6f)
                 error != null -> Sello("Ojo", c.warningFg, Modifier.padding(start = Spacing.s2).clearAndSetSemantics { }, girado = 6f)
             }
         }
@@ -982,7 +1001,7 @@ internal fun EscaneoContenido(
                         val (titulo, resto) = partirEnAviso(
                             "No se pudo abrir la cámara. Cierra otras apps que la estén usando o escribe la clave a mano.",
                         )
-                        Aviso(TipoAviso.Aviso, titulo.removeSuffix("."), mensaje = resto)
+                        Aviso(TipoAviso.Aviso, titulo, mensaje = resto)
                         // Sin cámara, escribir la clave es lo único que queda: es la acción principal.
                         BotonPrimario("Escribir la clave", onBack, Modifier.fillMaxWidth(), icono = R.drawable.ic_teclado)
                     }
@@ -1083,7 +1102,7 @@ fun RecoveryCodeScreen(
         otp.clearRecoveryCode()
         onBack()
     }
-    BackHandler { leave() }
+    BackHandler(enabled = LocalPantallaActiva.current) { leave() }
 
     fun confirm() {
         when (purpose) {
@@ -1174,7 +1193,7 @@ internal fun CodigoRecuperacionContenido(
         Column(verticalArrangement = Arrangement.spacedBy(Spacing.s4)) {
             if (alta) {
                 Text(
-                    "Esa llave no sale de este móvil y se destruye al inscribir una huella nueva o quitar el " +
+                    "Esa llave no sale de este teléfono y se destruye al inscribir una huella nueva o quitar el " +
                         "bloqueo de pantalla, así que para recuperar los códigos en otro teléfono (desde una " +
                         "copia) o si cambias tus huellas necesitarás este código de recuperación:",
                     style = t.body,
@@ -1224,8 +1243,8 @@ internal fun CodigoRecuperacionContenido(
                 TipoAviso.Aviso,
                 "Vale cualquier huella del teléfono",
                 Modifier.padding(top = Spacing.s6),
-                mensaje = "Abrirá la bóveda cualquier huella ya registrada en este teléfono. Revisa las huellas en " +
-                    "los ajustes del sistema antes de activarla.",
+                mensaje = "Cualquier huella ya registrada en este teléfono podrá abrir tus códigos 2FA. Revisa las " +
+                    "huellas en los ajustes del sistema antes de activar esta protección.",
             )
         } else {
             Aviso(
@@ -1279,9 +1298,9 @@ private fun Papeleta(codigo: String) {
         matriz = {
             // Es un consejo de seguridad, no letra pequeña: en el cuerpo y en tinta normal.
             Text(
-                "Apúntalo en papel y guárdalo lejos del móvil. No lo guardes en Contraseñora, en fotos ni en la nube: " +
+                "Apúntalo en papel y guárdalo lejos del teléfono. No lo guardes en Contraseñora, en fotos ni en la nube: " +
                     "si alguien lo consigue junto a tu contraseña maestra, podría leer tus códigos sin tu huella. " +
-                    "Si lo pierdes y pierdes el móvil, tendrás que usar los códigos de respaldo de cada web.",
+                    "Si lo pierdes y pierdes el teléfono, tendrás que usar los códigos de respaldo de cada web.",
                 style = t.body,
                 color = c.textPrimary,
             )
@@ -1298,7 +1317,7 @@ fun OtpRecoverScreen(otp: OtpViewModel, onDone: () -> Unit, onBack: () -> Unit, 
         otp.clearCheckedRecoveryCode()
         onBack()
     }
-    BackHandler { leave() }
+    BackHandler(enabled = LocalPantallaActiva.current) { leave() }
 
     fun recover() {
         otp.checkRecoveryCode(typed) {
@@ -1336,8 +1355,8 @@ internal fun RecuperarContenido(
     Pantalla(
         titulo = "Recuperar códigos 2FA",
         salida = Salida(onBack),
-        entradilla = "Tus códigos 2FA están en la bóveda, pero este móvil no tiene la llave de huella que los abre. " +
-            "Pasa al restaurar una copia, al estrenar móvil, al inscribir una huella nueva o al quitar el " +
+        entradilla = "Tus códigos 2FA están en la bóveda, pero este teléfono no tiene la llave de huella que los abre. " +
+            "Pasa al restaurar una copia, al estrenar teléfono, al inscribir una huella nueva o al quitar el " +
             "bloqueo de pantalla.",
         snackbar = snackbar,
         ocupado = busy,
