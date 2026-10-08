@@ -263,7 +263,9 @@ internal fun OtpCardContenido(
                 // Con la letra grande el sello girado no cabe al lado de la etiqueta: se estampa debajo.
                 Column(Modifier.fillMaxWidth()) {
                     etiqueta(Modifier)
-                    Box(Modifier.padding(top = Spacing.s1)) { sello() }
+                    if (estado == EstadoOtp.Bloqueado || estado == EstadoOtp.SinLlave) {
+                        Box(Modifier.padding(top = Spacing.s1)) { sello() }
+                    }
                 }
             } else {
                 Row(
