@@ -1,7 +1,7 @@
 # Política de seguridad de Contraseñora
 
-Contraseñora es un gestor de contraseñas personal para Android sin conexión a Internet, un proyecto
-de Smash software. Este documento resume qué protege, qué no protege, cómo se ha revisado y cómo
+Contraseñora, un proyecto de Smash software, es un gestor de contraseñas personal para Android sin
+conexión a Internet. Este documento resume qué protege, qué no protege, cómo se ha revisado y cómo
 comunicar un fallo de seguridad.
 
 ## Modelo de amenaza

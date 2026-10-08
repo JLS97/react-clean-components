@@ -59,10 +59,10 @@ chistes, en **Ajustes → Apariencia** puedes elegir la voz «Sobria», y tambi�
 oscuro o el del sistema.
 
 **Para quién y en qué estado.** Para quien quiera sus contraseñas y códigos 2FA solo en su
-teléfono Android, sin cuentas, servidores ni nube de por medio (tampoco de Smash software). Es un
-proyecto de Smash software, todavía en desarrollo (versión 0.2.0): no está en Google Play ni en
-F-Droid y no hay APK de release publicado. Puedes probarla en unos minutos con el APK de prueba;
-para guardar tus contraseñas de verdad, compílala y fírmala tú (ver [Pruébala](#pruébala)).
+teléfono Android, sin cuentas, servidores ni nube de por medio. Es un proyecto de Smash software,
+todavía en desarrollo (versión 0.2.0): no está en Google Play ni en F-Droid y no hay APK de
+release publicado. Puedes probarla en unos minutos con el APK de prueba; para guardar tus
+contraseñas de verdad, compílala y fírmala tú (ver [Pruébala](#pruébala)).
 
 ## Qué hace
 

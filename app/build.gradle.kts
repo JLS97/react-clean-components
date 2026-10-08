@@ -57,8 +57,8 @@ android {
 
     defaultConfig {
         applicationId = "io.github.jls97.boveda"
-        // Personal app for a recent phone: Android 13+ gives every security API used here
-        // without compatibility code (sensitive clipboard, overlay hiding, biometric keys).
+        // Recent phones only: Android 13+ gives every security API used here without
+        // compatibility code (sensitive clipboard, overlay hiding, biometric keys).
         minSdk = 33
         targetSdk = 37
         versionCode = 2
