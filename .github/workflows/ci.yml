@@ -42,6 +42,19 @@ jobs:
       - name: Tests, lint y APK debug
         run: ./gradlew --no-daemon --console=plain testDebugUnitTest lintDebug assembleDebug
 
+      # Todos los APK debug se firman con la clave compartida y pública del repositorio
+      # (app/debug.keystore) para que se instalen unos encima de otros. Si el build dejara de usarla,
+      # cada ejecución firmaría con una clave nueva del runner y el APK publicado ya no se podría
+      # instalar encima del anterior. La huella del certificado está en SECURITY.md.
+      - name: Firma del APK debug
+        run: |
+          esperada=a0226ef08b68045e51460bea2fb9ac8526108cd48514a724b4c5c435165bb6ed
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)apksigner"
+          huella=$("$apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          echo "Certificado del APK debug: $huella"
+          test "$huella" = "$esperada"
+
       # La lista de navegadores de confianza caduca por calendario (TrustedBrowsers.LIST_DATE más
       # MAX_LIST_AGE_MONTHS), no por un cambio del código, así que no vive en un test unitario que
       # pondría la suite en rojo un día fijo: este paso avisa (anotación de GitHub y paso en rojo)

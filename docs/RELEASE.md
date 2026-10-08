@@ -10,7 +10,9 @@ que la propia bóveda.
 ## 1. Crear la clave de firma (una sola vez)
 
 Fuera del repositorio (el `.gitignore` excluye `*.jks`, `*.keystore`, `*.p12`, `*.pfx`, `*.pem`,
-`*.bks`, `*.pepk` y `app/release/`, pero mejor no tentar a la suerte):
+`*.bks`, `*.pepk` y `app/release/`, pero mejor no tentar a la suerte). La única excepción es
+`app/debug.keystore`, la clave pública de las compilaciones debug (ver [SECURITY.md](../SECURITY.md));
+nunca sirve para la release:
 
 ```sh
 keytool -genkeypair -v \
@@ -155,4 +157,6 @@ Lo más sencillo sigue siendo instalar desde el PC que compila: `adb install -r 
   cuenta comprometida podría apuntarlo a otro código sin tocar este repositorio. Al aceptar una PR
   de Dependabot para una acción, comprueba que el SHA nuevo corresponde al tag indicado
   (`git ls-remote --tags https://github.com/<acción> | grep <tag>`). El workflow solo tiene
-  `contents: read`, no recibe la clave de firma y solo compila el APK debug.
+  `contents: read`, no recibe la clave de firma y solo compila el APK debug, firmado con la clave
+  pública `app/debug.keystore`; un paso comprueba que el certificado del APK es el documentado en
+  [SECURITY.md](../SECURITY.md).

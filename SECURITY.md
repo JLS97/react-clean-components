@@ -59,5 +59,27 @@ contraseña maestra.
   `./gradlew lintDebug` pasan.
 - La clave de firma de release vive fuera del repositorio (variables de entorno o `local.properties`
   ignorado por git; el build no lee ningún otro archivo). Ver [`docs/RELEASE.md`](docs/RELEASE.md).
+- La clave de las compilaciones **debug** sí está en el repositorio, a propósito (ver abajo).
 - Las dependencias se verifican por hash con `gradle/verification-metadata.xml` y las acciones de la
   CI van fijadas por SHA de commit (ver la política en `docs/RELEASE.md`, §6).
+
+## La clave debug es pública
+
+`app/debug.keystore` (alias `androiddebugkey`, contraseña `android`) firma todas las compilaciones
+debug: las de la CI, las de cualquier ordenador y las de cualquier sesión. Así cada APK debug se
+instala encima del anterior. Sin ella, cada máquina firma con su propia clave de depuración y
+Android rechaza el APK por «conflicto con un paquete existente». La CI comprueba en cada push que
+el APK debug lleva este certificado:
+
+```text
+SHA-256: A0:22:6E:F0:8B:68:04:5E:51:46:0B:EA:2F:B9:AC:85:26:10:8C:D4:85:14:A7:24:B4:C5:C4:35:16:5B:B6:ED
+```
+
+Como la clave es pública, cualquiera puede firmar un APK que Android acepte como actualización de
+«Contraseñora Debug» (`io.github.jls97.boveda.debug`). Por eso la app debug es solo para probar:
+
+- Es otra app, con sus propios datos y sus propias claves del Keystore. No comparte nada con la
+  release (`io.github.jls97.boveda`), que se firma con la clave propia de quien la compila.
+- Además es depurable (`android:debuggable`), lo que ya permite inspeccionarla por USB.
+- No guardes en ella contraseñas reales. Si lo has hecho, exporta una copia `.bvd` y restáurala en
+  una release firmada con tu clave.

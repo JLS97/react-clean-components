@@ -68,6 +68,18 @@ android {
     }
 
     signingConfigs {
+        // Clave debug compartida y PÚBLICA (está en el repositorio, contraseña «android»): así los
+        // APK debug de la CI, de cualquier ordenador y de cualquier sesión se instalan unos encima de
+        // otros. Sin ella, cada máquina firma con su propia ~/.android/debug.keystore y Android
+        // rechaza instalar el APK por «conflicto con un paquete existente». Solo firma la app debug
+        // (io.github.jls97.boveda.debug, otra app con sus propios datos y depurable): nunca guardes
+        // datos reales en ella. La release se firma con la clave propia de abajo. Ver SECURITY.md.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         if (releaseSigningConfigured) {
             create("release") {
                 storeFile = rootProject.file(releaseKeystorePath!!)
