@@ -70,7 +70,7 @@ jobs:
           today=$(date -u +%F)
           echo "Lista de navegadores del $list_date; caduca el $limit (hoy es $today)"
           if [ "$today" \> "$limit" ]; then
-            echo "::warning file=$file::La lista de navegadores de confianza (LIST_DATE = $list_date) tiene más de $max_months meses: regenérala desde fido2_privileged_google.json, cúrala y actualiza LIST_DATE, EXPECTED_SIZE y el README"
+            echo "::warning file=$file::La lista de navegadores de confianza (LIST_DATE = $list_date) tiene más de $max_months meses: regenérala desde fido2_privileged_google.json, cúrala y actualiza LIST_DATE, EXPECTED_SIZE y la cifra de docs/GUIA.md"
             exit 1
           fi
 

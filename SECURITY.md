@@ -31,7 +31,7 @@ resume qué protege, qué no protege, cómo se ha revisado y cómo comunicar un 
 
 ## Diseño criptográfico
 
-Ver la sección «Diseño de seguridad» del [README](README.md). En resumen: Argon2id (64 MiB,
+Ver «Diseño de seguridad» en la [guía](docs/GUIA.md#diseño-de-seguridad). En resumen: Argon2id (64 MiB,
 3 pasadas, 4 carriles, sal de 256 bits) → KEK → DEK aleatoria → AES‑256‑GCM con cabeceras
 autenticadas; capa de dispositivo en Android Keystore (StrongBox o TEE); claves 2FA ligadas por
 AAD a su entrada; huella fuerte por uso con clave invalidada al inscribir huellas nuevas.
