@@ -1,7 +1,9 @@
 # Guía de uso y seguridad
 
-Todo lo que el [README](../README.md) resume, con detalle: cómo se usa cada función, cómo protege
-tus datos y qué queda fuera de su alcance.
+Lo que el [README](../README.md) resume, con detalle: cómo se usan el autorrelleno, los códigos 2FA
+y las copias de seguridad, cómo protege Contraseñora tus datos y qué queda fuera de su alcance.
+
+Los ajustes están en el icono de ajustes de la lista «Tus claves», arriba, junto a «Bloquear».
 
 - [Autorrelleno](#autorrelleno)
 - [Códigos 2FA](#códigos-2fa)
@@ -13,8 +15,8 @@ tus datos y qué queda fuera de su alcance.
 
 ## Autorrelleno
 
-1. En Contraseñora: **Ajustes y copias → Autorrelleno** y elige Contraseñora en el diálogo del
-   sistema.
+1. En Contraseñora: **Ajustes → Autorrelleno → Rellenar en otras apps y en Chrome**, y elige
+   Contraseñora en el diálogo del sistema.
 2. En Chrome: **Ajustes → Servicios de autocompletar → Autocompletar con otro servicio**, y
    reinicia Chrome. Para webs, usa un navegador de la lista (Chrome, Firefox, Brave…): el
    navegador de Xiaomi (Mi Browser) no está en ella.
@@ -101,18 +103,30 @@ Cómo se protegen:
 
 ## Copias de seguridad
 
-Haz una copia en **Ajustes y copias → Exportar copia cifrada**. Guárdala en el teléfono o en un
-USB conectado (el selector intenta ocultar la nube y la app rechaza los servicios en la nube que
-conoce, pero una carpeta sincronizada podría subirla igualmente). Después pásala a un USB o a un
-ordenador, por cable, y bórrala del teléfono. Si pierdes el teléfono, esa copia y tu contraseña
-maestra son la única forma de recuperar los datos. Repite la copia después de cambios importantes
-o de cambiar la contraseña maestra.
+Haz una copia en **Ajustes → Copias → Exportar copia**. Pide confirmación y tu huella o la
+contraseña maestra, y la copia se vuelve a leer y abrir antes de darla por buena. Guárdala en el
+teléfono o en un USB conectado (el selector intenta ocultar la nube y la app rechaza los servicios
+en la nube que conoce, pero una carpeta sincronizada podría subirla igualmente). Después pásala a
+un USB o a un ordenador, por cable, y bórrala del teléfono. Si pierdes el teléfono, esa copia y tu
+contraseña maestra son la única forma de recuperar los datos. Repite la copia después de cambios
+importantes o de cambiar la contraseña maestra.
 
 La copia incluye los códigos 2FA, cifrados. Al restaurarla en otro teléfono, o en este tras
 cambiar tus huellas, Contraseñora te pedirá también el código de recuperación para volver a
 abrirlos.
 
-Límites por campo (nuevos tras 0.2.0): al escribir o pegar, nombre y usuario admiten 1 KB, la
+Para restaurar una copia:
+
+- **Con la bóveda abierta:** **Ajustes → Copias → Restaurar copia**. Pide la contraseña maestra
+  con la que se hizo la copia y la actual de la bóveda de este teléfono.
+- **Con la bóveda bloqueada, o en un teléfono nuevo:** **Restaurar una copia de seguridad**, al
+  pie de la pantalla de desbloqueo o de la de creación. En un teléfono nuevo solo pide la
+  contraseña de la copia.
+
+La bóveda que había se guarda: **Volver a la anterior**, en Ajustes, o **Volver a la bóveda
+anterior**, en la pantalla de desbloqueo, la recupera.
+
+Límites por campo: al escribir o pegar, nombre y usuario admiten 1 KB, la
 contraseña 4 KB, la web 2 KB y las notas 64 KB (en bytes UTF-8); la app avisa bajo el campo y al
 guardar. El archivo admite más (256 KB por campo y 1 MB en notas), así que las bóvedas y copias de
 versiones anteriores, que no tenían límite, siguen abriéndose y guardándose. Solo por encima de
@@ -212,9 +226,9 @@ Fuera del control de la app, conviene revisar en el teléfono:
   apps tienen ese permiso.
 - Una pantalla de desbloqueo falsa. Cualquier app puede saber qué gestor de contraseñas usas
   (Android lo expone a todas) y, cuando le pides rellenar, dibujar una copia de la pantalla de
-  Contraseñora para quedarse con tu contraseña maestra. Por eso Contraseñora muestra siempre tu
-  frase antiphishing antes de pedirla y, con la huella activada, no enseña el campo de contraseña
-  hasta que lo pides: si no ves tu frase, no escribas la contraseña.
+  Contraseñora para quedarse con tu contraseña maestra. Por eso la pantalla de desbloqueo de
+  Contraseñora muestra siempre tu frase antiphishing antes de pedirla y, con la huella activada, no
+  enseña el campo de contraseña hasta que lo pides: si no ves tu frase, no escribas la contraseña.
 - Olvidar la contraseña maestra: no hay forma de recuperarla.
 - Perder a la vez el teléfono (o tus huellas) y el código de recuperación: los códigos 2FA no se
   podrían recuperar, y habría que volver a activar la verificación en cada web con sus códigos de
@@ -224,7 +238,7 @@ Fuera del control de la app, conviene revisar en el teléfono:
 
 Para guardar datos reales usa una compilación **release** firmada con tu propia clave. La versión
 debug es otra app distinta (`Contraseñora Debug`, con sus propios datos, depurable por USB y
-firmada con una clave pública: ver [SECURITY.md](../SECURITY.md)), útil para probar pero no para
+firmada con una clave publicada en el repositorio: ver [SECURITY.md](../SECURITY.md)), útil para probar pero no para
 tus contraseñas.
 
 1. Crea tu clave de firma y compila la release firmada, desde Android Studio (**Build → Generate
@@ -235,8 +249,10 @@ tus contraseñas.
    HyperOS: en **Ajustes → Sobre el teléfono**, pulsa 7 veces **Versión de Xiaomi HyperOS**;
    luego, en **Ajustes adicionales → Opciones de desarrollador**, activa **Depuración USB** e
    **Instalar vía USB**. En otros fabricantes el camino es parecido.
-3. Conecta el teléfono e instala:
-   `adb install app/build/outputs/apk/release/app-release.apk`. También puedes copiar el APK al
+3. Conecta el teléfono e instala el APK:
+   `adb install app/build/outputs/apk/release/app-release.apk` si compilaste con
+   `./gradlew assembleRelease`, o `adb install app/release/app-release.apk` si usaste el asistente
+   de Android Studio con su carpeta de destino por defecto. También puedes copiar el APK al
    teléfono y abrirlo.
 4. Cuando termines, desactiva la depuración USB.
 
