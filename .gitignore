@@ -22,8 +22,8 @@ local.properties
 *.bks
 *.pepk
 keystore.properties
-# Except the shared, deliberately public debug key (it only signs the separate debug app; see
-# SECURITY.md). The release key must never be committed.
+# Except the shared debug signing key, published on purpose: it only signs the separate debug app
+# (see SECURITY.md). The release key must never be committed.
 !app/debug.keystore
 
 # Signed APKs written by Android Studio outside build/ (and their metadata)
