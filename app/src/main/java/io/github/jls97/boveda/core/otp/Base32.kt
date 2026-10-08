@@ -23,7 +23,8 @@ object Base32 {
 
     /**
      * Decodes a key as authenticator apps do: ignoring case, spaces, hyphens and the trailing `=`
-     * padding, and dropping the bits left over at the end. Null if any other character appears.
+     * padding, and dropping the bits left over at the end. Null if any other character appears,
+     * including non-ASCII look-alikes of the alphabet (a dotless i, a long s).
      */
     fun decode(text: CharSequence): ByteArray? {
         val output = ByteArray(text.length * 5 / 8)
@@ -39,7 +40,7 @@ object Base32 {
             }
             // Nothing but padding may follow the padding.
             if (padding) return null
-            val value = ALPHABET.indexOf(char.uppercaseChar())
+            val value = if (char.code > 127) -1 else ALPHABET.indexOf(char.uppercaseChar())
             if (value < 0) return null
             buffer = (buffer shl 5) or value
             bits += 5

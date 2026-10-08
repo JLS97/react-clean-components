@@ -13,12 +13,26 @@ captures/
 # Local configuration (SDK path, secrets)
 local.properties
 
-# Signing keys
+# Signing keys (any format keytool, Android Studio or Play App Signing can produce)
 *.jks
 *.keystore
+*.p12
+*.pfx
+*.pem
+*.bks
+*.pepk
+keystore.properties
+
+# Signed APKs written by Android Studio outside build/ (and their metadata)
+app/release/
+*.apk
+*.aab
+output-metadata.json
 
 # OS
 .DS_Store
 
 # Encrypted vault backups must never end up in the repository
 *.bvd
+# Except the immutable format fixtures of the tests (known password, no real data)
+!app/src/test/resources/vault/*.bvd

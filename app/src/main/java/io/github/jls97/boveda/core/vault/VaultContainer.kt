@@ -19,7 +19,8 @@ import io.github.jls97.boveda.core.crypto.wipe
  *
  * A random data-encryption key (DEK) encrypts the payload. The DEK is wrapped with a key derived
  * from the master password with Argon2id, authenticating the KDF section of the header as AAD.
- * Changing the password only re-wraps the DEK.
+ * Changing the password generates a new DEK, so the body is encrypted again: an old copy plus its
+ * old password never opens the copies made after the change.
  */
 object VaultContainer {
     private val MAGIC = byteArrayOf(0x42, 0x4F, 0x56, 0x44) // "BOVD"
@@ -66,9 +67,13 @@ object VaultContainer {
      * @throws WrongPasswordException if the password is wrong or the header was altered.
      * @throws CorruptedVaultException if the file is damaged.
      * @throws UnsupportedVaultException if the file uses an unknown format or absurd KDF costs.
+     * @throws KdfMemoryException if the KDF asks for more than [KdfParams.DEFAULT] and more than
+     *   half of [maxHeapBytes]: before running Argon2id, so a crafted header cannot take the app
+     *   down with an OutOfMemoryError.
      */
-    fun open(blob: ByteArray, password: CharArray): Opened {
+    fun open(blob: ByteArray, password: CharArray, maxHeapBytes: Long = Runtime.getRuntime().maxMemory()): Opened {
         val header = parseHeader(blob)
+        ensureKdfFitsInMemory(header.kdfParams, maxHeapBytes)
         val kek = Argon2Kdf.deriveKey(password, header.salt, header.kdfParams)
         val dek = try {
             AesGcm.open(kek, header.wrappedDek, header.kdfSection)
@@ -83,12 +88,32 @@ object VaultContainer {
     /** Opens a vault with an already known DEK (biometric unlock). */
     fun openWithKey(blob: ByteArray, dek: ByteArray): Opened = openBody(blob, parseHeader(blob), dek.copyOf())
 
-    /** Re-wraps the same DEK under a new password and a new salt. Slow: runs Argon2id. */
-    fun changePassword(dek: ByteArray, newPassword: CharArray, params: KdfParams = KdfParams.DEFAULT): Header =
-        buildHeader(newPassword, dek, params)
+    /**
+     * Protects the vault with [newPassword]: a new random DEK is wrapped under it (and a new salt),
+     * so the body must be sealed again with the returned [Opened.dek]. The old DEK, and with it
+     * the fingerprint copy and every older backup, no longer opens the copies made from here on.
+     * Slow: runs Argon2id.
+     */
+    fun changePassword(newPassword: CharArray, data: VaultData, params: KdfParams = KdfParams.DEFAULT): Opened =
+        create(newPassword, data, params)
+
+    /**
+     * Wraps the same [dek] again under [password] with the costs in [params] (and a new salt):
+     * the vault moves to stronger Argon2id costs without changing its key, so the fingerprint
+     * copy of the DEK and the 2FA keys keep working; only the header changes. The body must be
+     * sealed again under the returned header, which is its AAD. The caller keeps [dek].
+     * Slow: runs Argon2id.
+     *
+     * @throws KdfMemoryException if [params] do not fit in this process, before deriving anything.
+     */
+    fun upgradeKdf(password: CharArray, dek: ByteArray, params: KdfParams = KdfParams.DEFAULT): Header {
+        ensureKdfFitsInMemory(params)
+        return buildHeader(password, dek, params)
+    }
 
     /** True if [password] unwraps this header's DEK. Slow: runs Argon2id. */
     fun verifyPassword(header: Header, password: CharArray): Boolean {
+        ensureKdfFitsInMemory(header.kdfParams)
         val kek = Argon2Kdf.deriveKey(password, header.salt, header.kdfParams)
         return try {
             AesGcm.open(kek, header.wrappedDek, header.kdfSection).wipe()
@@ -97,6 +122,30 @@ object VaultContainer {
             false
         } finally {
             kek.wipe()
+        }
+    }
+
+    /**
+     * Rejects KDF parameters read from a file whose memory does not fit comfortably in this process.
+     * Bouncy Castle keeps the whole Argon2 block array on the Java heap, so a header that stays
+     * within [KdfParams.MAX_MEMORY_KIB] can still exhaust the heap of a phone with a small one.
+     * Half of the heap leaves room for the rest of the app.
+     *
+     * Costs up to [KdfParams.DEFAULT] are always accepted: the app writes them into every vault
+     * and backup, so refusing them would lock the user out on a phone with a small heap (96 or
+     * 128 MiB without `largeHeap`), where the previous versions did open the vault. The relative
+     * check only guards against files asking for more than the app itself ever writes.
+     *
+     * @throws KdfMemoryException if the derivation would claim more than half of [maxHeapBytes]
+     *   with costs above [KdfParams.DEFAULT], or more than [KdfParams.MAX_MEMORY_KIB] at all.
+     */
+    fun ensureKdfFitsInMemory(params: KdfParams, maxHeapBytes: Long = Runtime.getRuntime().maxMemory()) {
+        if (params.memoryKiB > KdfParams.MAX_MEMORY_KIB) {
+            throw KdfMemoryException("Key derivation needs ${params.memoryKiB} KiB, more than the format allows")
+        }
+        if (params.memoryKiB <= KdfParams.DEFAULT.memoryKiB) return
+        if (params.memoryBytes > maxHeapBytes / 2) {
+            throw KdfMemoryException("Key derivation needs ${params.memoryKiB} KiB, more than this process allows")
         }
     }
 

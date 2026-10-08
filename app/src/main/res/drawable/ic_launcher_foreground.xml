@@ -1,19 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Padlock inside the 66dp adaptive-icon safe zone. The keyhole is a real hole (evenOdd), so the
-     themed (monochrome) icon renders correctly too. -->
+<!-- Contraseñora · icono adaptativo, capa frontal · generado desde el kit de marca -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="5"
-        android:strokeLineCap="round"
-        android:pathData="M44,51V43A10,10 0,0 1,64 43V51" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:fillType="evenOdd"
-        android:pathData="M42,50H66A4,4 0,0 1,70 54V71A4,4 0,0 1,66 75H42A4,4 0,0 1,38 71V54A4,4 0,0 1,42 50Z M52.5,63.16A3.5,3.5 0,1 1,55.5 63.16L56.5,68H51.5Z" />
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateX="24.560" android:translateY="24.675" android:scaleX="0.2300" android:scaleY="0.2300">
+        <path android:fillColor="#FF6A2C70" android:pathData="M153 38C153 43.13 150.81 47.84 147.16 51.49Q156.83 55.29 164.77 63.23Q180 78.46 180 100V115.41C195.02 119.74 206 133.59 206 150V202C206 221.88 189.88 238 170 238H86C66.12 238 50 221.88 50 202V150C50 133.59 60.98 119.74 76 115.41V100Q76 78.46 91.23 63.23Q99.17 55.29 108.84 51.49C105.19 47.84 103 43.13 103 38C103 26.4 114.19 17 128 17C141.81 17 153 26.4 153 38ZM160 114V100Q160 86.75 150.63 77.37Q141.25 68 128 68Q114.75 68 105.37 77.37Q96 86.75 96 100V114H160Z"/>
+        <path android:strokeColor="#8CFAF5FB" android:strokeWidth="5" android:strokeLineCap="round" android:pathData="M112 36c4-10 22-12 30-2"/>
+        <path android:strokeColor="#FFF2A2BD" android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M78 150c6-6 30-8 40-2c3 10-1 24-16 25c-15 1-26-10-24-23z"/>
+        <path android:strokeColor="#FFF2A2BD" android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M178 150c-6-6-30-8-40-2c-3 10 1 24 16 25c15 1 26-10 24-23z"/>
+        <path android:strokeColor="#FFF2A2BD" android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M118 151c6-4 14-4 20 0"/>
+        <path android:strokeColor="#FFF2A2BD" android:strokeWidth="7" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M79 151l-13-14M177 151l13-14"/>
+        <path android:fillColor="#FFFAF5FB" android:pathData="M128 189a11 11 0 0 1 6.5 19.9L138 222h-20l3.5-13.1A11 11 0 0 1 128 189z"/>
+    </group>
 </vector>

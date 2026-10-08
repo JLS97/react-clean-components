@@ -7,11 +7,15 @@ internal class ByteWriter(initialCapacity: Int = 256) {
     private var buffer = ByteArray(initialCapacity)
     private var size = 0
 
-    private fun ensureCapacity(extra: Int) {
+    /**
+     * Grows the buffer so [extra] more bytes fit. Works from an empty buffer and never loops on
+     * sizes that would overflow an Int: those throw [IllegalArgumentException] before allocating.
+     */
+    internal fun ensureCapacity(extra: Int) {
+        require(extra >= 0 && extra <= MAX_CAPACITY - size) { "Buffer too large" }
         val needed = size + extra
         if (needed <= buffer.size) return
-        var newSize = buffer.size * 2
-        while (newSize < needed) newSize *= 2
+        val newSize = maxOf(needed.toLong(), buffer.size * 2L).coerceIn(16L, MAX_CAPACITY.toLong()).toInt()
         val grown = buffer.copyOf(newSize)
         buffer.wipe()
         buffer = grown
@@ -52,6 +56,11 @@ internal class ByteWriter(initialCapacity: Int = 256) {
     fun wipe() {
         buffer.wipe()
         size = 0
+    }
+
+    private companion object {
+        /** Largest array the JVM allocates reliably. */
+        const val MAX_CAPACITY = Int.MAX_VALUE - 8
     }
 }
 
@@ -106,9 +115,15 @@ internal fun ByteWriter.putBytesField(tag: Int, value: ByteArray) {
     putBytes(value)
 }
 
-internal fun ByteWriter.putStringField(tag: Int, value: String) {
+/**
+ * Writes a string field. [maxBytes] is the limit the reader will enforce on this tag, so nothing
+ * gets persisted that could not be read back; exceeding it is a programming error
+ * ([FieldTooLongException], an [IllegalArgumentException]).
+ */
+internal fun ByteWriter.putStringField(tag: Int, value: String, maxBytes: Int = Int.MAX_VALUE) {
     val encoded = value.toByteArray(Charsets.UTF_8)
     try {
+        if (encoded.size > maxBytes) throw FieldTooLongException("Field $tag exceeds $maxBytes bytes")
         putBytesField(tag, encoded)
     } finally {
         encoded.wipe()

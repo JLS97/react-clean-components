@@ -1,0 +1,25 @@
+# Dependabot: avisa de versiones nuevas de las acciones de la CI (fijadas por SHA en
+# workflows/ci.yml; Dependabot actualiza el SHA y el comentario con el tag) y de las dependencias
+# Gradle declaradas en gradle/libs.versions.toml.
+#
+# Las PR del ecosistema gradle fallan la CI hasta que se regenera la verificación de dependencias
+# (org.gradle.dependency.verification=strict): Dependabot NO actualiza gradle/verification-metadata.xml.
+# Antes de fusionar una de esas PR hay que ejecutar en local
+#   ./gradlew --no-daemon --write-verification-metadata sha256 help testDebugUnitTest lintDebug assembleRelease
+# revisar el diff del XML (solo los artefactos de la versión nueva) y commitearlo en la misma rama.
+# Ver docs/RELEASE.md, §6. Las actualizaciones gradle se agrupan en una sola PR para regenerar el
+# XML una vez por semana como mucho.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      gradle:
+        patterns:
+          - "*"

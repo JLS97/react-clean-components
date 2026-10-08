@@ -13,6 +13,8 @@ import io.github.jls97.boveda.core.vault.CorruptedVaultException
 import io.github.jls97.boveda.core.vault.OtpKeyring
 import io.github.jls97.boveda.core.vault.SealedOtp
 import io.github.jls97.boveda.core.vault.UnsupportedVaultException
+import io.github.jls97.boveda.core.vault.VaultContainer
+import io.github.jls97.boveda.core.vault.VaultEntry
 import io.github.jls97.boveda.core.vault.VaultException
 import io.github.jls97.boveda.core.vault.asInt
 import io.github.jls97.boveda.core.vault.asString
@@ -80,6 +82,7 @@ object OtpCrypto {
      */
     fun unwrapWithRecoveryCode(keyring: OtpKeyring, recoveryCode: CharArray): ByteArray {
         val salt = keyring.salt
+        VaultContainer.ensureKdfFitsInMemory(keyring.kdfParams)
         val kek = Argon2Kdf.deriveKey(recoveryCode, salt, keyring.kdfParams)
         try {
             return AesGcm.open(kek, keyring.wrappedKey, recoveryAad(keyring.id, keyring.kdfParams, salt))
@@ -98,7 +101,7 @@ object OtpCrypto {
             writer.putU16(RECORD_VERSION)
             writer.putU16(6)
             writer.putBytesField(FIELD_KEY, key)
-            writer.putIntField(FIELD_ALGORITHM, secret.params.algorithm.ordinal + 1)
+            writer.putIntField(FIELD_ALGORITHM, secret.params.algorithm.id)
             writer.putIntField(FIELD_DIGITS, secret.params.digits)
             writer.putIntField(FIELD_PERIOD, secret.params.period)
             writer.putStringField(FIELD_ISSUER, secret.issuer)
@@ -142,7 +145,7 @@ object OtpCrypto {
                         key?.wipe()
                         key = value.copyOf()
                     }
-                    FIELD_ALGORITHM -> algorithm = OtpAlgorithm.entries.getOrNull(value.asInt() - 1)
+                    FIELD_ALGORITHM -> algorithm = OtpAlgorithm.fromId(value.asInt())
                         ?: throw UnsupportedVaultException("Unsupported 2FA algorithm")
                     FIELD_DIGITS -> digits = value.asInt()
                     FIELD_PERIOD -> period = value.asInt()
@@ -164,7 +167,31 @@ object OtpCrypto {
         }
     }
 
-    private fun secretAad(keyringId: ByteArray, entryId: String): ByteArray =
+    /**
+     * Seals every 2FA secret of [entries] again under [newKey] and [newKeyringId], opening each one
+     * with [oldKey] and [oldKeyringId]. Pure: entries without a secret come back as they are and
+     * nothing is stored anywhere. After this, the old key opens none of the returned secrets.
+     *
+     * @throws CorruptedVaultException if a secret does not open with the old key and keyring id.
+     */
+    fun reseal(
+        entries: List<VaultEntry>,
+        oldKey: ByteArray,
+        oldKeyringId: ByteArray,
+        newKey: ByteArray,
+        newKeyringId: ByteArray,
+    ): List<VaultEntry> = entries.map { entry ->
+        val sealed = entry.otp ?: return@map entry
+        val secret = open(oldKey, oldKeyringId, entry.id, sealed)
+        try {
+            entry.copy(otp = seal(newKey, newKeyringId, entry.id, secret))
+        } finally {
+            secret.wipe()
+        }
+    }
+
+    /** Internal so the tests can seal hand-made records and check how [open] rejects them. */
+    internal fun secretAad(keyringId: ByteArray, entryId: String): ByteArray =
         SECRET_AAD + keyringId + entryId.toByteArray(Charsets.UTF_8)
 
     private fun recoveryAad(keyringId: ByteArray, params: KdfParams, salt: ByteArray): ByteArray {
@@ -203,6 +230,11 @@ object RecoveryCode {
         var count = 0
         for (char in input) {
             if (char == ' ' || char == '-') continue
+            // Only ASCII: look-alikes such as the dotless i would otherwise pass as I through uppercaseChar().
+            if (char.code > 127) {
+                symbols.wipe()
+                return null
+            }
             val symbol = when (val upper = char.uppercaseChar()) {
                 'O' -> '0'
                 'I', 'L' -> '1'

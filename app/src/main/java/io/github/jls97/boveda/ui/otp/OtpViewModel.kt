@@ -18,6 +18,9 @@ import io.github.jls97.boveda.session.OperationResult
 import io.github.jls97.boveda.session.OtpAccess
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
+import io.github.jls97.boveda.ui.components.codeCopyNotice
+import io.github.jls97.boveda.ui.theme.Personalidad
+import io.github.jls97.boveda.ui.theme.elige
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -42,7 +45,11 @@ class RevealedOtp(val entryId: String, val secret: OtpSecret, val revealedAt: Lo
  * fingerprint. Secrets only stay here while they are on screen, and everything is wiped when the
  * vault locks.
  */
-class OtpViewModel(private val session: VaultSession) : ViewModel() {
+class OtpViewModel(
+    private val session: VaultSession,
+    /** Registro de voz elegido en Ajustes; se lee en cada mensaje. */
+    private val personalidad: () -> Personalidad = { Personalidad.Contrasenora },
+) : ViewModel() {
     var busy by mutableStateOf(false)
         private set
 
@@ -104,9 +111,14 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
     }
 
     fun updateInput(text: String) {
+        // Teclear la clave cuenta como interacción para el autobloqueo (I-31).
+        session.touch()
         input = text
         reparse()
     }
+
+    /** Escribir en cualquier campo de las pantallas 2FA pospone el autobloqueo (I-31). */
+    fun touch() = session.touch()
 
     fun updateParams(params: OtpParams) {
         manualParams = params
@@ -144,7 +156,12 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
             when (val result = session.addOtp(authorized, entryId, secret)) {
                 OperationResult.Success -> {
                     clearDraft()
-                    message("Código 2FA guardado. Solo se abre con tu huella.")
+                    message(
+                        personalidad().elige(
+                            "Código 2FA guardado. Ahora sí que no entra ni el cartero: solo se abre con tu huella.",
+                            "Código 2FA guardado. Solo se abre con tu huella.",
+                        ),
+                    )
                     onDone()
                 }
                 is OperationResult.Failure -> message(result.message)
@@ -195,13 +212,18 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
         }
     }
 
-    fun replaceRecoveryCode(authorized: Cipher, onDone: () -> Unit) {
+    /**
+     * New recovery code and new 2FA key: [authorized] opens the current key (from [unlockCipher])
+     * and [enrollment] (from [enrollmentCipher]) protects the new one on this phone.
+     */
+    fun replaceRecoveryCode(authorized: Cipher, enrollment: Cipher, onDone: () -> Unit) {
         val code = recoveryCode ?: return
         launchBusy {
-            when (val result = session.replaceOtpRecoveryCode(authorized, code)) {
+            when (val result = session.replaceOtpRecoveryCode(authorized, enrollment, code)) {
                 OperationResult.Success -> {
                     clearRecoveryCode()
-                    message("Código de recuperación cambiado. Las copias anteriores siguen necesitando el antiguo.")
+                    // The backup reminder comes from VaultViewModel.suggestBackup alone (R03-4).
+                    message("Código de recuperación cambiado y códigos 2FA cifrados con una llave nueva.")
                     onDone()
                 }
                 is OperationResult.Failure -> message(result.message)
@@ -264,7 +286,7 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
         if (cipher == null) {
             message(
                 if (otpAccess == OtpAccess.LOCKED) {
-                    "Tus huellas han cambiado, así que los códigos 2FA están bloqueados en este móvil. " +
+                    "Tus huellas han cambiado, así que los códigos 2FA están bloqueados en este teléfono. " +
                         "Recupéralos con tu código de recuperación."
                 } else {
                     "No se pudo preparar la huella."
@@ -278,6 +300,10 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
     fun enrollmentCipher(): Cipher? =
         session.otpEnrollmentCipher().also { if (it == null) message("No se pudo preparar la huella. Comprueba que tienes una registrada.") }
 
+    /**
+     * Abre el código con la huella. Con [copy] se copia sin mostrarlo (I-41): quien eligió «Copiar»
+     * desde el estado oculto no quiere verlo en pantalla, y el secreto se borra en el acto.
+     */
     fun reveal(authorized: Cipher, entryId: String, copy: Boolean) {
         launchBusy {
             val secret = session.revealOtp(authorized, entryId)
@@ -285,18 +311,30 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
                 message("No se pudo abrir el código 2FA.")
                 return@launchBusy
             }
+            if (copy) {
+                try {
+                    copyCode(secret)
+                } finally {
+                    secret.wipe()
+                }
+                return@launchBusy
+            }
             hide()
             revealed = RevealedOtp(entryId, secret, SystemClock.elapsedRealtime())
-            if (copy) copyCode()
         }
     }
 
     fun copyCode() {
         val current = revealed ?: return
+        copyCode(current.secret)
+    }
+
+    /** Copia el código actual de [secret] con etiqueta neutra (I-42) y avisa de cuánto dura. */
+    private fun copyCode(secret: OtpSecret) {
         val now = System.currentTimeMillis()
         val seconds = clipboardSeconds
-        session.clipboard.copy("Código 2FA", current.secret.code(now), seconds)
-        message("Código copiado: cambia en ${current.secret.secondsLeft(now)} s y se borrará del portapapeles en $seconds s.")
+        session.clipboard.copy(secret.code(now), seconds)
+        message(codeCopyNotice(secret.secondsLeft(now), seconds, personalidad()))
     }
 
     /** Hides the revealed code (only if it belongs to [entryId], when given) and wipes its secret. */
@@ -311,7 +349,9 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
         hide(entryId)
         launchBusy {
             when (val result = session.removeOtp(entryId)) {
-                OperationResult.Success -> message("Código 2FA quitado de la entrada.")
+                OperationResult.Success -> message(
+                    personalidad().elige("Código 2FA quitado. Que en paz descanse.", "Código 2FA quitado de la entrada."),
+                )
                 is OperationResult.Failure -> message(result.message)
                 else -> message("No se pudo quitar el código 2FA.")
             }
@@ -344,14 +384,14 @@ class OtpViewModel(private val session: VaultSession) : ViewModel() {
 /** What went wrong with a typed or scanned 2FA key, for the person reading it. */
 fun otpInputErrorText(error: OtpInputError): String = when (error) {
     OtpInputError.EMPTY -> "Escribe o escanea la clave."
-    OtpInputError.NOT_TIME_BASED -> "Es un código por contador (HOTP). Bóveda solo guarda códigos por tiempo (TOTP), los habituales."
+    OtpInputError.NOT_TIME_BASED -> "Es un código por contador (HOTP). Contraseñora solo guarda códigos por tiempo (TOTP), los habituales."
     OtpInputError.MIGRATION_EXPORT ->
         "Es una exportación de Google Authenticator. Escanea en su lugar el QR que da cada web al activar la verificación."
     OtpInputError.NOT_OTPAUTH -> "Eso es un enlace, no una clave 2FA."
     OtpInputError.MISSING_SECRET -> "El enlace no incluye la clave secreta."
     OtpInputError.INVALID_SECRET -> "La clave solo puede tener letras de la A a la Z y números del 2 al 7."
     OtpInputError.SECRET_TOO_SHORT -> "La clave es demasiado corta. Comprueba que la has copiado entera."
-    OtpInputError.UNSUPPORTED_ALGORITHM -> "Usa un algoritmo que Bóveda no admite."
-    OtpInputError.INVALID_DIGITS -> "Pide un número de cifras que Bóveda no admite (de 6 a 8)."
-    OtpInputError.INVALID_PERIOD -> "Pide un periodo que Bóveda no admite."
+    OtpInputError.UNSUPPORTED_ALGORITHM -> "Usa un algoritmo que Contraseñora no admite."
+    OtpInputError.INVALID_DIGITS -> "Pide un número de cifras que Contraseñora no admite (de 6 a 8)."
+    OtpInputError.INVALID_PERIOD -> "Pide un periodo que Contraseñora no admite."
 }

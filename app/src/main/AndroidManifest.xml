@@ -30,12 +30,16 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.App">
+        android:theme="@style/Theme.Contrasenora">
+        <!-- allowCrossUidActivitySwitchFromBelow="false" (Android 15+): una actividad de otra app que
+             esté debajo en la misma tarea no puede lanzar nada encima de las de Bóveda (M-04). -->
         <activity
             android:name=".MainActivity"
+            android:allowCrossUidActivitySwitchFromBelow="false"
             android:exported="true"
             android:taskAffinity=""
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            tools:targetApi="35">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -46,10 +50,18 @@
         <!-- Opened only by the system, through Bóveda's own pending intents. -->
         <activity
             android:name=".autofill.AutofillActivity"
+            android:allowCrossUidActivitySwitchFromBelow="false"
             android:excludeFromRecents="true"
             android:exported="false"
             android:taskAffinity=""
-            android:windowSoftInputMode="adjustResize" />
+            android:windowSoftInputMode="adjustResize"
+            tools:targetApi="35" />
+
+        <!-- Clears the clipboard when the copy timer runs out even if the process died. Only
+             reached through Bóveda's own alarm; nobody else can send it anything. -->
+        <receiver
+            android:name=".security.ClipboardClearReceiver"
+            android:exported="false" />
 
         <!-- Only the system can bind to it (BIND_AUTOFILL_SERVICE). It works entirely on the phone. -->
         <service

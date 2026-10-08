@@ -6,9 +6,13 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.ui.BovedaApp
-import io.github.jls97.boveda.ui.theme.BovedaTheme
+import io.github.jls97.boveda.ui.components.BarrasDelSistema
+import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
 
 class MainActivity : ComponentActivity() {
     private val session: VaultSession get() = (application as BovedaApplication).session
@@ -26,8 +30,12 @@ class MainActivity : ComponentActivity() {
             // No autofill service (Google's or anyone's) may read or save what is typed here.
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         }
+        val apariencia = (application as BovedaApplication).apariencia
         setContent {
-            BovedaTheme {
+            val ajustes by apariencia.ajustes.collectAsStateWithLifecycle()
+            val oscuro = ajustes.oscuro(isSystemInDarkTheme())
+            BarrasDelSistema(oscuro)
+            ContrasenoraTheme(darkTheme = oscuro, personalidad = ajustes.personalidad) {
                 BovedaApp(session)
             }
         }
@@ -48,6 +56,10 @@ class MainActivity : ComponentActivity() {
         if (!isChangingConfigurations) session.onAppBackground()
     }
 
+    /**
+     * Toques y teclas físicas. El texto que entrega el teclado en pantalla no pasa por aquí: lo
+     * cubre [io.github.jls97.boveda.ui.components.TouchOnTyping] en la raíz de la interfaz (I-31).
+     */
     override fun onUserInteraction() {
         super.onUserInteraction()
         session.touch()

@@ -96,7 +96,22 @@ class WrongPasswordException : VaultException("Wrong master password")
 
 class CorruptedVaultException(message: String, cause: Throwable? = null) : VaultException(message, cause)
 
-class UnsupportedVaultException(message: String) : VaultException(message)
+open class UnsupportedVaultException(message: String) : VaultException(message)
+
+/** Argon2id would need more memory than this process may use: the file cannot be opened on this phone. */
+class KdfMemoryException(message: String) : UnsupportedVaultException(message)
+
+/**
+ * An entry holds a field above the format ceiling (`VaultCodec.MAX_*_BYTES`). The file is well
+ * formed, just too large for this version to hold safely: it is never reported as damaged.
+ */
+class OversizedFieldException(message: String) : UnsupportedVaultException(message)
+
+/**
+ * The app tried to write a field above the format ceiling: a programming error, since the
+ * interface enforces the (smaller) `EntryLimits` first. Nothing has been written when it is thrown.
+ */
+class FieldTooLongException(message: String) : IllegalArgumentException(message)
 
 /** The device layer could not be opened: the file was not sealed with this device's key. */
 class DeviceBindingException(message: String, cause: Throwable? = null) : VaultException(message, cause)

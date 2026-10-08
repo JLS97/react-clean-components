@@ -1,10 +1,18 @@
-# Bóveda
+# Contraseñora
 
 Gestor de contraseñas nativo para Android (Kotlin + Jetpack Compose), pensado para uso personal:
 todo se cifra y se queda en el teléfono. No tiene permiso de Internet, no usa la nube y no
 depende de ningún servidor ni API externa.
 
-> «Bóveda» y el paquete `io.github.jls97.boveda` son nombres de trabajo; se pueden cambiar.
+Contraseñora es una señora seria, desconfiada y muy ordenada que guarda tus claves y no las suelta
+ni bajo tortura: seguridad seria, tono con gracia. En **Ajustes → Apariencia** se elige su voz
+(Contraseñora, con humor, o Sobria, los mismos avisos sin chistes) y el tema (sistema, claro u
+oscuro).
+
+> La app se llamaba «Bóveda». Cambia lo que se ve; lo interno se queda igual para que las bóvedas
+> y las copias existentes sigan abriéndose y la app se actualice encima de la anterior: el
+> paquete y el identificador `io.github.jls97.boveda`, la extensión `.bvd` de las copias, la
+> cabecera de los archivos y los alias del Keystore.
 
 ## Estado
 
@@ -12,9 +20,15 @@ depende de ningún servidor ni API externa.
 - Entradas con nombre, usuario o email, contraseña, web o app y notas. Búsqueda.
 - Generador de contraseñas (8–128 caracteres, tipos de caracteres, evitar caracteres parecidos).
 - Copiar al portapapeles marcado como sensible y borrado automático (15 s – 2 min).
-- Desbloqueo con huella opcional, ligado a una clave de hardware.
-- Bloqueo automático por inactividad, al salir de la app y siempre al apagar la pantalla.
-- Copias de seguridad cifradas (exportar e importar un archivo `.bvd`).
+- Desbloqueo con huella opcional, ligado a una clave de hardware. Activarla, exportar o restaurar
+  una copia y relajar los ajustes de seguridad piden la contraseña maestra.
+- Frase antiphishing personal que se muestra antes de pedir la contraseña maestra, también cuando
+  Contraseñora aparece encima de otra app para rellenar.
+- Bloqueo automático por inactividad (configurable, con la opción de bloquear al salir de la
+  app), siempre al apagar la pantalla y, con cualquier ajuste, tras 5 minutos en segundo plano.
+- Copias de seguridad cifradas (exportar e importar un archivo `.bvd`). La copia exportada se
+  vuelve a leer y abrir antes de darla por buena; Contraseñora recuerda cuándo fue la última y avisa si
+  hay cambios sin copiar. Restaurar guarda la bóveda anterior para poder deshacerlo.
 - Cambio de contraseña maestra.
 - **Autorrelleno** en otras apps y en Chrome desde la barra de sugerencias del teclado, y oferta de
   guardar las credenciales nuevas al iniciar sesión o registrarte.
@@ -24,38 +38,46 @@ depende de ningún servidor ni API externa.
 
 ## Autorrelleno
 
-1. En Bóveda: **Ajustes y copias → Autorrelleno** y elige Bóveda en el diálogo del sistema.
+1. En Contraseñora: **Ajustes y copias → Autorrelleno** y elige Contraseñora en el diálogo del sistema.
 2. En Chrome: **Ajustes → Servicios de autocompletar → Autocompletar con otro servicio**, y
    reinicia Chrome. Para webs, usa un navegador de la lista (Chrome, Firefox, Brave…): el
    navegador de Xiaomi (Mi Browser) no está en ella.
 3. Toca un campo de usuario o contraseña en cualquier app o web. En la barra del teclado aparece
-   **Bóveda · Toca para elegir cuenta**. Si el teclado no admite sugerencias, sale debajo del campo.
-4. Al tocarla se abre Bóveda (con huella o contraseña si está bloqueada). Elige la cuenta y se
+   **Contraseñora · Toca para elegir cuenta**. Si el teclado no admite sugerencias, sale debajo del campo.
+4. Al tocarla se abre Contraseñora (con huella o contraseña si está bloqueada). Elige la cuenta y se
    rellenan el usuario y la contraseña.
 
 Cómo protege tus datos:
 
-- **El teclado no ve nada.** La sugerencia solo dice «Bóveda». Nombres de cuentas, usuarios y
-  contraseñas nunca pasan por el teclado, que es otra app.
+- **La sugerencia no lleva nada.** La sugerencia solo dice «Contraseñora». Nombres de cuentas, usuarios y
+  contraseñas nunca pasan por el teclado al elegir. Una vez rellenado, el campo de la otra app es
+  texto normal que el teclado activo puede leer como cualquier otro campo: es inherente al
+  autorrelleno de Android, por eso conviene un teclado de confianza.
 - **Nada sale sin que elijas.** Android solo recibe los datos de la entrada que tocas dentro de
-  Bóveda, y los pone directamente en los campos de la app que los pidió.
+  Contraseñora, y los pone directamente en los campos de la app que los pidió.
 - **Antiphishing: webs.** Cualquier app puede decirle a Android que está mostrando `banco.es`, así
-  que Bóveda solo se cree el dominio cuando lo informa un navegador reconocido con su firma digital
+  que Contraseñora solo se cree el dominio cuando lo informa un navegador reconocido con su firma digital
   verificada: Chrome, Firefox, Edge, Brave, Samsung Internet, Vivaldi, DuckDuckGo, Opera y los
-  demás de la lista oficial de Google (63 navegadores). Una app que muestre una web sin ser uno de
-  ellos se trata como app, con aviso.
+  demás de la lista de apps privilegiadas de Google, curada para dejar solo navegadores (57). Una
+  app que muestre una web sin ser uno de ellos se trata como app, con aviso.
+- **Antiphishing: dominios.** Una entrada con url `banco.es` sirve también para sus subdominios
+  (`online.banco.es`). Pero si la url es un sufijo público según la Public Suffix List (`github.io`,
+  `blogspot.com`, `co.uk`…: cualquiera puede publicar bajo él), solo vale para ese host exacto. Los
+  dominios internacionalizados se normalizan a punycode (`xn--`) y la pantalla avisa de ello, para que
+  un `bаnco.es` con una letra cirílica no pase por el banco. Un navegador reconocido que no indica
+  qué web muestra (`about:blank`, documentos locales) se trata como app sin posibilidad de vincular.
 - **Antiphishing: apps.** Las apps se reconocen por su nombre de paquete **y su firma digital**,
   que Android verifica. Una app falsa con el mismo nombre de paquete que la de tu banco, instalada
   fuera de Play Store, no pasaría por la buena.
 - **Vincular es decisión tuya.** Arriba solo aparecen las entradas vinculadas a esa web o app. Si
-  no hay ninguna, Bóveda avisa antes de elegir, y la opción de vincular viene desmarcada. Las apps
+  no hay ninguna, Contraseñora avisa antes de elegir, y la opción de vincular viene desmarcada. Las apps
   que muestran webs sin ser un navegador reconocido, o cuya firma no se puede leer, se pueden
   rellenar eligiendo a mano, pero nunca se vinculan: un vínculo a ellas alcanzaría cualquier
   página que abran.
 - **Se vuelve a bloquear.** Si la bóveda estaba bloqueada, se bloquea en cuanto termina el
   relleno.
 - **Guardar.** Al enviar un formulario con credenciales nuevas, Android pregunta si guardarlas en
-  Bóveda. Los datos pasan del servicio a la pantalla de guardado dentro de la memoria de la app,
+  Contraseñora. Los datos pasan del servicio a la pantalla de guardado dentro de la memoria de la app,
   sin viajar en ningún mensaje del sistema, y caducan a los 5 minutos.
 - **Sin red.** Todo ocurre dentro del teléfono, entre apps, a través de Android.
 
@@ -64,30 +86,32 @@ Cómo protege tus datos:
 Son los códigos de 6 cifras que cambian cada 30 segundos (estándar TOTP, RFC 6238). Sirven para
 cualquier web que ofrezca «usar una app de autenticación».
 
-1. Al activar la verificación en dos pasos en la web, abre en Bóveda la entrada de esa cuenta y
+1. Al activar la verificación en dos pasos en la web, abre en Contraseñora la entrada de esa cuenta y
    toca **Añadir código 2FA**.
 2. **Escanea el código QR** con la cámara o pega la clave de texto que suele salir debajo.
-   Bóveda muestra el código actual, por si la web lo pide para confirmar.
-3. **Guardar con mi huella.** La primera vez, Bóveda te da un **código de recuperación**
+   Contraseñora muestra el código actual, por si la web lo pide para confirmar.
+3. **Guardar con mi huella.** La primera vez, Contraseñora te da un **código de recuperación**
    (`XXXXX-XXXXX-XXXXX-XXXXX`): apúntalo en papel y escríbelo para confirmar.
 
 Después, en la entrada, **Mostrar** o **Copiar** piden la huella. El código se ve durante un minuto
 como mucho y se oculta al salir de la entrada. Al iniciar sesión en otra app o en Chrome, toca el
-campo del código: en el teclado aparece **Bóveda · Toca para rellenar el código 2FA**, eliges la
+campo del código: en el teclado aparece **Contraseñora · Toca para rellenar el código 2FA**, eliges la
 cuenta, pones la huella y se rellena. Como con las contraseñas, primero aparecen las cuentas
-vinculadas a esa web o app, y Bóveda avisa si no hay ninguna.
+vinculadas a esa web o app, y Contraseñora avisa si no hay ninguna.
 
 Cómo se protegen:
 
 - **Huella en cada código.** Los secretos se cifran con una clave 2FA propia. En el teléfono, esa
   clave está envuelta por una clave de Android Keystore que exige una huella fuerte (clase 3) en
   cada uso. Desbloquear la bóveda con la contraseña maestra no basta para ver un código.
-- **Nuevas huellas.** Si añades o borras una huella, o quitas el bloqueo de pantalla, el sistema
-  destruye esa clave: nadie puede registrar su dedo para leer tus códigos. Los recuperas con el
-  código de recuperación.
+- **Nuevas huellas.** Si se inscribe una huella nueva o se quita el bloqueo de pantalla, el
+  sistema destruye esa clave: nadie puede registrar su dedo después para leer tus códigos. Los
+  recuperas con el código de recuperación. Borrar una huella dejando otras no la destruye: la
+  clave vale para **cualquier huella ya registrada en el teléfono** cuando la activas, así que
+  revisa las huellas en los ajustes del sistema antes de activarla.
 - **Código de recuperación.** Es aleatorio (100 bits) y protege, con Argon2id, la copia de la
   clave 2FA que va dentro de la bóveda y de las copias de seguridad. Sirve para recuperar los
-  códigos en otro móvil o tras cambiar tus huellas. Guárdalo lejos del móvil y fuera de Bóveda: con
+  códigos en otro móvil o tras cambiar tus huellas. Guárdalo lejos del móvil y fuera de Contraseñora: con
   él y tu contraseña maestra se pueden leer los códigos sin tu huella. Si lo pierdes, en
   **Ajustes → Códigos 2FA** puedes crear otro (las copias antiguas siguen usando el anterior).
 - **Cámara.** Solo se usa en la pantalla de escanear, con permiso que se pide en ese momento. El
@@ -112,36 +136,59 @@ código de recuperación ──Argon2id──► envuelve la clave 2FA dentro de
 
 - **Doble capa.** El archivo del teléfono lleva una capa extra cuya clave vive en el hardware
   seguro del teléfono y solo funciona con el teléfono desbloqueado. Una copia del archivo sacada
-  del teléfono no sirve ni para intentar adivinar la contraseña maestra.
+  del teléfono no sirve ni para intentar adivinar la contraseña maestra. Esa capa protege frente a
+  copias del archivo (extracción por USB, copia del fabricante, clonado del almacenamiento), no
+  frente a quien controle el sistema con el teléfono desbloqueado (root, malware): ahí solo queda
+  la contraseña maestra. Ajustes muestra si la clave vive en StrongBox, en el TEE o solo en
+  software, y avisa en este último caso.
 - **Copias portables.** El `.bvd` exportado solo depende de la contraseña maestra (Argon2id), así
   que se puede restaurar en otro teléfono. Su seguridad es la de tu contraseña maestra.
 - **Integridad.** AES-GCM autentica todo, incluidas las cabeceras y los parámetros de Argon2id:
   cualquier modificación del archivo se detecta.
 - **Huella.** Una copia de la DEK se cifra con una clave de Keystore que exige huella fuerte
-  (clase 3) en cada uso y que el sistema destruye si se añade una huella nueva.
-- **Freno a los intentos.** Tras 5 contraseñas incorrectas, cada fallo bloquea el desbloqueo durante
-  un tiempo creciente (30 s … 16 min). Además, cada intento cuesta una ejecución completa de
-  Argon2id.
+  (clase 3) en cada uso y que el sistema destruye si se inscribe una huella nueva o se quita el
+  bloqueo de pantalla (borrar una huella dejando otras no la invalida). Vale cualquier huella
+  registrada en el teléfono: si otras personas tienen sus dedos inscritos, podrán abrir la bóveda y
+  los códigos 2FA. Revísalo antes de activarla; al cambiar la contraseña maestra la huella se
+  desactiva y hay que volver a activarla.
+- **Freno a los intentos.** Tras 5 contraseñas incorrectas, cada fallo bloquea la siguiente
+  comprobación de contraseña (desbloqueo, cambio de contraseña, restauración o re-autenticación en
+  Ajustes) durante un tiempo creciente (30 s … 64 min). La espera se mide con el reloj monótono del sistema y el contador de
+  arranques: adelantar la fecha del teléfono no la acorta y reiniciar vuelve a imponerla entera.
+  Además, cada intento cuesta una ejecución completa de Argon2id. Es una medida de velocidad: la
+  seguridad real descansa en Argon2id y en la contraseña maestra.
 - **Sin fugas.** Sin permiso de Internet (el manifiesto lo elimina aunque una librería lo pida).
   Sin copias en la nube ni transferencias entre dispositivos. `FLAG_SECURE` (sin capturas ni
   vista previa en recientes). Oculta superposiciones de otras apps (tapjacking). Excluida del
-  autorrelleno de terceros. El portapapeles se marca como sensible y se borra solo.
+  autorrelleno de terceros, también sus diálogos. El portapapeles se marca como sensible y se borra solo pasado el
+  tiempo elegido, también si el sistema cierra la app (mejor esfuerzo: desde segundo plano
+  Android no deja comprobar si el clip sigue siendo el de Contraseñora, así que puede borrar algo
+  copiado después).
 - **Memoria.** Las claves se borran al bloquear. Los textos descifrados se sueltan para que el
-  recolector de basura los elimine, pero la JVM no permite borrarlos de forma garantizada.
+  recolector de basura los elimine, pero la JVM no permite borrarlos de forma garantizada. El
+  bloqueo por apagado de pantalla y el de inactividad se ejecutan dentro del proceso: si Android
+  lo congela en segundo plano, se aplican en cuanto lo descongela (al volver a la app como muy
+  tarde), y mientras tanto las claves siguen en memoria.
 
 ### Cero nube, cero Internet
 
 - La app no declara el permiso `INTERNET` y el manifiesto lo elimina aunque una librería lo pida.
   El autorrelleno tampoco lo necesita: es comunicación entre apps dentro del teléfono.
-- Para comprobar la firma de la app que pide rellenar, Bóveda puede ver qué apps tienes
-  instaladas (permiso `QUERY_ALL_PACKAGES`). Sin Internet, esa información no sale del teléfono.
+- Para comprobar la firma de la app que pide rellenar, Contraseñora puede ver qué apps tienes
+  instaladas (permiso `QUERY_ALL_PACKAGES`). Solo se usa para leer el certificado de la app que
+  pide rellenar; la lista de apps no se guarda ni se muestra. Sin Internet, esa información no
+  sale del teléfono.
   Sin ese permiso, Android no deja que la app abra ninguna conexión: no es una promesa del
   código, lo impone el sistema.
 - No hay servidores, cuentas, APIs externas, analíticas ni informes de errores. Las dependencias
   son solo AndroidX (interfaz y cámara), Bouncy Castle (Argon2id) y ZXing (lectura de QR), que
   funcionan sin red.
-- Las copias de seguridad solo se pueden guardar en el almacenamiento del teléfono o en un USB
-  conectado: el selector de archivos oculta Google Drive y cualquier otra nube.
+- Las copias de seguridad están pensadas para el almacenamiento del teléfono o un USB conectado:
+  el selector de archivos intenta ocultar Google Drive y cualquier otra nube (es una pista al
+  selector, no una garantía del sistema) y la app rechaza los destinos en la nube que conoce. Si
+  guardas la copia en Descargas y tienes una sincronización de carpetas activa (Xiaomi Cloud,
+  Google Files, Dropbox...), podría subirse: pásala a un USB o a un ordenador y bórrala del
+  teléfono. Si acabara fuera, solo la protege tu contraseña maestra (Argon2id).
 - Las copias en la nube de Android y la transferencia a un móvil nuevo están desactivadas. Aunque
   algún sistema de copia copiara el archivo, no se podría abrir sin el chip de este teléfono.
 - Solo Android Studio usa Internet, en tu ordenador, para descargar el SDK y las librerías al
@@ -153,7 +200,8 @@ Fuera del control de la app, conviene revisar en el teléfono:
   con la nube, desactívalo. La app marca lo copiado como sensible y lo borra, pero no puede
   impedir que otra app lo lea mientras está copiado. Con el autorrelleno no hace falta copiar.
 - **Teclado:** la contraseña maestra pasa por el teclado. Usa uno de confianza; los teclados sin
-  permiso de Internet son la opción más estricta.
+  permiso de Internet son la opción más estricta. En los campos de nombre, usuario y notas la app
+  pide al teclado que no aprenda ni sugiera lo escrito, pero depende de que el teclado lo respete.
 
 ### Lo que no puede proteger
 
@@ -161,6 +209,11 @@ Fuera del control de la app, conviene revisar en el teléfono:
 - Un teclado malicioso capturando lo que escribes: usa un teclado de confianza.
 - Un servicio de accesibilidad malicioso, que puede leer lo que se muestra en pantalla.
   Revisa qué apps tienen ese permiso.
+- Una pantalla de desbloqueo falsa. Cualquier app puede saber qué gestor de contraseñas usas
+  (Android lo expone a todas) y, cuando le pides rellenar, dibujar una copia de la pantalla de
+  Contraseñora para quedarse con tu contraseña maestra. Por eso Contraseñora muestra siempre tu frase
+  antiphishing antes de pedirla y, con la huella activada, no enseña el campo de contraseña hasta
+  que lo pides: si no ves tu frase, no escribas la contraseña.
 - Olvidar la contraseña maestra: no hay forma de recuperarla.
 - Perder a la vez el móvil (o tus huellas) y el código de recuperación: los códigos 2FA no se
   podrían recuperar, y habría que volver a activar la verificación en cada web con sus códigos de
@@ -169,7 +222,7 @@ Fuera del control de la app, conviene revisar en el teléfono:
 ## Instalación en el móvil (POCO X8 Pro)
 
 Para guardar datos reales usa una compilación **release** firmada con tu propia clave. La versión
-debug es otra app distinta (`Bóveda Debug`, con sus propios datos) y se puede depurar por USB.
+debug es otra app distinta (`Contraseñora Debug`, con sus propios datos) y se puede depurar por USB.
 
 1. Abre esta carpeta con la última versión estable de Android Studio.
 2. **Build → Generate Signed App Bundle or APK → APK**. Crea un almacén de claves nuevo y
@@ -183,17 +236,26 @@ debug es otra app distinta (`Bóveda Debug`, con sus propios datos) y se puede d
 6. Cuando termines, desactiva la depuración USB.
 
 Las futuras versiones deben firmarse con la misma clave para instalarse encima sin perder la
-bóveda.
+bóveda. En [docs/RELEASE.md](docs/RELEASE.md) está cómo crear y custodiar esa clave, firmar desde
+la línea de comandos y comprobar el APK antes de instalarlo.
 
 ## Copias de seguridad
 
-Haz una copia en **Ajustes y copias → Exportar copia cifrada**. Se guarda en el teléfono o en un
-USB conectado (nunca en la nube). Después pásala a un USB o a un ordenador, por cable. Si pierdes
+Haz una copia en **Ajustes y copias → Exportar copia cifrada**. Guárdala en el teléfono o en un
+USB conectado (el selector intenta ocultar la nube y la app rechaza los servicios en la nube que
+conoce, pero una carpeta sincronizada podría subirla igualmente). Después pásala a un USB o a un
+ordenador, por cable, y bórrala del teléfono. Si pierdes
 el móvil, esa copia y tu contraseña maestra son la única forma de recuperar los datos. Repite la
 copia después de cambios importantes o de cambiar la contraseña maestra.
 
 La copia incluye los códigos 2FA, cifrados. Al restaurarla en otro móvil, o en este tras cambiar
-tus huellas, Bóveda te pedirá también el código de recuperación para volver a abrirlos.
+tus huellas, Contraseñora te pedirá también el código de recuperación para volver a abrirlos.
+
+Límites por campo (nuevos tras 0.2.0): al escribir o pegar, nombre y usuario admiten 1 KB, la contraseña
+4 KB, la web 2 KB y las notas 64 KB (en bytes UTF-8); la app avisa bajo el campo y al guardar. El
+archivo admite más (256 KB por campo y 1 MB en notas), así que las bóvedas y copias de versiones
+anteriores, que no tenían límite, siguen abriéndose y guardándose. Solo por encima de eso se
+rechaza la copia, con un aviso de campo demasiado grande, nunca como archivo dañado.
 
 ## Desarrollo
 
@@ -218,7 +280,28 @@ app/src/main/java/io/github/jls97/boveda/
 ├── data/        # archivos en almacenamiento sin copia de seguridad, escritura atómica
 ├── session/     # estado bloqueado/desbloqueado, bloqueo automático
 └── ui/          # pantallas en Compose
+    ├── theme/       # ContrasenoraTheme: colores, tipografía, formas, movimiento y personalidad
+    └── components/  # la base de la marca: papel, avisos con sello, botones, campos, isotipo…
 ```
+
+### Diseño
+
+La interfaz sigue la guía de marca de Contraseñora: la ventanilla y el archivo de una señora muy
+ordenada. Fichas de papel sobre fondo claro (o noche ciruela en oscuro), títulos en Young Serif
+alineados a la izquierda, Atkinson Hyperlegible Next para el texto y Atkinson Hyperlegible Mono
+para contraseñas y códigos. Las pantallas largas se ordenan como un impreso, en apartados con
+numeral romano; los avisos son papeles con un sello de goma (Conforme, Ojo, Urgente, Nota) en
+lugar de cajas de color; el latón marca el tiempo y el 2FA. El color dinámico de Material You está
+desactivado a propósito.
+
+- Todo se construye con `ContrasenoraTheme.colors` y `ContrasenoraTheme.type`, nunca con la
+  paleta suelta ni con `MaterialTheme` directo. Los iconos son vectores propios (`res/drawable/ic_*`).
+- Los textos con humor pasan por `voz("Contraseñora", "Sobria")`: solo en estados vacíos, éxitos,
+  fallos y lo que «muere». Avisos importantes, botones y confirmaciones destructivas son iguales en
+  los dos registros.
+- El movimiento usa los tokens de `Motion` y respeta «Quitar animaciones»: el arco del candado sube
+  al desbloquear, las fichas se apilan al navegar, los sellos se estampan y el campo se sacude al
+  fallar la contraseña.
 
 ## Hoja de ruta
 
@@ -230,6 +313,13 @@ Todo seguirá funcionando sin Internet.
 - Otras ideas: auditoría local de contraseñas repetidas o débiles (sin consultar servicios de
   filtraciones), importar la exportación de Google Authenticator, generador de frases, favoritos
   y categorías.
+
+## Seguridad y auditoría
+
+La política de seguridad, el modelo de amenaza y cómo reportar un fallo están en
+[SECURITY.md](SECURITY.md). En octubre de 2026 se hizo una auditoría completa del código; el
+informe con los 101 hallazgos verificados y su estado de corrección está en
+[docs/AUDITORIA_SEGURIDAD.md](docs/AUDITORIA_SEGURIDAD.md) y su anexo.
 
 ## Licencia
 

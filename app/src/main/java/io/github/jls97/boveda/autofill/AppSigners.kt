@@ -33,9 +33,9 @@ internal object AppSigners {
         }
     }
 
-    /** Who is asking, with the web domain trusted only if the app is a verified browser. */
-    fun resolveTarget(context: Context, packageName: String, reportedWebDomain: String?): AutofillTarget =
-        TargetResolver.resolve(packageName, certificatesOf(context, packageName), reportedWebDomain)
+    /** Who is asking, with the web domain trusted only if the app is a verified browser over https. */
+    fun resolveTarget(context: Context, packageName: String, reportedWebDomain: String?, webScheme: String? = null): AutofillTarget =
+        TargetResolver.resolve(packageName, certificatesOf(context, packageName), reportedWebDomain, webScheme)
 
     private fun fingerprint(signature: Signature): String =
         MessageDigest.getInstance("SHA-256").digest(signature.toByteArray()).joinToString("") { "%02x".format(it) }

@@ -6,22 +6,83 @@ import java.io.File
 import java.io.IOException
 
 /**
- * Files of the vault. They live in no-backup storage, which neither cloud backups nor device
- * transfers copy, and the manifest excludes everything from backups as well.
+ * Los archivos de la bóveda que [io.github.jls97.boveda.session.VaultSession] lee y escribe. Lo
+ * implementa [VaultStorage] sobre el disco del teléfono; los tests JVM de la sesión usan una
+ * implementación en memoria.
  */
-internal class VaultStorage(context: Context) {
-    private val directory = File(context.noBackupFilesDir, "vault")
+interface VaultFiles {
+    fun vaultExists(): Boolean
 
-    val vaultFile = File(directory, "vault.bin")
-    val layerKeyFile = File(directory, "layer.key")
-    val biometricKeyFile = File(directory, "biometric.key")
-    val otpKeyFile = File(directory, "otp.key")
+    fun readVault(): ByteArray
 
-    fun vaultExists(): Boolean = vaultFile.exists()
+    fun writeVault(bytes: ByteArray)
 
-    fun readVault(): ByteArray = readFile(vaultFile)
+    fun previousVaultExists(): Boolean
 
-    fun writeVault(bytes: ByteArray) = writeFile(vaultFile, bytes)
+    fun readPreviousVault(): ByteArray
+
+    fun writePreviousVault(bytes: ByteArray)
+
+    fun deletePreviousVault()
+}
+
+/**
+ * Files of the vault. They live in no-backup storage, which neither cloud backups nor device
+ * transfers copy, and the manifest excludes everything from backups as well. Every file name is
+ * defined here and nowhere else.
+ *
+ * What the file system still shows to root or to a forensic image, even though every content is
+ * encrypted (vault.bin under two layers, the key files under the Keystore): the size of
+ * `vault.bin`, which grows with the number and length of the entries because the payload is not
+ * padded; its modification time, which is the last time the vault changed; and the mere existence
+ * of `biometric.key` (fingerprint unlock on), `otp.key` (2FA codes stored; its keyring id is in
+ * clear so a restored backup never uses a stale copy) and `vault.prev.bin` (a restore that can
+ * still be undone). None of it is secret and no process without root can read the directory; the
+ * only way to hide it would be to pad and rewrite every file on every change, so the trade-off is
+ * documented instead.
+ */
+internal class VaultStorage(context: Context) : VaultFiles {
+    private val directory = File(context.noBackupFilesDir, DIRECTORY_NAME)
+
+    val vaultFile = File(directory, VAULT_FILE_NAME)
+
+    /** The vault.bin the last restore replaced, sealed with the same layer key, until the next restore or an undo. */
+    val previousVaultFile = File(directory, PREVIOUS_VAULT_FILE_NAME)
+    val layerKeyFile = File(directory, LAYER_KEY_FILE_NAME)
+    val biometricKeyFile = File(directory, BIOMETRIC_KEY_FILE_NAME)
+    val otpKeyFile = File(directory, OTP_KEY_FILE_NAME)
+
+    override fun vaultExists(): Boolean = vaultFile.exists()
+
+    override fun readVault(): ByteArray = readFile(vaultFile)
+
+    override fun writeVault(bytes: ByteArray) = writeFile(vaultFile, bytes)
+
+    override fun previousVaultExists(): Boolean = previousVaultFile.exists()
+
+    override fun readPreviousVault(): ByteArray = readFile(previousVaultFile)
+
+    override fun writePreviousVault(bytes: ByteArray) = writeFile(previousVaultFile, bytes)
+
+    override fun deletePreviousVault() = deleteArtifact(previousVaultFile)
+
+    /** Every file the app may keep in its directory, present or not. */
+    fun artifacts(): List<File> = listOf(vaultFile, previousVaultFile, layerKeyFile, biometricKeyFile, otpKeyFile)
+
+    /** The artifacts that exist right now. */
+    fun existingArtifacts(): List<File> = artifacts().filter { it.exists() }
+
+    /** Deletes an artifact together with the temporary files a write may have left next to it. */
+    fun deleteArtifact(file: File) = AtomicFile(file).delete()
+
+    companion object {
+        const val DIRECTORY_NAME = "vault"
+        const val VAULT_FILE_NAME = "vault.bin"
+        const val PREVIOUS_VAULT_FILE_NAME = "vault.prev.bin"
+        const val LAYER_KEY_FILE_NAME = "layer.key"
+        const val BIOMETRIC_KEY_FILE_NAME = "biometric.key"
+        const val OTP_KEY_FILE_NAME = "otp.key"
+    }
 }
 
 internal fun readFile(file: File): ByteArray = AtomicFile(file).readFully()

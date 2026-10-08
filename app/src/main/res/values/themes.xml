@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Tema de ventana y splash. minSdk 33: la pantalla de inicio usa la API de la plataforma, sin la
+     librería core-splashscreen. La interfaz se pinta en Compose (ui/theme/Theme.kt). -->
 <resources>
-    <!-- Window theme only; the UI itself is styled in Compose (ui/theme/Theme.kt). -->
-    <style name="Theme.App" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Contrasenora" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+    </style>
 </resources>
