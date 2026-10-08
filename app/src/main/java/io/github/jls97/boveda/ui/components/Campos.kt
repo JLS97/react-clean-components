@@ -149,14 +149,14 @@ internal fun CajaTexto(
             keyboardActions = keyboardActions,
             interactionSource = interaccion,
             decorationBox = { campo ->
-                Column {
+                Column(Modifier.fillMaxWidth()) {
                     Text(
                         etiqueta,
                         style = ContrasenoraTheme.type.label,
                         color = if (enabled) c.textPrimary else c.textDisabled,
                         modifier = Modifier.padding(bottom = Spacing.s2),
                     )
-                    Box(Modifier.heightIn(min = Sizes.inputHeight), propagateMinConstraints = true) {
+                    Box(Modifier.fillMaxWidth().heightIn(min = Sizes.inputHeight), propagateMinConstraints = true) {
                         OutlinedTextFieldDefaults.DecorationBox(
                             value = value,
                             innerTextField = campo,
