@@ -46,6 +46,7 @@ import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
+import io.github.jls97.boveda.ui.components.PoweredBy
 import io.github.jls97.boveda.ui.components.StrengthMeter
 import io.github.jls97.boveda.ui.components.TextoError
 import io.github.jls97.boveda.ui.components.TipoAviso
@@ -126,7 +127,8 @@ fun SetupScreen(viewModel: LockViewModel) {
 
 /**
  * Lo que se ve al estrenar la app, sin estado: la bienvenida de la Contraseñora y un impreso en dos
- * apartados, la contraseña maestra y la frase antiphishing, antes de crear la bóveda.
+ * apartados, la contraseña maestra y la frase antiphishing, antes de crear la bóveda. Al pie,
+ * «Restaurar» y la firma de la empresa.
  */
 @Composable
 internal fun AltaContenido(
@@ -272,6 +274,7 @@ internal fun AltaContenido(
                 icono = R.drawable.ic_deshacer,
                 modifier = Modifier.padding(top = Spacing.s1),
             )
+            PoweredBy(Modifier.fillMaxWidth().padding(top = Spacing.s5))
         }
     }
 }

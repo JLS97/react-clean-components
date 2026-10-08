@@ -14,7 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
  * fabricante puede ignorar el extra y el usuario puede mover el archivo a la nube después. Por eso,
  * al volver del selector, [CloudAuthorities] rechaza los URI de los proveedores en la nube
  * conocidos; la confidencialidad de un .bvd que acabe fuera del teléfono es, en última instancia,
- * la de la contraseña maestra (Argon2id), como ya documenta el README.
+ * la de la contraseña maestra (Argon2id), como ya documenta la guía (docs/GUIA.md).
  */
 
 class CreateLocalDocument(mimeType: String) : ActivityResultContracts.CreateDocument(mimeType) {

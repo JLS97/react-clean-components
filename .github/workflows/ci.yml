@@ -1,10 +1,11 @@
 # Integración continua: cada push y cada pull request compila la app, pasa los tests JVM del núcleo
 # criptográfico y el lint de Android, y publica los informes. La verificación de dependencias
 # (gradle/verification-metadata.xml) está activa, así que cualquier artefacto distinto del registrado
-# hace fallar el trabajo. Aquí no hay clave de firma: la release se firma siempre en local
-# (ver docs/RELEASE.md). Cada acción se fija al SHA completo de su commit (un tag es mutable y una
-# cuenta comprometida podría cambiarlo sin tocar este repositorio); el tag queda como comentario para
-# que Dependabot (.github/dependabot.yml) proponga las versiones nuevas.
+# hace fallar el trabajo. Aquí no hay clave de firma de release ni ningún secreto: la release se
+# firma siempre en local (ver docs/RELEASE.md) y el APK debug, con la clave publicada
+# app/debug.keystore (ver SECURITY.md). Cada acción se fija al SHA completo de su commit (un tag es
+# mutable y una cuenta comprometida podría cambiarlo sin tocar este repositorio); el tag queda como
+# comentario para que Dependabot (.github/dependabot.yml) proponga las versiones nuevas.
 name: CI
 
 on:
@@ -57,7 +58,7 @@ jobs:
           today=$(date -u +%F)
           echo "Lista de navegadores del $list_date; caduca el $limit (hoy es $today)"
           if [ "$today" \> "$limit" ]; then
-            echo "::warning file=$file::La lista de navegadores de confianza (LIST_DATE = $list_date) tiene más de $max_months meses: regenérala desde fido2_privileged_google.json, cúrala y actualiza LIST_DATE, EXPECTED_SIZE y el README"
+            echo "::warning file=$file::La lista de navegadores de confianza (LIST_DATE = $list_date) tiene más de $max_months meses: regenérala desde fido2_privileged_google.json, cúrala y actualiza LIST_DATE, EXPECTED_SIZE y la cifra de docs/GUIA.md"
             exit 1
           fi
 
@@ -85,3 +86,25 @@ jobs:
           name: apk-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      # Todos los APK debug se firman con la clave compartida, publicada en el repositorio
+      # (app/debug.keystore), para que se instalen unos encima de otros. Si el build dejara de
+      # usarla, cada ejecución firmaría con una clave nueva del runner y el APK publicado ya no se
+      # podría instalar encima del anterior. Va al final para que el APK se publique aunque esto
+      # falle. La huella del certificado está en SECURITY.md.
+      - name: Firma del APK debug
+        shell: bash
+        run: |
+          esperada=a0226ef08b68045e51460bea2fb9ac8526108cd48514a724b4c5c435165bb6ed
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)apksigner"
+          salida=$("$apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk)
+          # El formato depende de la versión de apksigner: «Signer #1 certificate SHA-256 digest: …»
+          # (build-tools 36) o «V2 Signer: certificate SHA-256 digest: …» (37).
+          huellas=$(printf '%s\n' "$salida" | grep -vi 'stamp' \
+            | sed -nE 's/^.*[Ss]igner.*certificate SHA-256 digest: ([0-9a-f]{64})$/\1/p' | sort -u)
+          echo "Certificado del APK debug: ${huellas:-ninguno}"
+          if [ "$huellas" != "$esperada" ]; then
+            printf '%s\n' "$salida"
+            echo "::error file=app/build.gradle.kts::El APK debug no lleva la firma compartida de app/debug.keystore"
+            exit 1
+          fi

@@ -57,8 +57,8 @@ android {
 
     defaultConfig {
         applicationId = "io.github.jls97.boveda"
-        // Personal app for a recent phone: Android 13+ gives every security API used here
-        // without compatibility code (sensitive clipboard, overlay hiding, biometric keys).
+        // Recent phones only: Android 13+ gives every security API used here without
+        // compatibility code (sensitive clipboard, overlay hiding, biometric keys).
         minSdk = 33
         targetSdk = 37
         versionCode = 2
@@ -68,6 +68,19 @@ android {
     }
 
     signingConfigs {
+        // Clave de firma debug compartida y PUBLICADA (en el repositorio, contraseña «android»):
+        // así los APK debug de la CI, de cualquier ordenador y de cualquier sesión se instalan
+        // unos encima de otros. Sin ella, cada máquina firma con su ~/.android/debug.keystore y
+        // Android rechaza el APK por «conflicto con un paquete existente». Solo firma la app debug
+        // (io.github.jls97.boveda.debug, otra app con sus propios datos y depurable): nunca
+        // guardes datos reales en ella. La release se firma con la clave propia de abajo. Ver
+        // SECURITY.md.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         if (releaseSigningConfigured) {
             create("release") {
                 storeFile = rootProject.file(releaseKeystorePath!!)

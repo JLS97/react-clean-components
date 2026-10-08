@@ -10,7 +10,9 @@ que la propia bóveda.
 ## 1. Crear la clave de firma (una sola vez)
 
 Fuera del repositorio (el `.gitignore` excluye `*.jks`, `*.keystore`, `*.p12`, `*.pfx`, `*.pem`,
-`*.bks`, `*.pepk` y `app/release/`, pero mejor no tentar a la suerte):
+`*.bks`, `*.pepk` y `app/release/`, pero mejor no tentar a la suerte). La única excepción es
+`app/debug.keystore`, la clave de firma debug, publicada a propósito (ver
+[SECURITY.md](../SECURITY.md)); nunca sirve para la release:
 
 ```sh
 keytool -genkeypair -v \
@@ -136,6 +138,12 @@ Lo más sencillo sigue siendo instalar desde el PC que compila: `adb install -r 
   revisa el diff del XML y compara alguna suma con la publicada por el repositorio
   (`https://repo1.maven.org/maven2/<ruta>.sha256` en Maven Central; `.sha256` junto al artefacto
   en Google Maven).
+- **aapt2 depende del sistema.** El plugin de Android descarga el `aapt2` del sistema en el que
+  compilas (`aapt2-<versión>-linux.jar`, `-osx.jar` o `-windows.jar`), y regenerar el XML en Linux
+  solo registra el de Linux. Al actualizar el plugin, añade a mano las variantes `-osx` y
+  `-windows` del `aapt2` nuevo con su suma publicada
+  (`https://dl.google.com/android/maven2/com/android/tools/build/aapt2/<versión>/aapt2-<versión>-osx.jar.sha256`,
+  y lo mismo con `-windows`); si no, la build falla en macOS y Windows.
 - **Firmas PGP (pendiente).** `<verify-signatures>` está en `false` porque varios artefactos de
   AndroidX y del plugin de Android no publican firma. Cuando se actualicen versiones, el objetivo
   es regenerar con `./gradlew --no-daemon --write-verification-metadata sha256,pgp --export-keys help testDebugUnitTest lintDebug assembleRelease`,
@@ -155,4 +163,6 @@ Lo más sencillo sigue siendo instalar desde el PC que compila: `adb install -r 
   cuenta comprometida podría apuntarlo a otro código sin tocar este repositorio. Al aceptar una PR
   de Dependabot para una acción, comprueba que el SHA nuevo corresponde al tag indicado
   (`git ls-remote --tags https://github.com/<acción> | grep <tag>`). El workflow solo tiene
-  `contents: read`, no recibe la clave de firma y solo compila el APK debug.
+  `contents: read`, no recibe la clave de firma y solo compila el APK debug, firmado con la clave
+  publicada `app/debug.keystore`; un paso comprueba que el certificado del APK es el documentado en
+  [SECURITY.md](../SECURITY.md).
