@@ -49,7 +49,8 @@ class LockViewModel(
      * pantalla de desbloqueo (M-04). La frase se comprueba antes de cifrar nada.
      */
     fun createVault(password: String, confirmation: String, phrase: String, phrases: AntiPhishingPhrase) {
-        if (_ui.value.busy) return
+        // Un segundo «Hecho» del teclado mientras la pantalla se va ya no puede rehacer la bóveda recién creada.
+        if (_ui.value.busy || session.state.value !is VaultState.NoVault) return
         val problem = masterPasswordProblem(password, confirmation)
             ?: antiPhishingPhraseProblem(phrase)?.let { "Frase antiphishing: $it" }
         if (problem != null) {
@@ -64,7 +65,8 @@ class LockViewModel(
     }
 
     fun unlock(password: String) {
-        if (_ui.value.busy || password.isEmpty()) return
+        // Solo con la bóveda bloqueada: un Intro tardío en la pantalla que se va no vuelve a descifrar.
+        if (_ui.value.busy || password.isEmpty() || session.state.value !is VaultState.Locked) return
         launchOperation(desbloqueo = true) { session.unlock(password.toCharArray()) }
     }
 
@@ -73,12 +75,13 @@ class LockViewModel(
     fun biometricCipher(): Cipher? = session.biometricUnlockCipher()
 
     fun unlockWithBiometric(authorizedCipher: Cipher) {
+        if (_ui.value.busy || session.state.value !is VaultState.Locked) return
         launchOperation { session.unlockWithBiometric(authorizedCipher) }
     }
 
     /** Restaura una copia cuando aún no hay bóveda en el teléfono (pantalla de creación). */
     fun restoreBackupFirstRun(backup: ByteArray, password: String) {
-        if (_ui.value.busy) return
+        if (_ui.value.busy || session.state.value !is VaultState.NoVault) return
         launchOperation { session.restoreBackupFirstRun(backup, password.toCharArray()) }
     }
 
@@ -89,7 +92,7 @@ class LockViewModel(
      * limpia el freno de intentos y la bóveda sustituida solo vuelve con «deshacer» (B-31).
      */
     fun restoreBackup(backup: ByteArray, password: String, currentPassword: String?, forceWithoutCurrent: Boolean) {
-        if (_ui.value.busy) return
+        if (_ui.value.busy || session.state.value !is VaultState.Locked) return
         launchOperation {
             session.restoreBackup(backup, password.toCharArray(), currentPassword?.toCharArray(), forceWithoutCurrent)
         }
@@ -159,7 +162,12 @@ class LockViewModel(
                     wrongPasswords = wrongPasswords,
                 )
                 is OperationResult.Throttled -> LockUiState(
-                    error = "Demasiados intentos fallidos.",
+                    // La lápida ya dice cuánto falta; fuera del desbloqueo hay que decir además qué no se ha hecho.
+                    error = if (desbloqueo) {
+                        "Demasiados intentos fallidos."
+                    } else {
+                        "La copia no se ha restaurado: espera a que termine el bloqueo por intentos fallidos."
+                    },
                     blockedUntil = result.untilMillis,
                     wrongPasswords = wrongPasswords,
                     errorEnCampo = desbloqueo,

@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.progressSemantics
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -338,12 +339,13 @@ fun margenLateral(): Dp {
 /**
  * Margen lateral de lo que ocupa todo el ancho de la ventana (el fichero, el mostrador): el de
  * siempre o, en pantallas anchas (tablets, plegables abiertos), el que deja el contenido centrado
- * y en [Sizes.contentMaxWidth] como mucho.
+ * y tan ancho como el de [Pantalla]: [Sizes.contentMaxWidth] menos el margen de cada lado.
  */
 @Composable
 fun margenDeLista(): Dp {
     val ancho = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() }
-    return maxOf(margenLateral(), (ancho - Sizes.contentMaxWidth) / 2)
+    // Como Pantalla: columna de contentMaxWidth como mucho y, dentro, el margen de siempre.
+    return margenLateral() + maxOf(0.dp, (ancho - Sizes.contentMaxWidth) / 2)
 }
 
 /**
@@ -398,8 +400,10 @@ fun BarraSuperior(
 @Composable
 private fun LineaDeLaton(modifier: Modifier = Modifier) {
     val c = ContrasenoraTheme.colors
+    // TalkBack la anuncia como progreso en curso, igual que la barra de Material a la que sustituye.
+    val linea = modifier.progressSemantics()
     if (rememberReducedMotion()) {
-        Box(modifier.background(c.brassDefault))
+        Box(linea.background(c.brassDefault))
         return
     }
     val recorrido = rememberInfiniteTransition(label = "ocupado").animateFloat(
@@ -409,7 +413,7 @@ private fun LineaDeLaton(modifier: Modifier = Modifier) {
         label = "tramo",
     )
     Box(
-        modifier
+        linea
             .background(c.borderSubtle)
             .clipToBounds()
             .drawBehind {
@@ -749,9 +753,10 @@ fun FilaCasilla(
 /**
  * El redondel de una opción única: un aro que, al elegirla, se llena hasta dejar un punto de
  * ciruela. Decorativo: quien lo usa pone la fila como `selectable(role = Role.RadioButton)`.
+ * [fondo] es el del papel sobre el que va (bgRaised en los diálogos), para que el aro no se vea relleno.
  */
 @Composable
-fun Redondel(elegida: Boolean, modifier: Modifier = Modifier) {
+fun Redondel(elegida: Boolean, modifier: Modifier = Modifier, fondo: Color = ContrasenoraTheme.colors.bgSurface) {
     val c = ContrasenoraTheme.colors
     val reduced = rememberReducedMotion()
     val progreso by animateFloatAsState(
@@ -762,7 +767,7 @@ fun Redondel(elegida: Boolean, modifier: Modifier = Modifier) {
     val aro = lerp(c.borderStrong, c.brandPrimary, progreso)
     Canvas(modifier.size(22.dp)) {
         val grosor = 1.5.dp.toPx()
-        drawCircle(c.bgSurface)
+        drawCircle(fondo)
         drawCircle(aro, radius = size.minDimension / 2 - grosor / 2, style = Stroke(grosor))
         if (progreso > 0f) drawCircle(c.brandPrimary, radius = 5.dp.toPx() * progreso)
     }
@@ -804,7 +809,8 @@ fun <T> SelectorSegmentado(
                 .fillMaxWidth(1f / opciones.size)
                 .layout { medible, restricciones ->
                     val marca = medible.measure(restricciones)
-                    layout(marca.width, marca.height) { marca.place((marca.width * posicion).roundToInt(), 0) }
+                    // placeRelative: en un idioma de derecha a izquierda la marca avanza hacia la izquierda, como las opciones.
+                    layout(marca.width, marca.height) { marca.placeRelative((marca.width * posicion).roundToInt(), 0) }
                 }
                 .padding(4.dp)
                 .sombraPapel(ContrasenoraShapes.full, c.isDark)

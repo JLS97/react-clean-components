@@ -185,10 +185,10 @@ fun EntryListScreen(
             when {
                 entries.isEmpty() -> item(key = "vacia") {
                     EstadoVacio(
-                        titulo = voz("Aquí no hay nada que esconder… todavía.", "Aún no has guardado ninguna contraseña"),
+                        titulo = voz("Aquí no hay nada que esconder… todavía.", "Aún no has guardado ninguna entrada"),
                         mensaje = voz(
-                            "Añade tu primera contraseña y yo la guardo como si fuera la receta de las croquetas.",
-                            "Añade tu primera contraseña para empezar.",
+                            "Añade tu primera entrada y yo la guardo como si fuera la receta de las croquetas.",
+                            "Añade tu primera entrada para empezar.",
                         ),
                         accion = "Añadir entrada",
                         onAccion = onAdd,

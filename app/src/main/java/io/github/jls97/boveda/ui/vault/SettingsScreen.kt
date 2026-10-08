@@ -558,7 +558,7 @@ internal fun AjustesContenido(
         )
         Autorrelleno(autofillEnabled, onAutofill)
         Codigos2fa(otpAccess, otpCount, busy, onRecoverOtp, onCheckRecoveryCode, onNewRecoveryCode)
-        Copias(entryCount, lastBackup, copiaAlDia, canUndoRestore, busy, onExport, onRestore, onUndoRestore, onDiscardUndo)
+        Copias(lastBackup, copiaAlDia, canUndoRestore, busy, onExport, onRestore, onUndoRestore, onDiscardUndo)
         AparienciaApartado(apariencia, onPersonalidad, onTema)
         Privacidad(deviceSecure, deviceKeySecurityLevel, deviceKeyWarning, kdfUpgradeWarning)
         BotonSecundario(
@@ -755,7 +755,6 @@ private fun Codigos2fa(
 
 @Composable
 private fun Copias(
-    entryCount: Int,
     lastBackup: String,
     copiaAlDia: Boolean?,
     canUndoRestore: Boolean,
@@ -1041,7 +1040,8 @@ private fun PlacaClave(nivel: String, aviso: String?, modifier: Modifier = Modif
                 if (aviso != null && LocalDensity.current.fontScale > 1.3f) {
                     // Con la letra grande el sello no cabe al lado sin partir «Software»: se estampa debajo.
                     nivelTexto(Modifier.padding(top = Spacing.s0_5))
-                    Box(Modifier.padding(top = Spacing.s1)) { sello() }
+                    // El giro del sello no cuenta en el layout: necesita aire para no pisar el texto.
+                    Box(Modifier.padding(top = Spacing.s3)) { sello() }
                 } else {
                     Row(
                         modifier = Modifier.padding(top = Spacing.s0_5),
@@ -1165,8 +1165,8 @@ private fun FilaInterruptor(
 
 /**
  * Personalidad como una ficha que se elige: el isotipo (sin gafas en Sobria), el nombre y su lema.
- * Cada una lleva su casilla de impreso, que se marca de un trazo al elegirla, y la elegida un borde
- * ciruela de 2 dp; TalkBack la lee como botón de opción.
+ * Cada una lleva su redondel, que se llena al elegirla, y la elegida un borde ciruela de 2 dp;
+ * TalkBack la lee como botón de opción.
  */
 @Composable
 private fun FichaPersonalidad(
@@ -1219,7 +1219,8 @@ private fun FichaPersonalidad(
 
 /**
  * Las garantías de la casa como un certificado: cada una, un renglón «qué ····· cómo» con su línea
- * de puntos de guía, y el sello «Conforme» estampado arriba.
+ * de puntos de guía. El sello «Conforme» solo se estampa arriba si [conforme]: si algo de Seguridad
+ * está pendiente, el certificado no lo da por bueno. La capa de hardware dice la real ([nivelClave]).
  */
 @Composable
 private fun CertificadoDeLaCasa(nivelClave: String, conforme: Boolean, modifier: Modifier = Modifier) {
@@ -1251,12 +1252,16 @@ private fun CertificadoDeLaCasa(nivelClave: String, conforme: Boolean, modifier:
         RenglonGuia("Copias en la nube", "Desactivadas")
         RenglonGuia("Autorrelleno de terceros", "Bloqueado")
         Text(
-            if (nivelClave in NIVELES_DE_HARDWARE) {
-                "Sin ese permiso, Android no deja que la app abra ninguna conexión. La capa de hardware va ligada al " +
-                    "chip de seguridad del teléfono; los parámetros de la derivación están en «Derivación de la clave»."
-            } else {
-                "Sin ese permiso, Android no deja que la app abra ninguna conexión. En este teléfono la capa de " +
-                    "hardware no está confirmada: lo explica Seguridad, en «Dónde se guarda la clave de este teléfono»."
+            "Sin ese permiso, Android no deja que la app abra ninguna conexión. " + when (nivelClave) {
+                in NIVELES_DE_HARDWARE ->
+                    "La capa de hardware va ligada al chip de seguridad del teléfono; los parámetros de la derivación " +
+                        "están en «Derivación de la clave»."
+                KeySecurityLevel.SOFTWARE.label ->
+                    "En este teléfono la clave no está en un chip de seguridad, solo en software: lo explica " +
+                        "Seguridad, en «Dónde se guarda la clave de este teléfono»."
+                else ->
+                    "Android no ha dicho dónde guarda la clave de este teléfono («Desconocido» en Seguridad), así " +
+                        "que la capa de hardware no se puede confirmar."
             },
             style = t.small,
             color = c.textSecondary,
@@ -1376,7 +1381,7 @@ private fun EncabezadoConSello(sello: (@Composable () -> Unit)?, contenido: @Com
         sello == null -> Column(Modifier.fillMaxWidth(), content = contenido)
         LocalDensity.current.fontScale > 1.3f -> Column(Modifier.fillMaxWidth()) {
             contenido()
-            Box(Modifier.padding(top = Spacing.s2)) { sello() }
+            Box(Modifier.padding(top = Spacing.s3)) { sello() }
         }
         else -> Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(Spacing.s3)) {
             Column(Modifier.weight(1f), content = contenido)

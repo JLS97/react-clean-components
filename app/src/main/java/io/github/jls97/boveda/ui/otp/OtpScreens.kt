@@ -264,7 +264,8 @@ internal fun OtpCardContenido(
                 Column(Modifier.fillMaxWidth()) {
                     etiqueta(Modifier)
                     if (estado == EstadoOtp.Bloqueado || estado == EstadoOtp.SinLlave) {
-                        Box(Modifier.padding(top = Spacing.s1)) { sello() }
+                        // El giro del sello no cuenta en el layout: con «URGENTE» la esquina sube unos 8 dp.
+                        Box(Modifier.padding(top = Spacing.s3)) { sello() }
                     }
                 }
             } else {

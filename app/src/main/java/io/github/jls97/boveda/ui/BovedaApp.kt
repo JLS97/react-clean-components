@@ -25,6 +25,7 @@ import io.github.jls97.boveda.data.BackupLog
 import io.github.jls97.boveda.session.VaultSession
 import io.github.jls97.boveda.session.VaultState
 import io.github.jls97.boveda.ui.components.CreateLocalDocument
+import io.github.jls97.boveda.ui.components.SinToquesSiSeVa
 import io.github.jls97.boveda.ui.components.TouchOnTyping
 import io.github.jls97.boveda.ui.lock.LockViewModel
 import io.github.jls97.boveda.ui.lock.SetupScreen
@@ -72,24 +73,27 @@ fun BovedaApp(session: VaultSession) {
             transitionSpec = { transicionDeEstado(initialState, targetState, reduced) },
             label = "estado de la bóveda",
         ) { current ->
-            when (current) {
-                VaultState.NoVault -> SetupScreen(lockViewModel)
-                VaultState.Locked -> UnlockScreen(
-                    lockViewModel,
-                    // Se está yendo porque se ha abierto: el arco del candado sube (momento de marca).
-                    abriendo = transition.targetState == EnterExitState.PostExit && state is VaultState.Unlocked,
-                )
-                // Solo mientras la bóveda sigue abierta: al bloquearse, la pantalla que se va no
-                // vuelve a componer nada de lo descifrado, ni durante la transición.
-                is VaultState.Unlocked -> if (state is VaultState.Unlocked) {
-                    VaultHost(
-                        session = session,
-                        state = current,
-                        viewModel = vaultViewModel,
-                        personalidad = personalidad,
-                        onPickExportDestination = { fileName -> exportLauncher.launch(fileName) },
-                        onRestoreUndone = { lockViewModel.showNotice(LockViewModel.RESTORE_UNDONE) },
+            // La pantalla que se va (el alta o el desbloqueo al abrir) no recibe toques mientras se desvanece.
+            SinToquesSiSeVa(activa = transition.targetState == EnterExitState.Visible) {
+                when (current) {
+                    VaultState.NoVault -> SetupScreen(lockViewModel)
+                    VaultState.Locked -> UnlockScreen(
+                        lockViewModel,
+                        // Se está yendo porque se ha abierto: el arco del candado sube (momento de marca).
+                        abriendo = transition.targetState == EnterExitState.PostExit && state is VaultState.Unlocked,
                     )
+                    // Solo mientras la bóveda sigue abierta: al bloquearse, la pantalla que se va no
+                    // vuelve a componer nada de lo descifrado, ni durante la transición.
+                    is VaultState.Unlocked -> if (state is VaultState.Unlocked) {
+                        VaultHost(
+                            session = session,
+                            state = current,
+                            viewModel = vaultViewModel,
+                            personalidad = personalidad,
+                            onPickExportDestination = { fileName -> exportLauncher.launch(fileName) },
+                            onRestoreUndone = { lockViewModel.showNotice(LockViewModel.RESTORE_UNDONE) },
+                        )
+                    }
                 }
             }
         }

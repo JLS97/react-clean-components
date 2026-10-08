@@ -237,7 +237,7 @@ fun <T> ChoiceDialog(
                             .padding(horizontal = Spacing.s1),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Redondel(elegida, Modifier.padding(Spacing.s1))
+                        Redondel(elegida, Modifier.padding(Spacing.s1), fondo = c.bgRaised)
                         Text(
                             label,
                             style = ContrasenoraTheme.type.body,

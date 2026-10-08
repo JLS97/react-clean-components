@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -100,6 +101,12 @@ fun VaultHost(
         // olvidado su borrador o su contraseña generada.
         val activa = transition.targetState == EnterExitState.Visible
         val snackbarAqui = if (activa) snackbar else remember { SnackbarHostState() }
+        // La tapa de SinToquesSiSeVa para el dedo, pero no el teclado ni las acciones de TalkBack:
+        // lo que haga la pantalla que se va no llega al ViewModel. Se lee al llamar, no al componer.
+        val sigueActiva = rememberUpdatedState(activa)
+
+        /** [accion] solo si esta pantalla sigue siendo la de arriba. */
+        fun siActiva(accion: () -> Unit): () -> Unit = { if (sigueActiva.value) accion() }
         SinToquesSiSeVa(activa) {
             when (route) {
                 Route.EntryList -> {
@@ -109,11 +116,11 @@ fun VaultHost(
                         backupReminder = if (entries.isEmpty()) null else backupReminder(backupStatus, System.currentTimeMillis()),
                         query = viewModel.query,
                         onQueryChange = viewModel::updateQuery,
-                        onOpen = { viewModel.navigate(Route.Detail(it.id)) },
-                        onCopyPassword = { viewModel.copy("Contraseña", it.password) },
-                        onAdd = viewModel::newEntry,
-                        onGenerator = { viewModel.openGenerator(forEditor = false) },
-                        onSettings = { viewModel.navigate(Route.Settings) },
+                        onOpen = { if (sigueActiva.value) viewModel.navigate(Route.Detail(it.id)) },
+                        onCopyPassword = { if (sigueActiva.value) viewModel.copy("Contraseña", it.password) },
+                        onAdd = siActiva(viewModel::newEntry),
+                        onGenerator = siActiva { viewModel.openGenerator(forEditor = false) },
+                        onSettings = siActiva { viewModel.navigate(Route.Settings) },
                         onLock = viewModel::lock,
                         snackbar = snackbarAqui,
                         restoreUndo = { RestoreUndoBanner(viewModel, onRestoreUndone) },
@@ -131,21 +138,21 @@ fun VaultHost(
                         EntryDetailScreen(
                             entry = entry,
                             busy = viewModel.busy,
-                            onBack = { viewModel.back() },
-                            onEdit = { viewModel.editEntry(entry) },
-                            onDelete = { viewModel.deleteEntry(entry.id) },
-                            onCopy = viewModel::copy,
+                            onBack = siActiva { backFrom(route) },
+                            onEdit = siActiva { viewModel.editEntry(entry) },
+                            onDelete = siActiva { viewModel.deleteEntry(entry.id) },
+                            onCopy = { que, valor -> if (sigueActiva.value) viewModel.copy(que, valor) },
                             snackbar = snackbarAqui,
                             otpSection = {
                                 OtpCard(
                                     entry = entry,
                                     otpAccess = state.otpAccess,
                                     otp = otp,
-                                    onAdd = {
+                                    onAdd = siActiva {
                                         otp.startAdd(entry.id)
                                         viewModel.navigate(Route.OtpAdd(entry.id))
                                     },
-                                    onRecover = { viewModel.navigate(Route.OtpRecover) },
+                                    onRecover = siActiva { viewModel.navigate(Route.OtpRecover) },
                                 )
                             },
                         )
@@ -157,10 +164,11 @@ fun VaultHost(
                     draft = quietaAlIrse(viewModel.draft),
                     isNew = route.entryId == null,
                     busy = viewModel.busy,
-                    onDraftChange = viewModel::updateDraft,
-                    onGenerate = { viewModel.openGenerator(forEditor = true) },
-                    onSave = viewModel::saveDraft,
-                    onBack = { viewModel.back() },
+                    // El borrador ya olvidado no vuelve por una tecla tardía en el editor que se va (I-37).
+                    onDraftChange = { if (sigueActiva.value) viewModel.updateDraft(it) },
+                    onGenerate = siActiva { viewModel.openGenerator(forEditor = true) },
+                    onSave = siActiva(viewModel::saveDraft),
+                    onBack = siActiva { backFrom(route) },
                     snackbar = snackbarAqui,
                 )
 
@@ -168,11 +176,11 @@ fun VaultHost(
                     password = quietaAlIrse(viewModel.generated),
                     options = viewModel.generatorOptions,
                     forEditor = route.forEditor,
-                    onOptionsChange = viewModel::updateGeneratorOptions,
-                    onRegenerate = viewModel::regenerate,
-                    onCopy = { viewModel.copy("Contraseña", viewModel.generated) },
-                    onUse = viewModel::useGeneratedPassword,
-                    onBack = { viewModel.back() },
+                    onOptionsChange = { if (sigueActiva.value) viewModel.updateGeneratorOptions(it) },
+                    onRegenerate = siActiva(viewModel::regenerate),
+                    onCopy = siActiva { viewModel.copy("Contraseña", viewModel.generated) },
+                    onUse = siActiva(viewModel::useGeneratedPassword),
+                    onBack = siActiva { backFrom(route) },
                     snackbar = snackbarAqui,
                 )
 
@@ -186,12 +194,12 @@ fun VaultHost(
                     otpCount = entries.count { it.otp != null },
                     kdfParams = state.kdfParams,
                     kdfUpgradeWarning = state.kdfUpgradeWarning,
-                    onRecoverOtp = { viewModel.navigate(Route.OtpRecover) },
-                    onNewRecoveryCode = {
+                    onRecoverOtp = siActiva { viewModel.navigate(Route.OtpRecover) },
+                    onNewRecoveryCode = siActiva {
                         otp.beginRecoveryCode()
                         viewModel.navigate(Route.OtpRecoveryCode(RecoveryCodePurpose.REPLACE))
                     },
-                    onPickExportDestination = onPickExportDestination,
+                    onPickExportDestination = { if (sigueActiva.value) onPickExportDestination(it) },
                     onRestoreUndone = onRestoreUndone,
                     viewModel = viewModel,
                     snackbar = snackbarAqui,
@@ -206,28 +214,31 @@ fun VaultHost(
                             entry = entry,
                             otpAccess = state.otpAccess,
                             otp = otp,
-                            onScan = { viewModel.navigate(Route.OtpScan) },
-                            onNeedsSetup = { viewModel.navigate(Route.OtpRecoveryCode(RecoveryCodePurpose.SETUP)) },
-                            onNeedsRecovery = { viewModel.navigate(Route.OtpRecover) },
-                            onSaved = { viewModel.back() },
-                            onBack = { viewModel.back() },
+                            onScan = siActiva { viewModel.navigate(Route.OtpScan) },
+                            onNeedsSetup = siActiva { viewModel.navigate(Route.OtpRecoveryCode(RecoveryCodePurpose.SETUP)) },
+                            onNeedsRecovery = siActiva { viewModel.navigate(Route.OtpRecover) },
+                            onSaved = siActiva { backFrom(route) },
+                            onBack = siActiva { backFrom(route) },
                             snackbar = snackbarAqui,
                         )
                     }
                 }
 
                 Route.OtpScan -> OtpScanScreen(
+                    // Una segunda lectura mientras el escáner se va no vuelve a sacar otra pantalla de la pila.
                     onScanned = { text ->
-                        otp.updateInput(text)
-                        viewModel.back()
+                        if (sigueActiva.value) {
+                            otp.updateInput(text)
+                            backFrom(route)
+                        }
                     },
-                    onBack = { viewModel.back() },
+                    onBack = siActiva { backFrom(route) },
                 )
 
                 is Route.OtpRecoveryCode -> RecoveryCodeScreen(
                     purpose = route.purpose,
                     otp = otp,
-                    onDone = {
+                    onDone = siActiva {
                         if (route.purpose == RecoveryCodePurpose.SETUP) {
                             // Back to the entry, past the "add" screen.
                             viewModel.popTo { it is Route.Detail }
@@ -237,14 +248,14 @@ fun VaultHost(
                             viewModel.suggestBackup("Has cambiado el código de recuperación 2FA: las copias anteriores necesitan el antiguo.")
                         }
                     },
-                    onBack = { viewModel.back() },
+                    onBack = siActiva { backFrom(route) },
                     snackbar = snackbarAqui,
                 )
 
                 Route.OtpRecover -> OtpRecoverScreen(
                     otp = otp,
-                    onDone = { viewModel.back() },
-                    onBack = { viewModel.back() },
+                    onDone = siActiva { backFrom(route) },
+                    onBack = siActiva { backFrom(route) },
                     snackbar = snackbarAqui,
                 )
             }

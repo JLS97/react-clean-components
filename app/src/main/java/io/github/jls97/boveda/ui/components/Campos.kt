@@ -103,8 +103,8 @@ internal fun coloresCampo(): TextFieldColors {
  * foco). Es un BasicTextField con la decoración de Material para poder fijar esos grosores.
  *
  * La [etiqueta] va encima de la caja pero dentro de la decoración del campo: así forma parte del
- * mismo nodo editable y TalkBack la lee al llegar al campo (y tocarla también lo enfoca). El
- * [error] se anuncia como error del propio campo.
+ * mismo nodo editable y TalkBack la lee al llegar al campo (y tocarla también lo enfoca). Con
+ * [error], el campo queda marcado como erróneo; el mensaje lo pinta y lo anuncia [MarcoCampo].
  */
 @Composable
 internal fun CajaTexto(
@@ -137,7 +137,9 @@ internal fun CajaTexto(
             onValueChange = onValueChange,
             modifier = modifier
                 .fillMaxWidth()
-                .semantics { if (error != null) error(error) },
+                // El campo se marca como erróneo con una frase corta; el mensaje entero lo lee la fila de
+                // debajo, que además lo anuncia al aparecer. Así TalkBack no lo repite dos veces.
+                .semantics { if (error != null) error("Revisa lo escrito") },
             enabled = enabled,
             singleLine = singleLine,
             minLines = minLines,

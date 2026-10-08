@@ -30,6 +30,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -49,6 +50,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -161,14 +163,16 @@ fun UnlockScreen(
             return
         }
         // Con el campo plegado el botón negativo promete la contraseña y debe cumplirlo; con el
-        // campo a la vista solo puede ser «Cancelar». Cerrar el diálogo (atrás) no cambia nada.
+        // campo a la vista, o durante el bloqueo por intentos (cuando no se puede usar), solo puede
+        // ser «Cancelar». Cerrar el diálogo (atrás) no cambia nada.
+        val ofreceContrasena = !usePassword && !blocked
         BiometricPrompts.authenticate(
             activity,
             "Desbloquear Contraseñora",
             "Confirma con tu huella",
             cipher,
-            negativeLabel = if (usePassword) "Cancelar" else "Usar contraseña",
-            onNegative = { if (!usePassword) usePasswordInstead() },
+            negativeLabel = if (ofreceContrasena) "Usar contraseña" else "Cancelar",
+            onNegative = { if (ofreceContrasena) usePasswordInstead() },
         ) { authorized, error ->
             when {
                 authorized != null -> viewModel.unlockWithBiometric(authorized)
@@ -315,7 +319,13 @@ internal fun DesbloqueoContenido(
     val sobria = LocalPersonalidad.current == Personalidad.Sobria
     val margen = margenLateral()
     val conHuella = biometricEnabled && !usePassword
-    val blocked = blockedSeconds != null
+    // Mientras la pantalla se va porque se ha abierto, se queda como estaba: al entrar con la
+    // huella desde «Descanse en Pass» el bloqueo se acaba, y la lápida no debe volverse formulario
+    // a media salida.
+    val ultimoBloqueo = remember { mutableStateOf(blockedSeconds) }
+    if (!abriendo) SideEffect { ultimoBloqueo.value = blockedSeconds }
+    val segundosBloqueo = if (abriendo) ultimoBloqueo.value else blockedSeconds
+    val blocked = segundosBloqueo != null
 
     BoxWithConstraints(
         Modifier
@@ -345,9 +355,12 @@ internal fun DesbloqueoContenido(
                     if (bloqueada) {
                         // Durante el bloqueo no se pide la contraseña: la lápida, cuánto falta y,
                         // si hay huella, la puerta que el freno de intentos no cierra.
-                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.s4)) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(Spacing.s4),
+                        ) {
                             DescanseEnPass(
-                                segundosRestantes = blockedSeconds ?: 0,
+                                segundosRestantes = segundosBloqueo ?: 0,
                                 modifier = Modifier.padding(top = Spacing.s8),
                             )
                             if (biometricEnabled) {
@@ -355,6 +368,7 @@ internal fun DesbloqueoContenido(
                                     voz("Mientras tanto, puedes entrar con tu huella.", "Mientras tanto, puedes usar tu huella."),
                                     style = t.body,
                                     color = c.textSecondary,
+                                    textAlign = TextAlign.Center,
                                 )
                                 if (busy) {
                                     Trabajando(voz("Mirando si eres tú…", "Descifrando…"), Modifier.padding(vertical = Spacing.s3))
