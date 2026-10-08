@@ -70,6 +70,7 @@ import io.github.jls97.boveda.ui.components.LineaPunteada
 import io.github.jls97.boveda.ui.components.NoLearningTextField
 import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.PasswordField
+import io.github.jls97.boveda.ui.components.PoweredBy
 import io.github.jls97.boveda.ui.components.RestoreBackupDialog
 import io.github.jls97.boveda.ui.components.SecureAlertDialog
 import io.github.jls97.boveda.ui.components.Sello
@@ -286,8 +287,9 @@ fun UnlockScreen(
  * Lo que se ve de la pantalla de desbloqueo, sin estado: el isotipo, el título, para quién es (en el
  * autorrelleno), la frase antiphishing y la contraseña o la huella; durante el bloqueo temporal,
  * «Descanse en Pass» con su cuenta atrás y, si hay huella, el botón para entrar con ella, que no
- * pasa por el freno de intentos. [blockedSeconds] es null si no hay bloqueo. [errorEnCampo] dice si
- * [error] es de la contraseña escrita (se muestra bajo el campo) o de otra cosa (debajo, suelto).
+ * pasa por el freno de intentos. Al pie, «Restaurar» y la firma de la empresa. [blockedSeconds] es
+ * null si no hay bloqueo. [errorEnCampo] dice si [error] es de la contraseña escrita (se muestra
+ * bajo el campo) o de otra cosa (debajo, suelto).
  */
 @Composable
 internal fun DesbloqueoContenido(
@@ -343,7 +345,8 @@ internal fun DesbloqueoContenido(
                 Modifier
                     .widthIn(max = 560.dp)
                     .fillMaxWidth()
-                    // Con poco contenido, el pie de «Restaurar» se queda abajo y no flotando a media pantalla.
+                    // Con poco contenido, el pie («Restaurar» y la firma de la empresa) se queda abajo y
+                    // no flotando a media pantalla.
                     .heightIn(min = altoVisible)
                     .padding(start = margen, end = margen, top = Spacing.s10, bottom = Spacing.s6),
             ) {
@@ -455,6 +458,7 @@ internal fun DesbloqueoContenido(
                         BotonFantasma("Volver a la bóveda anterior", onUndoRestore, enabled = !busy)
                     }
                 }
+                PoweredBy(Modifier.fillMaxWidth().padding(top = Spacing.s5))
             }
         }
     }

@@ -113,6 +113,7 @@ import io.github.jls97.boveda.ui.components.OpenLocalDocument
 import io.github.jls97.boveda.ui.components.Pantalla
 import io.github.jls97.boveda.ui.components.PasswordField
 import io.github.jls97.boveda.ui.components.PasswordPromptDialog
+import io.github.jls97.boveda.ui.components.PoweredBy
 import io.github.jls97.boveda.ui.components.Redondel
 import io.github.jls97.boveda.ui.components.Resguardo
 import io.github.jls97.boveda.ui.components.RestoreBackupDialog
@@ -484,8 +485,8 @@ private class Reauth(
 /**
  * Ajustes sin estado: la libreta de la Contraseñora, en seis apartados numerados (seguridad,
  * autorrelleno, códigos 2FA, copias, apariencia y privacidad), el botón de bloquear y el pie con el
- * logotipo. Todo lo que se ve llega como dato y cada toque sale como callback; los diálogos, las
- * comprobaciones y la contraseña maestra viven en [SettingsScreen].
+ * logotipo y la firma de la empresa. Todo lo que se ve llega como dato y cada toque sale como
+ * callback; los diálogos, las comprobaciones y la contraseña maestra viven en [SettingsScreen].
  */
 @Composable
 internal fun AjustesContenido(
@@ -970,7 +971,7 @@ private fun Privacidad(
     )
 }
 
-/** El colofón de la libreta: el logotipo y la firma de la casa. */
+/** El colofón de la libreta: el logotipo, el lema de la casa y la firma de la empresa. */
 @Composable
 private fun Pie() {
     val c = ContrasenoraTheme.colors
@@ -992,6 +993,7 @@ private fun Pie() {
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = Spacing.s3),
         )
+        PoweredBy(Modifier.fillMaxWidth().padding(top = Spacing.s5))
     }
 }
 

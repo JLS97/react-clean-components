@@ -31,6 +31,12 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.LocaleList
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.jls97.boveda.ui.theme.ContrasenoraTheme
@@ -135,4 +141,28 @@ fun Trabajando(texto: String, modifier: Modifier = Modifier, tamano: Dp = 28.dp)
         Isotipo(Modifier.size(tamano), apertura = { arco?.value ?: 0f }, simple = tamano < 32.dp)
         Text(texto, style = ContrasenoraTheme.type.body, color = ContrasenoraTheme.colors.textSecondary)
     }
+}
+
+/** La empresa que hace Contraseñora. */
+private const val EMPRESA = "Smash software"
+
+// «Powered by» va marcado en inglés para que TalkBack no lo lea con la voz española.
+private val FirmaDeLaEmpresa = buildAnnotatedString {
+    withStyle(SpanStyle(localeList = LocaleList("en"))) { append("Powered by ") }
+    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(EMPRESA) }
+}
+
+/**
+ * «Powered by Smash software»: la firma de la empresa al pie del desbloqueo, del alta y de los
+ * Ajustes. Es igual en las dos voces.
+ */
+@Composable
+fun PoweredBy(modifier: Modifier = Modifier) {
+    Text(
+        FirmaDeLaEmpresa,
+        modifier = modifier,
+        style = ContrasenoraTheme.type.caption,
+        color = ContrasenoraTheme.colors.textTertiary,
+        textAlign = TextAlign.Center,
+    )
 }

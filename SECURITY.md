@@ -1,7 +1,8 @@
 # Política de seguridad de Contraseñora
 
-Contraseñora es un gestor de contraseñas personal para Android sin conexión a Internet. Este documento
-resume qué protege, qué no protege, cómo se ha revisado y cómo comunicar un fallo de seguridad.
+Contraseñora es un gestor de contraseñas personal para Android sin conexión a Internet, un proyecto
+de Smash software. Este documento resume qué protege, qué no protege, cómo se ha revisado y cómo
+comunicar un fallo de seguridad.
 
 ## Modelo de amenaza
 
@@ -48,8 +49,8 @@ visual (Contraseñora) es posterior a ese informe.
 
 ## Cómo reportar un fallo
 
-Abre un *issue* en el repositorio **sin incluir detalles explotables**, o escribe al autor por un
-canal privado y acuerda un plazo razonable antes de publicar nada. No hay recompensa económica;
+Abre un *issue* en el repositorio **sin incluir detalles explotables**, o escribe a Smash software
+por un canal privado y acuerda un plazo razonable antes de publicar nada. No hay recompensa económica;
 sí reconocimiento en el historial de cambios si lo deseas.
 
 Al reportar, incluye: versión de la app (`versionName`), modelo y versión de Android, pasos para

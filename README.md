@@ -11,6 +11,10 @@
 </p>
 
 <p align="center">
+  Un proyecto de <strong>Smash software</strong>
+</p>
+
+<p align="center">
   <a href="https://github.com/JLS97/react-clean-components/actions/workflows/ci.yml"><img src="https://github.com/JLS97/react-clean-components/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a>
   <img src="https://img.shields.io/badge/Android-13%2B-3DDC84?logo=android&amp;logoColor=white" alt="Android 13 o superior">
   <img src="https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&amp;logoColor=white" alt="Kotlin y Jetpack Compose">
@@ -55,10 +59,10 @@ chistes, en **Ajustes → Apariencia** puedes elegir la voz «Sobria», y tambi�
 oscuro o el del sistema.
 
 **Para quién y en qué estado.** Para quien quiera sus contraseñas y códigos 2FA solo en su
-teléfono Android, sin depender de ninguna empresa ni de la nube. Es un proyecto personal en
-desarrollo (versión 0.2.0): no está en Google Play ni en F-Droid y no hay APK de release
-publicado. Puedes probarla en unos minutos con el APK de prueba; para guardar tus contraseñas de
-verdad, compílala y fírmala tú (ver [Pruébala](#pruébala)).
+teléfono Android, sin cuentas, servidores ni nube de por medio (tampoco de Smash software). Es un
+proyecto de Smash software, todavía en desarrollo (versión 0.2.0): no está en Google Play ni en
+F-Droid y no hay APK de release publicado. Puedes probarla en unos minutos con el APK de prueba;
+para guardar tus contraseñas de verdad, compílala y fírmala tú (ver [Pruébala](#pruébala)).
 
 ## Qué hace
 
@@ -232,4 +236,4 @@ Google Authenticator, un generador de frases, y favoritos y categorías.
 
 ## Licencia
 
-[GPL-3.0](LICENSE).
+Contraseñora es un proyecto de Smash software y se publica con licencia [GPL-3.0](LICENSE).
